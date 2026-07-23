@@ -1675,11 +1675,19 @@ class Api:
             fb_cos_name, fb_cos_title = _fb_parse(fb.get("cos", ""))   # Factbook chief of state (raw text)
             fb_hog_name, fb_hog_title = _fb_parse(fb.get("hog", ""))   # Factbook head of government (raw text)
             cache = os.path.join(CACHE_DIR, "leaders_" + qid + ".json")
-            if _fresh(cache, 20 * 3600):
-                try:
-                    return json.load(open(cache, encoding="utf-8"))
-                except Exception:
-                    pass
+            try:
+                cached = json.load(open(cache, encoding="utf-8"))
+            except Exception:
+                cached = None
+            if cached:
+                # A DEGRADED result — Wikidata was rate-limited, so names came from the Factbook and the
+                # photos are missing — must NOT stick for 20h. Retry it in ~20 min so it self-heals to the
+                # real Wikidata data (correct spelling + photos) the moment the rate limit passes. A good
+                # result is trusted the full 20h. This is what stops a transient 429 from freezing the
+                # wrong leader card in place (e.g. King Salman with no photo) until tomorrow.
+                ttl = 1200 if cached.get("degraded") else 20 * 3600
+                if time.time() - cached.get("generated", 0) < ttl:
+                    return cached
             ent = _wd_entities(qid, "claims").get(qid, {})
             roles, offices = {"P35": [], "P6": []}, {}
             for prop, off in (("P35", "P1906"), ("P6", "P1313")):
@@ -1768,7 +1776,10 @@ class Api:
             # governing lean = the party of whoever runs the government (head of gov, else head of state)
             ruling = hog if (hog and hog.get("qid")) else hos
             lean = _ruling_party_lean(ruling.get("qid"), pents.get(ruling.get("qid"))) if ruling else None
-            res = {"leaders": out, "lean": lean, "generated": int(time.time())}
+            # DEGRADED = Wikidata gave no person data (rate-limited), so names/photos came from the Factbook
+            # fallback. Cached only briefly (see the read above) so it self-heals; also flagged to the client
+            # so a degraded profile isn't kept for the day either.
+            res = {"leaders": out, "lean": lean, "generated": int(time.time()), "degraded": not pents}
             if out:
                 try:
                     json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -2517,19 +2528,22 @@ def _country_match(a, b):
 def _wd_entities(ids, props="claims"):
     url = ("https://www.wikidata.org/w/api.php?action=wbgetentities&ids=" + urllib.parse.quote(ids)
            + "&props=" + props + "&languages=en&format=json")
-    for attempt in range(3):
+    # Fail FAST when Wikidata is rate-limiting: retrying 1.5s later just hits the same 429 while the
+    # profile panel spins. The caller falls back to the Factbook names instantly and the short-TTL cache
+    # retries Wikidata in ~20 min, so a quick single retry is all that's worth blocking the UI for.
+    for attempt in range(2):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Meridian/1.0"})
-            raw = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", "replace")
+            raw = urllib.request.urlopen(req, timeout=8).read().decode("utf-8", "replace")
             return (json.loads(raw) or {}).get("entities", {}) or {}
         except urllib.error.HTTPError as ex:
-            if getattr(ex, "code", None) == 429 and attempt < 2:
-                time.sleep(1.5)
+            if getattr(ex, "code", None) == 429 and attempt < 1:
+                time.sleep(0.4)
                 continue
             return {}
         except Exception:
-            if attempt < 2:
-                time.sleep(1.0)
+            if attempt < 1:
+                time.sleep(0.4)
                 continue
             return {}
     return {}

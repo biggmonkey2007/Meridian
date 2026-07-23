@@ -1488,6 +1488,14 @@ function prefetchZooms(){
   });
   _runWarm();
 }
+/* Warm the globe's tiles ahead of an in-progress rotate/pan — throttled so a fast drag stays smooth and
+   the newly-revealed area is already fetched (no empty chunks). Same idea as the flat map's prefetch. */
+let _gWarmLast = 0, _gWarmT = null;
+function scheduleGlobeWarm(){
+  const now = Date.now();
+  if(now - _gWarmLast > 350){ _gWarmLast = now; warmGlobeView(); }
+  else { clearTimeout(_gWarmT); _gWarmT = setTimeout(function(){ _gWarmLast = Date.now(); warmGlobeView(); }, 200); }
+}
 /* Globe: warm the tiles under the current view (+ one zoom in) so a rotate/zoom lands on loaded tiles. */
 function warmGlobeView(){
   if(!(mlMap && mlLoaded)) return;
@@ -1687,7 +1695,7 @@ const profileCache = {};
 function _dayStamp(){ const d=new Date(); return ""+d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0"); }
 /* Persist assembled country profiles across relaunches (LRU-capped, quota-safe) so a country you've
    opened before renders INSTANTLY next time — even after a relaunch — instead of re-fetching everything. */
-const _PROF_LS = "meridian_profiles_v5", _PROF_MAX = 16;   // v5: two political meters (authority + ruling-party lean)
+const _PROF_LS = "meridian_profiles_v6", _PROF_MAX = 16;   // v6: track `degraded` so a Wikidata-429 profile self-refetches
 function _loadProfilesLS(){ try{ return JSON.parse(localStorage.getItem(_PROF_LS)) || {}; }catch(e){ return {}; } }
 function readProfileLS(name){ try{ return _loadProfilesLS()[name] || null; }catch(e){ return null; } }
 function writeProfileLS(name, entry){
@@ -1853,7 +1861,7 @@ async function _assembleProfile(name){
   // fills a missing head of government, e.g. Saudi's Crown Prince, that Wikidata lacks).
   const fbCosRaw = fb ? fbField(fb,["Government","Executive branch","chief of state"]) : "";
   const fbHogRaw = fb ? fbField(fb,["Government","Executive branch","head of government"]) : "";
-  let _leanTmp=null;
+  let _leanTmp=null, _degraded=false;
   const _api = aiBridge();
   if(qid && _api && _api.country_leaders){
     // RELIABLE PATH: the backend reads Wikidata's CDN entity API (not the flaky query service), excludes
@@ -1862,9 +1870,10 @@ async function _assembleProfile(name){
       const r=await _api.country_leaders(qid, name, {cos:fbCosRaw, hog:fbHogRaw});
       leaders=(r && r.leaders && r.leaders.length) ? r.leaders : null;
       if(r && r.lean) _leanTmp=r.lean;
+      if(r && r.degraded) _degraded=true;    // Wikidata was rate-limited -> Factbook names, no photos: don't keep it
     }catch(e){}
   }
-  if((!leaders || !leaders.length) && qid) leaders = await fetchLeadersWikidata(qid, name);   // browser/dev fallback
+  if((!leaders || !leaders.length) && qid){ leaders = await fetchLeadersWikidata(qid, name); _degraded=true; }   // browser/dev fallback
   if(leaders && leaders.length) await fillLeaderPhotos(leaders);
   if(!leaders || !leaders.length){   // last-ditch: parse the Factbook fields directly and photo them via Wikipedia
     const fbCos = fbCosRaw ? parseLeader(fbCosRaw,"Head of state") : null;
@@ -1873,13 +1882,13 @@ async function _assembleProfile(name){
       const fl=[];
       if(fbCos) fl.push(fbCos); if(fbHog && !(fbCos && fbHog.name===fbCos.name)) fl.push(fbHog);
       await Promise.all(fl.map(async L=>{ try{ const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(L.query)); if(r.ok){ const j=await r.json(); if(j && j.thumbnail && j.thumbnail.source) L.img=j.thumbnail.source; if(j && j.title && j.type!=="disambiguation" && /^[\w .,'\-À-ÿ()]+$/.test(j.title)) L.name=j.title; } }catch(e){} }));
-      leaders=fl;
+      leaders=fl; _degraded=true;    // pure Factbook parse -> refetch next open until the backend gets Wikidata
     }
   }
   // authoritative political grade (V-Dem regime classification) from the backend
   let grade=null;
   if(_api && _api.country_grade){ try{ const gr=await _api.country_grade(name); if(gr && gr.regime) grade=gr; }catch(e){} }
-  return { fb, wp, leaders, grade, lean:_leanTmp };
+  return { fb, wp, leaders, grade, lean:_leanTmp, degraded:_degraded };
 }
 // Store a freshly-assembled profile, keeping the old copy if the fetch came back empty. Returns the entry.
 function _storeProfile(name, r, cached){
@@ -1889,6 +1898,8 @@ function _storeProfile(name, r, cached){
                   leaders: (r.leaders && r.leaders.length) ? r.leaders : ((cached && cached.leaders) || r.leaders),
                   grade: r.grade || (cached && cached.grade) || null,
                   lean: r.lean || (cached && cached.lean) || null,
+                  // carry the degradation status of whichever leaders we actually kept (new vs retained old)
+                  degraded: (r.leaders && r.leaders.length) ? !!r.degraded : !!(cached && cached.degraded),
                   t: Date.now(), day: _dayStamp() };
   profileCache[name] = entry; writeProfileLS(name, entry);
   return entry;
@@ -1901,7 +1912,7 @@ function _profileHealthy(c){
   const ls = (c.leaders||[]).filter(L=> L && L.name && L.name.trim());
   return ls.length>0 && !ls.some(L=> /\bcrown\s+salman\b/i.test(L.name));   // never accept the old garble
 }
-function _profileFresh(c){ return c && c.day===_dayStamp() && _profileHealthy(c); }
+function _profileFresh(c){ return c && c.day===_dayStamp() && _profileHealthy(c) && !c.degraded; }
 async function loadCountryProfile(name){
   const host = document.getElementById("ctry-profile");
   if(!host) return;
@@ -2456,7 +2467,10 @@ async function enterGlobe(){
     try{ mlMap.scrollZoom.setWheelZoomRate(1/110); mlMap.scrollZoom.setZoomRate(1/55); }catch(e){}
     mlMap.on("error", ()=>{});
     mlMap.on("load", ()=>{ mlLoaded=true; try{ mlMap.setProjection({type:"globe"}); }catch(e){ try{ mlMap.setProjection("globe"); }catch(_){} } buildGlobeLayers(); warmWorldBaseline(); warmGlobeView(); });
-    mlMap.on("moveend", warmGlobeView);   // warm tiles under the view so a rotate/zoom lands loaded
+    // Warm tiles DURING the rotate/pan (throttled), not just after it settles — otherwise panning the
+    // globe outruns the tile fetch and you see empty chunks until you stop. Mirrors the flat map, which
+    // already pre-warms on "move".
+    mlMap.on("move moveend", scheduleGlobeWarm);
     mlMap.on("click", (e)=>{
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ selectEvent(ev); return; } } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
