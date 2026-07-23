@@ -23,7 +23,24 @@ Clicking it downloads the new `Meridian.exe`, waits for the app to close, swaps 
      `dist\Meridian.exe` as an asset.
 3. Installed copies show the Update pill within a few seconds of their next launch.
 
+## Publish with zero local build (GitHub Actions — the smooth path)
+`.github/workflows/release.yml` builds the exe on a cloud Windows runner and publishes the Release for
+you, so you never run the 4-minute local build again. After the one-time setup below:
+1. Bump `APP_VERSION` in `app.py`, commit, push.
+2. Tag and push it: `git tag v1.2.0 && git push origin v1.2.0`.
+3. The workflow builds `Meridian.exe` and attaches it to a Release named after the tag. Installed copies
+   pick it up on next launch. (Keep the tag == `v<APP_VERSION>`.)
+
+## One-time GitHub setup
+1. Create a **public** GitHub repo (public = token-free auto-update; a private repo would need a token
+   embedded in the app to download releases).
+2. Push this folder to it, then point the app at the repo by setting
+   `UPDATE_REPO_DEFAULT = "owner/name"` in `app.py` (baked into every future build). To flip on the
+   *already-installed* copy without rebuilding, drop `owner/name` into `%LOCALAPPDATA%\Meridian\update_repo.txt`.
+
 ## Notes
 - The release **must** attach a `.exe` asset (the updater looks for the first `*.exe`).
 - Update checks are cached 6h, so they don't hit GitHub on every launch.
 - Only the packaged `.exe` updates — running from `python app.py` never does.
+- Secrets are gitignored (`tg_session*`, `telegram*.txt`, `*.key`, …) — verify with
+  `git ls-files | grep -i session` returning nothing before the first push.
