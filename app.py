@@ -1724,6 +1724,8 @@ class Api:
                     e = pents.get(c["qid"], {})
                     c["name"] = _lbl(c["qid"])
                     c["dead"] = bool(e.get("claims", {}).get("P570"))   # date of death -> never current
+                    if c["dead"] and c["name"]:
+                        _mark_dead(c["name"])                            # remember, so the Factbook can't revive them
                     c["img"] = ""
                     p18 = e.get("claims", {}).get("P18", [])
                     if p18:
@@ -1751,9 +1753,9 @@ class Api:
             # ALWAYS return CLEAN names. If Wikidata was rate-limited/incomplete and left a role unresolved,
             # use the cleanly-parsed Factbook name (the client fetches its photo from Wikipedia). This is what
             # stops a slow fetch from EVER showing a blank or a garbled fallback again.
-            if fb_cos_name and (not hos or not hos.get("name")):
+            if fb_cos_name and (not hos or not hos.get("name")) and not _is_dead(fb_cos_name):
                 hos = {"qid": (hos or {}).get("qid"), "name": fb_cos_name, "img": (hos or {}).get("img", "")}
-            if fb_hog_name and (not hog or not hog.get("name")) and not (
+            if fb_hog_name and (not hog or not hog.get("name")) and not _is_dead(fb_hog_name) and not (
                     hos and _same_person(fb_hog_name, None, hos.get("name", ""), hos.get("qid"))):
                 hog = {"qid": (hog or {}).get("qid"), "name": fb_hog_name, "img": (hog or {}).get("img", "")}
                 hog_forced_title = hog_forced_title or fb_hog_title
@@ -2591,6 +2593,45 @@ def _same_person(a_name, a_qid, b_name, b_qid):
     if not ta or not tb:
         return False
     return ta[0] == tb[0] and _name_match(a_name, b_name)
+
+
+# Names Wikidata has told us (via P570, date of death) belong to DECEASED leaders. Persisted to disk so a
+# rate-limited fetch that falls back to the CIA Factbook — which lags reality by months and still lists the
+# dead as sitting heads of state — can refuse to resurrect them. This is what stops Iran showing the late
+# Ali Khamenei (d. 2026-02-28) whenever Wikidata is briefly unreachable, and generalises to every country.
+_DEAD_LEADERS = None
+_DEAD_PATH = os.path.join(CACHE_DIR, "dead_leaders.json")
+
+
+def _dead_leaders():
+    global _DEAD_LEADERS
+    if _DEAD_LEADERS is None:
+        try:
+            _DEAD_LEADERS = set(json.load(open(_DEAD_PATH, encoding="utf-8")))
+        except Exception:
+            _DEAD_LEADERS = set()
+    return _DEAD_LEADERS
+
+
+def _mark_dead(name):
+    if not name:
+        return
+    s = _dead_leaders()
+    if name not in s:
+        s.add(name)
+        try:
+            json.dump(sorted(s), open(_DEAD_PATH, "w", encoding="utf-8"))
+        except Exception:
+            pass
+
+
+def _is_dead(name):
+    """Does this (Factbook) name belong to someone we've learned is deceased? Tolerant of transliteration
+    ('Ali Hoseini-Khamenei' vs 'Ali Khamenei') via the same-person match, so a spelling drift can't sneak
+    a dead leader back onto the map."""
+    if not name:
+        return False
+    return any(_name_match(name, d) for d in _dead_leaders())
 
 
 def _days_since(datestr):

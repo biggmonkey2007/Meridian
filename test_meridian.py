@@ -563,6 +563,15 @@ SAME_PERSON_CASES = [
     ("Recep Tayyip Erdogan", None, "Recep Erdogan", None, True),
 ]
 
+# A leader Wikidata says has DIED (P570) must never be resurrected by the lagging CIA Factbook. We remember
+# the dead and refuse a Factbook name that matches one. (dead_name, factbook_name, expected_is_dead, why)
+DEAD_LEADER_CASES = [
+    ("Ali Khamenei", "Ali Hoseini-Khamenei", True, "SHIPPED BUG: a rate-limited fetch showed the late Ali Khamenei because the Factbook still lists him"),
+    ("Ali Khamenei", "Masoud Pezeshkian", False, "a living leader must never be blocked as dead"),
+    ("Ali Khamenei", "Mojtaba Khamenei", False, "the living successor shares only the surname — he is not the dead man"),
+    ("Ebrahim Raisi", "Ebrahim Raisi", True, "an exact dead name is blocked"),
+]
+
 # Governing-lean meter: map a party's documented political alignment to -3..+3 (compound terms like
 # 'centre-right' must beat the bare 'right-wing'). (alignment_labels, expected_score)
 LEAN_CASES = [
@@ -904,6 +913,16 @@ def main():
             fails.append(("sameperson", f"{na} / {nb}", want, got,
                           "a shared surname alone must not merge two people; QIDs are authoritative"))
         print(f"  {'ok ' if ok else 'FAIL'} same({na!r},{nb!r})={got} (want {want})")
+    _saved_dead = app._DEAD_LEADERS
+    for dead, fbname, want, why in DEAD_LEADER_CASES:
+        app._DEAD_LEADERS = {dead}                       # in-memory only; don't touch the on-disk list
+        got = app._is_dead(fbname)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("dead-leader", f"dead={dead} fb={fbname}", want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} is_dead({fbname!r} | knew {dead!r})={got} (want {want})")
+    app._DEAD_LEADERS = _saved_dead
 
     # RESILIENCE: when Wikidata is rate-limited (429) and returns NOTHING, country_leaders must still
     # return CLEAN Factbook names (never blank, never the garbled frontend fallback) — and must keep
@@ -1060,7 +1079,7 @@ def main():
     total = (len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
-             + len(SAME_PERSON_CASES) + 1
+             + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + 1
 
              + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
