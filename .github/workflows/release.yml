@@ -1,0 +1,40 @@
+name: Release Meridian
+
+# Push a version tag (e.g. `v1.2.0`) and this builds Meridian.exe on a cloud Windows runner and
+# publishes it as a GitHub Release. Installed copies then auto-update via the in-app "Update" pill.
+#   git tag v1.2.0 && git push origin v1.2.0
+# Keep the tag in sync with APP_VERSION in app.py (the updater compares the release tag to APP_VERSION).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # needed to create the Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build Meridian.exe
+        run: |
+          python make_icon.py
+          pyinstaller --noconsole --onefile --name Meridian --icon meridian.ico `
+            --add-data "meridian-relief.html;." --add-data "country_grades.json;." `
+            --collect-all webview --noconfirm app.py
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Meridian.exe
+          name: Meridian ${{ github.ref_name }}
+          generate_release_notes: true

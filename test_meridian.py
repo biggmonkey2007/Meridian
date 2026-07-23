@@ -1,0 +1,1081 @@
+# -*- coding: utf-8 -*-
+"""
+Meridian regression tests — run this after ANY change to classification or geolocation.
+
+    python test_meridian.py
+
+Every case below is a bug that actually shipped. The point is that fixing one thing must never
+silently break another, so each fix leaves a permanent test behind it.
+"""
+import importlib.util
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+spec = importlib.util.spec_from_file_location("mapp", os.path.join(HERE, "app.py"))
+app = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(app)
+
+
+# (headline, expected_category, why_this_case_exists)
+CATEGORY_CASES = [
+    ("Leandro Trossard set for Besiktas move after Arsenal agree deal with Turkish side", "sports",
+     "SHIPPED BUG: scored ZERO and fell to the 'politics' default, so the sports filter (which drops "
+     "transfer chatter) never saw it — a transfer rumour sat on the map as a POLITICS dot on Singapore"),
+    ("Russian forces shell Toretsk overnight", "security",
+     "SHIPPED BUG: 'shell' was not a security keyword at all — the most basic war verb we have"),
+    ("Victorian teachers set to strike again following deadlocked negotiations", "politics",
+     "SHIPPED BUG: filed under CONFLICT & SECURITY. The labour-strike mask demanded the words be "
+     "ADJACENT, so 'teachers SET TO strike' sailed through"),
+    ("Romania votes in tense presidential election", "politics",
+     "GUARD: category matching is plain SUBSTRING — the club 'Roma' is inside 'Romania'"),
+    ("McIlroy calls for golf major season to be stretched out", "sports",
+     "SHIPPED BUG: GOLF had no keywords at all — it defaulted to politics"),
+    ("Wales call up two replacements as they sweat on skipper Lake", "sports",
+     "SHIPPED BUG: a rugby squad announcement defaulted to politics"),
+    ("Satellite imagery confirms three fuel storage tanks burned at the Tverneftteprodukt oil depot in Tver after the July 9 overnight strike",
+     "security", "SHIPPED BUG: 'satellite' won first-match and filed a war story under Science & Tech"),
+    ("Russian drones struck an oil refinery in Omsk overnight", "security", "drone strike"),
+    ("Israeli airstrike kills 3 in southern Lebanon", "security", "airstrike + casualties"),
+    ("Three Iranian ballistic missiles impacted the Shuwaikh Port in Kuwait City", "security", "ballistic missile"),
+    ("China ballistic missile test pushes case for Pacific defences", "security", "missile test"),
+    ("SpaceX launches a reusable rocket into orbit", "tech", "genuine space story stays tech"),
+    ("Apple sues OpenAI for allegedly stealing trade secrets", "tech", "OpenAI"),
+    ("AI companies want to water down Australia's copyright rules", "tech", "AI, no conflict words"),
+    ("Rail workers strike over pay across the network", "economy", "a labour strike is NOT a military one"),
+    ("Wildfires in Spain kill 12 as thousands evacuate", "climate", "'kill' must not beat 'wildfire'"),
+    ("Typhoon makes landfall in China as millions flee", "climate", "typhoon"),
+    ("Venezuela quake death toll passes 4,300", "climate", "'death toll' must not beat 'quake'"),
+    ("Measles outbreak spreads in the capital", "health", "outbreak"),
+    ("Inflation climbs as the central bank holds interest rates", "economy", "economy"),
+    ("England beat Norway to reach the World Cup semis", "sports", "world cup"),
+    ("Moldova's president nominates Vasile Tofan as prime minister", "politics", "nomination"),
+    ("Parliament votes to approve the coalition deal", "politics", "parliament"),
+    ("UK police say no evidence of political motive in the murder", "society", "crime"),
+    ("Mathieu Van der Poel overcomes heat to win Tour de France stage", "sports",
+     "SHIPPED BUG: cycling had no keywords, so it defaulted to politics"),
+    ("Bellingham scores twice to lift England past Haaland and Norway", "sports",
+     "SHIPPED BUG: 'scores' was not a sports word, so it defaulted to politics"),
+    ("Democrats split as Israel's war in Gaza dominates US midterms", "politics",
+     "SHIPPED BUG: a bare ' war ' beat an election story"),
+    ("Gasoline in occupied Crimea has reached 450 rubles per liter, 6 times the Russian retail price",
+     "economy", "SHIPPED BUG: a fuel-price story was filed under Society"),
+    ("Imagery also shows significant damage to the AVT-6 crude distillation unit at the Syzran oil refinery.",
+     "security", "SHIPPED BUG: a strike DAMAGE report has no 'strike' word -> fell to the politics default"),
+    ("Storm damage across Florida as thousands lose power", "climate",
+     "'damage' is a security word — a STORM must still win"),
+    ("At least 27 dead in Bangkok pub fire", "climate",
+     "SHIPPED BUG: a deadly fire scored 0 and fell to the politics default"),
+    ("Russian forces set fire to one of the buildings of the Kherson State Maritime Academy, "
+     "Vice-Rector Oleksandr Shumei said.", "security",
+     "SHIPPED BUG: filed under CLIMATE. Security scored ZERO — 'forces' was not a word we knew — "
+     "while climate scored 1 on 'fire'. An army burning a building is an ATTACK; the arson wording "
+     "('set fire') is what separates it from a real accidental fire"),
+    ("France arrests arson suspects amid Fontainebleau forest fire", "climate",
+     "GUARD: a real forest fire must STAY climate even though arson is mentioned"),
+    ("Firefighters battle flames in Fontainebleau historic forest", "climate",
+     "GUARD: firefighting a forest blaze is climate, not conflict"),
+    ("Market forces drive inflation higher as the central bank holds rates", "economy",
+     "GUARD: 'market forces' must not leak into security via the military 'forces' keyword"),
+]
+
+# (headline, summary, expected_place_substring, why)
+GEO_CASES = [
+    ("Bellingham scores twice to lift England past Haaland's Norway", "", "England",
+     "SHIPPED BUG: gazetteer read the surname as Bellingham, Washington"),
+    # A national official SPEAKING/TESTIFYING about a foreign country is news in THEIR country, not the
+    # topic country. These dotted Tehran because "Iran" was the only place named.
+    ("Trump to attend dignified transfer of fallen soldiers. And, Hegseth testifies on Iran",
+     "Pete Hegseth is requesting billions from Congress for the rising cost of the war in Iran.",
+     "United States",
+     "SHIPPED BUG: a US official testifying ON Iran dotted Tehran — Iran is the topic, the event is in the US"),
+    ("The Iran war has cost the US $37.5 billion dollars, says Defense Secretary Pete Hegseth", "",
+     "United States",
+     "SHIPPED BUG: trailing attribution ('says Defense Secretary Hegseth') dotted Tehran, not Washington"),
+    ("Israel's new exhibit exposes years of Hamas terrorist planning before Oct 7 massacre",
+     "Documents reveal Hezbollah and Iran's roles in the Oct. 7 assault.", "Israel",
+     "the exhibit is IN Israel; Iran named in the body is the topic, not the scene"),
+    # A WEAPON's nationality is its ORIGIN, not the scene it strikes. The event is where it LANDED.
+    ("An Iranian projectile, likely a one-way drone, impacted at Ali al-Salem Air Base, Kuwait.", "",
+     "Kuwait",
+     "SHIPPED BUG: 'Iranian' (leftmost) beat the explicit impact country — a drone's flag is not a location"),
+    ("Russian missile strikes apartment block in Kyiv", "", "Kyiv",
+     "the missile's origin (Russia) is not the scene; it struck Kyiv"),
+    ("North Korean rocket debris recovered in South Korea", "", "Korea",
+     "the rocket is North Korean but was recovered IN South Korea"),
+    ("Iran's drone shot down over Iraq", "", "Iraq",
+     "possessive weapon origin (\"Iran's drone\") must not beat the airspace it was downed over"),
+    # 'Georgia' is a US state AND a country — a named national leader puts their country in context so it
+    # resolves at home.
+    ("President Trump in Georgia: people trying to bring in drugs by sea are the bravest in history", "",
+     "United States", "SHIPPED BUG: a Trump rally in Georgia the US STATE dotted the Caucasus country"),
+    ("Protests erupt in Tbilisi as Georgia debates an EU accession bill", "", "Tbilisi",
+     "GUARD: Tbilisi context keeps Georgia the COUNTRY — the leader rule must not override a real local scene"),
+    ("US airstrikes hit Iranian nuclear site at Natanz", "", "Iran",
+     "GUARD: a real STRIKE marks its target as the scene — must NOT be dragged to Washington"),
+    ("Khamenei says Iran will respond to overnight strikes", "", "Iran",
+     "GUARD: Iran's own leader speaking about Iran is Iran news — the actor redirect must not misfire"),
+    ("Lindsey Graham dies suddenly, aged 71",
+     "The senator died at his home in Washington, US officials said.", "United States",
+     "SHIPPED BUG: placeless story fell back to the OUTLET's country (France24 -> France)"),
+    ("Ukrainian drone strike hits the Omsk oil refinery", "", "Omsk",
+     "NER calls Omsk an ORG; the gazetteer must still win"),
+    ("Russian forces shell Toretsk overnight", "", "Toretsk", "NER does not know Toretsk at all"),
+    ("Kyiv says Russian drones hit the capital overnight", "", "Kyiv",
+     "metonymy: a city CAN 'say' things — must not be vetoed"),
+    ("Man arrested in Manchester over stadium plot", "", "Manchester",
+     "'arrested' is a person-verb, but 'in' proves it is a place"),
+    ("Flash flooding in Missouri leaves one person dead", "", "Missouri", "US states must resolve"),
+    ("Hundreds in Sweden protest Israeli attacks in Gaza", "", "Sweden",
+     "the subject's location wins, not the topic's"),
+    ("Trump threatens to 'decimate' Iran if it tries to kill him", "", "United States",
+     "a threat BY an official is located at the official"),
+    # --- TARGETS SINK: a sanction/tariff/bill is voted where the body SITS; the country it names
+    #     is only what it is aimed at, and nothing has happened there ---
+    ("Senate looks to honor Graham with Russia sanctions", "", "Washington",
+     "SHIPPED BUG: dotted MOSCOW. The Senate votes in Washington; Russia is only the TARGET"),
+    ("Trump signs bill imposing new tariffs on China", "", "Washington",
+     "'tariffs ON China' is an act in Washington — the official acts from his own capital"),
+    ("EU approves new sanctions on Russia", "", "Brussels",
+     "the acting body is the EU, which sits in Brussels"),
+    ("House passes Ukraine aid package", "", "Washington",
+     "the VOTE is the event; Ukraine is only where the aid would go"),
+    ("UK House of Commons backs Russia sanctions", "", "London",
+     "GUARD: Britain's lower house must never be read as America's"),
+    ("Protesters in Berlin rally against new Russia sanctions", "", "Berlin",
+     "GUARD: a REAL scene ('in Berlin') must outrank a sanctions target"),
+    ("Nigeria's Senate passes sweeping tax bill", "", "Nigeria",
+     "GUARD: a bare 'Senate' must NOT drag the dot to Washington — Nigeria is not a target here"),
+    ("Palestinians fly kites in defiance of Israeli siege", "", "Palestine",
+     "'in defiance' must not resolve to Defiance, Ohio. NOTE: this case expected ISRAEL until plural "
+     "demonyms were added — 'Palestinians' was not a demonym, so the only actor the scanner could see "
+     "was the Israeli one. PALESTINE is the right answer (the kites are flown in Gaza); the old "
+     "expectation was encoding a gap in the data, not the truth. The Defiance guard is unaffected"),
+    ("AI 'actor' Tilly Norwood has a movie coming out", "", None,
+     "a surname must not resolve to Norwood, Massachusetts"),
+    ("Ukrainian drone strike hit the Odessa port", "", "Ukraine",
+     "SHIPPED BUG: the Russian spelling 'Odessa' resolved to Odessa, TEXAS"),
+    ("Supermarket in Zaporozhye Region attacked by Ukrainian drone", "", "Zaporozhye",
+     "SHIPPED BUG: TASS spellings missed the gazetteer and fell back to Ukraine's capital"),
+    ("Russian forces shell Kharkov overnight", "", "Ukraine", "Russian spelling of Kharkiv"),
+    # --- context-aware disambiguation (the same NAME, two different places) ---
+    ("Valencia floods kill dozens in eastern Spain", "", "Valencia",
+     "SHIPPED BUG: NER wrongly tagged 'Valencia' PERSON and vetoed it -> dot landed on Spain's centre"),
+    ("Israeli strike hits Tripoli in northern Lebanon", "", "Lebanon",
+     "Tripoli is in Libya AND Lebanon — context must choose"),
+    ("Tripoli clashes leave 5 dead as militias fight", "Fighting erupted in the Libyan capital.", "Libya",
+     "the same name, the other country"),
+    # --- facility-level precision (dot on the site, not the city) ---
+    ("FP-1 drones hitting the Syzran oil refinery in Russia's Samara region", "", "Syzran Oil Refinery",
+     "SHIPPED BUG: 'in RUSSIA's Samara region' grabbed the preposition -> dot on Moscow"),
+    ("Ukrainian drone strike hits the Omsk oil refinery", "", "Omsk Oil Refinery", "facility, not city centre"),
+    ("Iran strikes tanker in the Strait of Hormuz", "", "Strait of Hormuz", "a dot in the strait itself"),
+    ("Russian Military Strikes Ukrainian Port with AI-Enabled Geran-4 drones over the Black Sea",
+     "", "Odesa",
+     "SHIPPED BUG: no port was NAMED, so the only place in the post was the BLACK SEA and the dot "
+     "floated in open water — flying a TURKISH flag, the sea's nominal country. The converse of "
+     "'ships cannot burn on land': A PORT CANNOT BE IN THE MIDDLE OF A SEA"),
+    ("Ukrainian drones strike the port of Azov", "", "Azov",
+     "GUARD: a NAMED port still wins — the unnamed-port rule must never override it"),
+    ("Zelensky said Ukrainian forces struck a refinery in Bashkortostan, and the Afipsky refinery "
+     "in Krasnodar region.", "", "Afipsky Refinery",
+     "SHIPPED BUG (NOEL_REPORTS): the facility was DELETED — NER calls 'Afipsky refinery' an ORG and "
+     "no preposition sat in front of it — so the dot fell back to Krasnodar. A curated facility is "
+     "never vetoed, outranks a city that merely got the preposition, and beats 'Zelensky SAID'"),
+    ("Ukrainian drones struck the Ufa refinery in Bashkortostan overnight", "", "Ufa Refinery",
+     "GeoNames has no Ufa at all (1.1M) — 'a refinery in Bashkortostan' resolved to NOTHING"),
+    # --- a NATIONALITY / SHIP'S FLAG is not a place, and may never be the "located" scene ---
+    ("'US national' arrested on India", "", "India",
+     "SHIPPED BUG: dotted the US. A man's passport is not a location"),
+    ("Russia struck the Tanzania-flagged cargo vessel ATLAS BE off the coast of Odessa", "", "Odessa",
+     "SHIPPED BUG: dotted TANZANIA. 'STRUCK the TANZANIA-flagged ship' — the verb points at the SHIP, "
+     "and a flag of convenience is the least locational fact in existence. Russia is the ATTACKER"),
+    ("All according to plan. Authorities in Russia's Bashkortostan said today's strike on the refinery",
+     "", "Bashkortostan",
+     "SHIPPED BUG: dotted RUSSIA. In 'in RUSSIA'S Bashkortostan' the preposition governs the phrase, "
+     "whose head is Bashkortostan — a possessive may never enter the 'located' pool, where it wins "
+     "outright before the sink logic is ever consulted"),
+    ("US halts removal of refuelers from Ben Gurion Airport", "", "Ben Gurion",
+     "SHIPPED BUG: dotted the US. A named facility beats a bare country outright"),
+    ("Hungarian defense minister promises to slam the door on Ukraine", "", "Budapest",
+     "SHIPPED BUG: dotted UKRAINE — 'hungarian' was one of 141 countries with NO demonym at all"),
+    ("EU advances accession talks with Ukraine, Moldova, Montenegro", "", "Brussels",
+     "'talks WITH Ukraine' — Ukraine is the other party, not the venue. The EU meets in Brussels"),
+    ("Trump welcomes new Iraqi prime minister to White House", "", "White House",
+     "SHIPPED BUG: dotted IRAQ. The White House was not in the gazetteer at ALL — a seat of power "
+     "is a PLACE, not just an abstraction"),
+    ("16 Indians killed or missing in Middle East since the war began", "", "India",
+     "SHIPPED BUG: dotted the UNITED STATES. Only the singular 'indian' was ever a demonym, and "
+     "every nationality is routinely pluralised"),
+    ("Greenlandic institute not to take part in new project", "", "Greenland",
+     "SHIPPED BUG: dotted the US — 'greenlandic' was not a demonym"),
+    ("How jihadist groups like Boko Haram use AI for acts of terror",
+     "Researchers at Cambridge University said the trend was alarming.", "Nigeria",
+     "SHIPPED BUG: dotted CAMBRIDGE, UK — scraped from an academic quoted in the SUMMARY. An armed "
+     "group named in the TITLE has a theatre, and the title is the story"),
+    # --- a WATER named attributively is a COASTLINE, not the water ---
+    ("Russia strikes Ukrainian drone industry and Black Sea ports",
+     "Russian forces targeted Ukrainian drone production and storage sites in Kiev, along with port "
+     "infrastructure in Odessa and Yuzhny, Moscow says", "Kiev",
+     "SHIPPED BUG: the dot sat in OPEN WATER in the middle of the Black Sea while the story's own "
+     "first line named the ports. Two faults: 'BLACK SEA ports' is a coastline (a port is at a quay, "
+     "not at sea), and CONTAINMENT treated the sea as a 'city inside Russia' and upgraded to it. "
+     "When the headline names no genuine scene, read the summary"),
+    ("Burning Russian tankers in the Sea of Azov after Ukrainian drone attacks", "", "Sea of Azov",
+     "GUARD: a REAL sea event must stay at sea — ships cannot burn on land"),
+    ("Russian warship hit in the Black Sea", "", "Black Sea",
+     "GUARD: the Black Sea itself, with no attributive noun, is still the scene"),
+    # --- the AUDIT round: every one of these was a real dot in the wrong country ---
+    ("U.S. strikes on Rask, Sistan and Baluchestan Province, Iran", "", "Rask",
+     "SHIPPED BUG: dotted the UNITED STATES. Bare 'strikes' cannot go in _ACTOR_NOUNS (in 'Gaza "
+     "strikes will continue' it is a noun) — but 'strikes ON x' can only be the attacker"),
+    ("Heavy explosion in Sirik, likely US Airstrikes", "", "Sirik",
+     "SHIPPED BUG: dotted the US. Sirik was not in the gazetteer, so with no scene the ATTACKER was "
+     "the only hit left and won"),
+    ("USAF Airstrikes against Khorram Abad, Lorestan Province", "", "Khorram Abad",
+     "SHIPPED BUG: dotted the whole PROVINCE. spaCy tags 'Khorram Abad' PERSON and 'airstrikes' was "
+     "not a _GEO_ACTION, so nothing marked the city as located and the NER veto deleted it"),
+    ("Singaporean arrested in Bali after woman found dead in resort", "", "Indonesia",
+     "SHIPPED BUG: dotted Bali, INDIA (pop 296,973) — the Indonesian island was not in the "
+     "gazetteer at all"),
+    ("NZ's South Island struck by magnitude-5.9 earthquake", "", "New Zealand",
+     "SHIPPED BUG: fell back to the PUBLISHER (abc.net.au -> Australia); 'nz' was not an alias"),
+    ("Stink bomb attack planners taken to court by energy giant Woodside", "", "Australia",
+     "SHIPPED BUG: dotted Woodside, CALIFORNIA — Woodside is an Australian energy company"),
+    # --- a country used ATTRIBUTIVELY is the actor ("U.S. attack") ---
+    ("A U.S. attack targeted the city of Saravan in the Baluchistan province of southeastern Iran",
+     "", "Saravan",
+     "SHIPPED BUG: dotted the UNITED STATES. 'U.S. ATTACK' names who did it, exactly like a demonym"),
+    ("Malian and Russian forces reclaim strategic northern town", "", "Mali",
+     "SHIPPED BUG: dotted RUSSIA — 'malian' was not in DEMONYMS, so the only actor left standing was "
+     "the Russian one. A missing demonym hands the dot to whoever else is in the sentence"),
+    ("Israeli Foreign Minister Gideon Saar says his country is ready to move forward", "", "Jerusalem",
+     "SHIPPED BUG: dotted ROME. A named MINISTER speaking is his ministry speaking"),
+    ("Fighter jet sound over East Azerbaijan, Northeastern Iran", "", "Iran",
+     "SHIPPED BUG: dotted the COUNTRY Azerbaijan — East Azerbaijan is an IRANIAN province"),
+    # --- surnames and acronyms are not cities ---
+    ("U.S. Trade Representative Jamieson Greer rejects EU's tech rules", "", "United States",
+     "SHIPPED BUG: dotted GREER, South Carolina (pop 28k). spaCy tagged NO person at all, so the NER "
+     "veto never fired — the gazetteer must guard surnames itself"),
+    ("President Trump's former campaign manager Brad Parscale ran a MAGA influence operation",
+     "", "United States",
+     "SHIPPED BUG: 'MAGA' resolved to Maga, CAMEROON"),
+    ("New York becomes first state to impose one", "", "New York",
+     "SHIPPED BUG: the gazetteer had no 'new york', so it matched YORK"),
+    ("Young Germans opting out of military service as Berlin strives to boost army", "", "Berlin",
+     "SHIPPED BUG: dotted YOUNG, URUGUAY. A sentence-initial ordinary word is not a dateline"),
+    ("Paramount's Warner takeover challenged by 12 US states", "", "United States",
+     "SHIPPED BUG: dotted the TOWN of Paramount, California"),
+    ("Meta used AI to target workers with medical conditions for layoffs", "", "United States",
+     "SHIPPED BUG: CNA printed it, so it was dotted on SINGAPORE. A global company is headquartered "
+     "somewhere, and that beats the publisher"),
+    ("Man charged with murder over death in Victoria's east", "", "Victoria, Australia",
+     "SHIPPED BUG: dotted VICTORIA, HONG KONG (pop 956k beat the Australian state)"),
+    # --- when NOTHING is a scene, the ACTOR is the scene (a state acts at home) ---
+    ("Iran's IRGC released footage of this morning's ballistic missile launches towards U.S. bases "
+     "in the region.", "", "Iran",
+     "SHIPPED BUG: dotted the UNITED STATES. Iran sank as an actor, and the only survivor was the "
+     "country the missiles were aimed AT. An actor may only sink below a genuine SCENE"),
+    ("Former Iranian President Ahmadinejad attended a ceremony commemorating Iran's late Supreme "
+     "Leader today following reports claiming he was an Israeli asset over his contacts with Israel.",
+     "", "Iran",
+     "SHIPPED BUG: dotted ISRAEL — a country the post merely GOSSIPED about. The ceremony was in Iran"),
+    ("Israeli forces raid Jenin in the West Bank", "", "Jenin",
+     "GUARD: the facility upgrade must not fire when there is no facility — countries carry a "
+     "HIGHER prior than facilities, and a sloppy prior test promoted ISRAELI over the real scene"),
+    # --- water bodies: ships cannot burn on land ---
+    ("Burning Russian tankers in the Sea of Azov after Ukrainian drone attacks", "", "Sea of Azov",
+     "SHIPPED BUG: the SEA of Azov was dotted on the TOWN of Azov — ships were on land"),
+    ("Ukrainian drones strike the port of Azov", "", "Azov, Russia",
+     "the TOWN must still resolve when the sea is not named"),
+    ("Houthis attack a cargo ship in the Red Sea", "", "Red Sea", "maritime attack"),
+    ("Explosion damages the Kerch Strait bridge", "", "Kerch Strait", "strait, not a city"),
+    ("Migrant boat capsizes in the English Channel", "", "English Channel", "channel"),
+    ("Russian warship hit in the Black Sea", "", "Black Sea",
+     "SHIPPED BUG: a demonym is the ACTOR, not the scene"),
+    ("The number of people injured in Russia's attack on Zaporizhzhia has risen to nine", "", "Zaporizhzhia",
+     "SHIPPED BUG: a POSSESSIVE is an actor — 'in RUSSIA'S attack on X' happens at X. Also: NER "
+     "mislabelled Zaporizhzhia PERSON and deleted it; 'attack ON x' is hard locational evidence"),
+    # --- a national MINISTRY acting is news at ITS OWN capital; the foreign place is the SUBJECT ---
+    ("Türkiye's Foreign Ministry commemorates Srebrenica genocide", "", "Ankara",
+     "SHIPPED BUG: dotted BOSNIA. The ceremony was held in Ankara — Srebrenica is what it was ABOUT. "
+     "Also: 'Türkiye' tokenised to ['t','rkiye'] and the country did not exist to the geolocator"),
+    ("Russia's Defense Ministry says its forces captured Toretsk", "", "Toretsk",
+     "GUARD: a ministry REPORTING a real event must not drag the dot to Moscow — 'captured X' is a scene"),
+    ("Israeli officials say Gaza strikes will continue", "", "Gaza",
+     "GUARD: 'officials' is not a state ORGAN — this story really is about Gaza"),
+    # --- apostrophe-transliterated names: the apostrophe is a TOKEN SEPARATOR ---
+    ("Ansarullah authorities have announced that Sana'a International Airport has been repaired "
+     "two days after the Saudi attacks", "", "Sana'a International Airport",
+     "SHIPPED BUG: dotted Sana, PERU. \"Sana'a\" tokenises to sana|a; the lone 'sana' matched a "
+     "Peruvian town. The airport facility (spaced key 'sana a international airport') pins it exactly"),
+    ("Explosions reported near Sana'a overnight", "", "Sana'a",
+     "bare Sana'a (no 'airport') must still resolve to Yemen, not Peru"),
+    ("Saudi-led coalition bombs Ta'izz", "", "Ta'izz",
+     "Ta'izz resolved to NOTHING before — GeoNames only had the accentless 'taiz'"),
+    ("Houthis strike a tanker off Hodeidah", "", "Hodeidah",
+     "'Houthis' is a Yemeni actor (Ansarullah) — it vouches Yemen as context and sinks as the actor"),
+    # --- a place-name that is really part of a PROPER NOUN or a PERSON'S NAME ---
+    ("House Republicans resurrect Save America Act by adding it to a spending bill", "", "United States",
+     "SHIPPED BUG: dotted Save, BENIN — 'Save' is a common verb inside the bill name, not a town"),
+    ("Maltese politicians involved in plot to kill Daphne Caruana Galizia, court hears", "", "Malta",
+     "SHIPPED BUG: dotted Daphne, ALABAMA — 'Daphne Caruana Galizia' is the murdered journalist (a "
+     "forename followed by a capitalised surname, after the naming-verb 'kill')"),
+    ("Lebanon talks in Rome wrap up as US and Israeli officials describe them as positive", "", "Rome, Italy",
+     "SHIPPED BUG: dotted Rome, GEORGIA (pop 36k). 'US officials' put the US in context and demoted "
+     "the world capital — a >=20x population gap must let the dominant city win"),
+    # --- a person's NATIONALITY is not a location, even when it is the ONLY geo token in the title ---
+    ("Venezuelan man becomes 22nd person to die in ICE custody this year",
+     "Jesus Manuel Arenas-Silva, 45, found unresponsive while being transferred between detention "
+     "facilities in Georgia. Another person has died in federal immigration custody this week in Georgia.",
+     "Georgia",
+     "SHIPPED BUG: dotted CARACAS. 'Venezuelan man' is a passport, not the scene. With no place in the "
+     "title, the SUMMARY's real scene (Georgia) must win — not the nationality"),
+    ("Two Iranian nationals detained in Germany over alleged bomb plot", "", "Germany",
+     "the nationality ('Iranian nationals') sinks; Germany is where it happened"),
+    ("Ukrainian forces recapture a village near Kupiansk", "", "Kupiansk",
+     "GUARD: 'forces' is a STATE ACTOR (not a _PERSON_NOUN), so 'Ukrainian' must NOT be dropped as a "
+     "mere nationality — the country stays a party and the scene resolves normally"),
+]
+
+# geolocation cases that also need the article URL (the section is a country hint)
+GEO_URL_CASES = [
+    ("Georgia teen in plea hearing over school shooting", "Apalachee high school in Georgia.",
+     "https://www.theguardian.com/us-news/2026/jul/12/georgia", "Georgia, United States",
+     "SHIPPED BUG: the US STATE was read as the COUNTRY in the Caucasus"),
+    ("Georgia and Russia trade accusations over the border", "Tbilisi summoned the ambassador.", "",
+     "Georgia", "the same name must still resolve to the COUNTRY when the story is about it"),
+    ("African growth boom follows Trump push to replace aid with trade",
+     "Across Asia and Africa, growth is accelerating.", "", "!Philippines",
+     "SHIPPED BUG: dotted Asia, PHILIPPINES — a real town of 23,546. A CONTINENT names a whole "
+     "hemisphere and can never be the scene of a single event"),
+    # The SECTION beats the PUBLISHER. These all fell back to the outlet's home country.
+    ("Hunter Biden says rule of law prevailed in defamation lawsuit", "",
+     "https://www.theguardian.com/us-news/2026/jul/14/hunter-biden-defamation", "United States",
+     "SHIPPED BUG: dotted IRAN. The URL section (/us-news/) is the DESK that filed it — far better "
+     "evidence than where the outlet's office happens to be"),
+    ("Albanese to compare pivotal moment in AI to renewable energy transition", "",
+     "https://www.theguardian.com/australia-news/2026/jul/14/albanese-ai-speech", "Australia",
+     "SHIPPED BUG: dotted the UK because the Guardian is British"),
+    ("Sorry, conspiracy theorists, Lindsey Graham isn't worth your effort", "",
+     "https://www.rt.com/news/643036-lindsey-graham-conspiracy-theories/", "United States",
+     "SHIPPED BUG: dotted RUSSIA because RT printed it. A US senator's story is US news whoever "
+     "prints it — the SUBJECT's country beats the publisher's"),
+    ("Shanmugam and Tan See Leng to donate Bloomberg damages to charity", "",
+     "https://www.channelnewsasia.com/singapore/shanmugam-tan-see-leng-bloomberg", "Singapore",
+     "REGRESSION GUARD: the fallback LADDER ORDER is itself a bug surface. Putting the org check "
+     "above the URL section sent this Singapore court story back to the US on the word 'Bloomberg'. "
+     "Order must be: URL section -> org in title -> summary -> subject -> publisher (last)"),
+]
+
+# headlines: never cut mid-word, always start with a capital. (raw_post, check_fn_name, why)
+HEADLINE_CASES = [
+    ("Beneath Helsinki lies a vast underground network of around 5,500 shelters capable of protecting nearly one million people in the event of a nuclear strike or Russian attack, The Times reports.",
+     "no_midword", "SHIPPED BUG: headline ended '...or Russian attack, The Ti'"),
+    ("imagery also shows significant damage to the AVT-6 crude distillation unit at the Syzran oil refinery. Fire engines were visible operating around both damaged units.",
+     "capitalised", "SHIPPED BUG: a Telegram continuation post began lower-case"),
+    ("Russian Foreign Minister Sergey Lavrov:\n\nEurope and Ukraine buried the agreements reached in "
+     "Alaska between Russia and the US.",
+     "has_content", "SHIPPED BUG: the headline was 'Russian Foreign Minister Sergey Lavrov:' — a "
+     "LEAD-IN with no news in it. These channels put the speaker on line 1 and what he SAID on line 2"),
+]
+
+# the wire dateline is the canonical event location. (headline, summary, expected, why)
+DATELINE_CASES = [
+    ("Two women hurt in Ukraine's attack on passenger bus in LPR",
+     "LUGANSK, July 12. /TASS/. Two women were injured in a Ukrainian attack on an intercity bus in the Lugansk People's Republic (LPR).",
+     "Lugansk", "SHIPPED BUG: dotted on Ukraine's capital; the wire dateline says LUGANSK"),
+    ("Israel steps up raids",
+     "BEIRUT (Reuters) - Israeli jets struck Beirut's southern suburbs overnight, Lebanese officials said.",
+     "Beirut", "the headline names only the ACTOR; the dateline names the scene"),
+    ("Russia says it will respond to new sanctions",
+     "LONDON (Reuters) - Russia said on Sunday it would respond.",
+     "Russia", "a BUREAU dateline must NOT win — this story is not about London"),
+    ("Ukrainian drones are active over occupied Crimea, with a group seen flying above the Sovetsky district.",
+     "", "Sovetsky", "CONTAINMENT: a town named inside a broad area wins"),
+]
+
+# clips must only attach to the story they belong to. (event, clip, should_attach, why)
+CLIP_CASES = [
+    ("The JNIM has also attacked VDP outposts in Burkina Faso this weekend, seizing control of one in Konkoura and pillaging two others in northern Burkina Faso.",
+     "At least 27 people were killed after a massive fire engulfed a pub in northern Bangkok shortly after midnight on Monday.",
+     False, "SHIPPED BUG: attached on {'control','northern'} — 'seizing CONTROL...NORTHERN Burkina Faso' vs 'brought under CONTROL...NORTHERN Bangkok'. Pure coincidence."),
+    ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
+     "FP-1 strike drones maneuvering before hitting the Syzran oil refinery in Russia's Samara region",
+     False, "SHIPPED BUG: attached on {attack, drone, region} — conflict filler"),
+    ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
+     "Burning Russian tankers in the Sea of Azov after Ukrainian drone attacks", False,
+     "SHIPPED BUG: 'Ukrainian' is capitalised but identifies nothing — half the war shares it"),
+    ("What made US Republican Senator Lindsey Graham a lightning rod",
+     "President Trump on Lindsey Graham: I'm a big Israel supporter", True,
+     "a person-led story may cross borders and must still attach"),
+    ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
+     "Aftermath of the drone strike on the supermarket in Zaporozhye Region", True,
+     "the same event must attach"),
+    ("Bangkok pub fire kills at least 27 people",
+     "At least 27 people were killed after a massive fire engulfed a pub in northern Bangkok.", True,
+     "the clip belongs to ITS OWN story"),
+    # A MENTION IS NOT A SUBJECT. Match the clip's first sentence — what the post is ABOUT.
+    ("Kyiv claims drone attacks on 11 Russian tankers in Sea of Azov",
+     "Russian Foreign Minister Sergey Lavrov claimed Europe and Ukraine buried US-Russia agreements "
+     "reached in Alaska and tried to sideline Washington. He also labeled Ukrainian drone strikes on "
+     "Russian vessels in the Sea of Azov “terrorism.”", False,
+     "SHIPPED BUG: a LAVROV TALKING-HEAD about the peace plan was filed under a tanker strike, because "
+     "its SECOND sentence tacked on 'he also called the Azov strikes terrorism'. Match the SUBJECT"),
+    ("Kyiv claims drone attacks on 11 Russian tankers in Sea of Azov",
+     "Zelensky said Ukrainian forces struck a refinery in Bashkortostan and the Afipsky refinery in "
+     "Krasnodar region. He also confirmed hits on 3 tankers in the Sea of Azov.", False,
+     "SHIPPED BUG: a REFINERY clip attached to the tanker story on the same trailing mention"),
+    ("Kyiv claims drone attacks on 11 Russian tankers in Sea of Azov",
+     "Burning Russian tankers in the Sea of Azov after Ukrainian drone attacks", True,
+     "the ACTUAL footage of this event must still attach"),
+    # A SHARED LOCATION IS NOT A SHARED SUBJECT. A ship struck OFF Odesa and a street protest IN Odesa
+    # are both in Ukraine and both say "Odesa" — but the protest is not footage of the ship attack.
+    ("Russian attack on corn ship off Ukraine's Odesa kills 10",
+     "Protests calling for the reinstatement of Mykhailo Fedorov and the resignation of "
+     "Commander-in-Chief Oleksandr Syrskyi continue in Lviv, Odesa, Ternopil and other cities.", False,
+     "SHIPPED BUG: an Odesa PROTEST attached to an Odesa SHIP strike on the shared place-name alone"),
+    ("Russian attack on corn ship off Ukraine's Odesa kills 10",
+     "Footage of the burning cargo ship off Odesa after the Russian missile strike.", True,
+     "the ACTUAL ship footage shares 'ship' beyond the place and must still attach"),
+]
+
+# Two DIFFERENT events must not be merged. (headline_a, headline_b, same_event?, why)
+DEDUP_CASES = [
+    ("Satellite imagery confirms fuel storage tanks burned at the Tvernefteprodukt oil depot in Tver after the overnight strike",
+     "Russian drones struck an oil refinery in Omsk overnight", False,
+     "SHIPPED BUG: every Russia+security story shares {drone,strike,oil,refinery}, so a real strike on Tver was deleted as a 'duplicate' of Omsk"),
+    ("Ukrainian drone strike hits the Omsk oil refinery",
+     "Drone strike sets Omsk oil refinery ablaze, officials say", True,
+     "the same event reported twice SHOULD still merge"),
+]
+
+# SIMILARITY METER (_same_story): the SAME story from two sources/channels — even when one copy carries an
+# extra prefix, is re-headlined, or is classified differently — must be seen as one. Two genuinely
+# different events (different city, different numbers) must NOT. (title_a, title_b, want_duplicate, why)
+SIM_CASES = [
+    ("President Trump via Truth Social: Afghanistan War: 20 years, 2,000 DEAD.",
+     "Afghanistan War: 20 years, 2,000 DEAD.", True,
+     "SHIPPED BUG: the same Truth Social post from two channels stacked as two Afghanistan dots — the "
+     "'President Trump via Truth Social:' prefix diluted the distinctive-word overlap to {afghanistan,year} "
+     "and pushed one copy into a different category, so every existing dedup gate missed it"),
+    ("Zelensky addresses the nation on the Pokrovsk front",
+     "BREAKING: Zelensky addresses the nation on the Pokrovsk front, via his evening address", True,
+     "a re-headline with extra framing words is still the same address"),
+    ("Satellite imagery confirms fuel storage tanks burned at the Tvernefteprodukt oil depot in Tver after the overnight strike",
+     "Russian drones struck an oil refinery in Omsk overnight", False,
+     "GUARD: different cities (Tver vs Omsk) must NOT merge just for sharing 'oil' and 'overnight'"),
+    ("Russian missile strike on Kharkiv kills three",
+     "Russian drone strike on Kyiv kills five", False,
+     "GUARD: two different strikes on two different cities are two different events"),
+]
+
+# STARRED COUNTRIES — country_news() maps a country to GDELT's FIPS code (NOT ISO) and only keeps stories
+# that land in that country. (country_name, expected_fips)
+FIPS_CASES = [
+    ("Latvia", "LG"), ("United States of America", "US"), ("Germany", "GM"),
+    ("South Korea", "KS"), ("United Kingdom", "UK"), ("Russia", "RS"), ("Czechia", "EZ"),
+    ("Narnia", ""),   # unknown country -> not starrable, returns "unsupported" not a crash
+]
+# geolocated country vs the starred name must agree across naming variants. (a, b, want_match)
+CMATCH_CASES = [
+    ("United States of America", "United States", True),
+    ("Czechia", "Czech Republic", True),
+    ("Britain", "United Kingdom", True),
+    ("Latvia", "Germany", False),
+]
+
+# Auto-update triggers only when the release is genuinely newer — compared numerically, not as strings
+# ("1.10.0" must beat "1.2.0"). (remote_tag, local_version, expect_is_newer)
+VER_CASES = [
+    ("1.0.1", "1.0.0", True), ("v1.1.0", "1.0.9", True), ("2.0.0", "1.9.9", True),
+    ("1.0.0", "1.0.0", False), ("1.0.0", "1.0.1", False), ("v1.2", "1.10.0", False),
+]
+
+# CURRENT LEADERS — a shared surname is NOT the same person (Ali vs his son Mojtaba Khamenei). (a, b, match)
+NAMEMATCH_CASES = [
+    ("Mojtaba Khamenei", "Ali Khamenei", False),
+    ("Ali Khamenei", "Ali Hoseini-Khamenei", True),
+    ("Donald Trump", "Donald John Trump", True),
+    ("Emmanuel Macron", "Macron", True),
+    ("Keir Starmer", "Rishi Sunak", False),
+]
+
+import datetime as _dt
+_RECENT = (_dt.datetime.utcnow() - _dt.timedelta(days=20)).strftime("%Y-%m-%d")
+# _pick_leader: pick the CURRENT officeholder, cross-checked against the Factbook name.
+# (candidates, factbook_name, expected_name, why)
+LEADER_PICK_CASES = [
+    # The head of state's term is ENDED on Wikidata (died / replaced) but a stale Factbook still lists him.
+    # Show the LIVE successor — never resurrect the former/dead leader.
+    ([{"qid": "Q1", "name": "Ali Khamenei", "ended": True, "start": "1989-06-04", "preferred": False},
+      {"qid": "Q2", "name": "Mojtaba Khamenei", "ended": False, "start": "", "preferred": True}],
+     "Ali Khamenei", "Mojtaba Khamenei",
+     "SHIPPED BUG: a stale Factbook resurrected a leader whose Wikidata term had ENDED — never show a former leader"),
+    # a leader with a DATE OF DEATH is never current, even if the term claim wasn't flagged ended
+    ([{"qid": "Q1", "name": "Dead Leader", "ended": False, "dead": True, "start": "2010-01-01", "preferred": True},
+      {"qid": "Q2", "name": "Live Successor", "ended": False, "dead": False, "start": "2026-02-15", "preferred": False}],
+     "Dead Leader", "Live Successor",
+     "a leader who has DIED (P570) can never be current, whatever a lagging source says"),
+    ([{"qid": "Q1", "name": "Donald Trump", "ended": False, "start": "2025-01-20", "preferred": True}],
+     "Donald Trump", "Donald Trump", "the sole current holder is picked"),
+    ([{"qid": "Q1", "name": "Old Leader", "ended": True, "start": "2019-01-01", "preferred": False},
+      {"qid": "Q2", "name": "New Leader", "ended": False, "start": _RECENT, "preferred": True}],
+     "Old Leader", "New Leader",
+     "the live successor beats a lagging Factbook name"),
+    ([{"qid": "Q1", "name": "A Person", "ended": False, "start": "2020-01-01", "preferred": True}],
+     "", "A Person", "no cross-check source -> take the live/preferred pick"),
+    ([], "Someone", None, "no candidates -> None"),
+]
+
+# Parsing the Factbook's free-text leader field (used to fill roles Wikidata lacks, e.g. Saudi's PM).
+# (raw, expected_name_startswith, expected_title)
+FB_PARSE_CASES = [
+    ("Crown Prince and Prime Minister MUHAMMAD BIN SALMAN bin Abd al-Aziz Al Saud (since 27 September 2022)",
+     "Muhammad bin Salman", "Crown Prince and Prime Minister"),
+    ("President Donald J. TRUMP (since 20 January 2025)", "Donald", "President"),
+    ("King SALMAN bin Abd al-Aziz Al Saud (since 23 January 2015)", "Salman", "King"),
+    ("Prime Minister Keir STARMER (since 5 July 2024)", "Keir Starmer", "Prime Minister"),
+]
+
+# _same_person: two resolved leaders are the same individual only if QIDs match, OR (Factbook-only, no QID)
+# they share a given name AND family name. A shared surname alone must NOT merge two people.
+# (name_a, qid_a, name_b, qid_b, expected_same)
+SAME_PERSON_CASES = [
+    # Saudi: King Salman vs his son Mohammed bin Salman — share 'bin Salman al Saud' but are DIFFERENT people.
+    ("Salman bin Abd al-Aziz Al Saud", None, "Muhammad bin Salman Al Saud", None, False),
+    # the same person named identically in both Factbook fields must collapse to one
+    ("Emmanuel Macron", None, "Emmanuel Macron", None, True),
+    # QIDs are authoritative: same QID = same person, different QID = different people
+    ("King Salman", "Q1", "Salman", "Q1", True),
+    ("Person A", "Q1", "Person B", "Q2", False),
+    # transliteration of the same given+family name still matches (Factbook-only)
+    ("Recep Tayyip Erdogan", None, "Recep Erdogan", None, True),
+]
+
+# Governing-lean meter: map a party's documented political alignment to -3..+3 (compound terms like
+# 'centre-right' must beat the bare 'right-wing'). (alignment_labels, expected_score)
+LEAN_CASES = [
+    (["right-wing politics"], 2), (["left-wing politics"], -2), (["far-right politics"], 3),
+    (["centre-left politics"], -1), (["centre-right politics"], 1), (["centrism"], 0),
+    (["big tent"], 0), ([], None), (["centre-left", "left-wing"], -2),
+]
+
+# (headline, url, should_be_dropped, why)
+FLUFF_CASES = [
+    ("New Scholarships. New Programs. Your Next Step.", "https://toi.li/5Jd4WB", True,
+     "SHIPPED BUG: sponsored content sat on the map as an Israel dot — an advert has no event"),
+    ("United States at 250: Seven tests of the American experiment",
+     "/video/featured-documentaries/x", True, "a documentary is not an event"),
+    ("Republican Lindsey Graham dies at 71: World leaders react", "/news/x", False,
+     "SHIPPED BUG: the 'at 250:' rule matched his AGE and dropped a major story"),
+    ("US: Reporters subpoenaed over Air Force One stories", "/news/x", False,
+     "SHIPPED BUG: the listicle rule matched 'One stories'"),
+    ("Three Iranian ballistic missiles impacted Shuwaikh Port", "https://t.me/rnintel/1", False,
+     "SHIPPED BUG: requiring an 'event verb' dropped this ('impacted' was not on the list)"),
+    ("Moldova's president nominates Vasile Tofan as prime minister", "/news/x", False,
+     "SHIPPED BUG: 'nominates' was not an 'event verb' either"),
+    ("The week in pictures: Le Pen's comeback", "/news/x", True, "photo gallery"),
+    ("Commentary: Should Western countries embrace air conditioning", "/news/x", True,
+     "SHIPPED BUG: 'comment' did not match 'Commentary'"),
+    ("Australia news live: auction clearances nudge up", "/news/x", True, "a live blog is not an event"),
+    ("D-topia review – cosy sci-fi mystery takes aim at AI",
+     "https://www.theguardian.com/games/2026/jul/14/d-topia-review-sci-fi-ai-puzzle-game", True,
+     "SHIPPED BUG: a VIDEO GAME REVIEW was a dot on the map — /games/ was not a fluff path"),
+]
+
+
+# The FLAGS on the card = who is a PARTY to the event. A person's nationality is not.
+# (headline, event_country, expected_flags, why)
+FLAG_CASES = [
+    ("ICE fatally shoots 26-year-old Colombian man in Maine during immigration operation",
+     "United States of America", ["United States of America"],
+     "SHIPPED BUG: flew the COLOMBIAN flag over a US story because the victim was Colombian. "
+     "Colombia is not a party to an ICE shooting in Maine"),
+    ("Israeli soldier killed in Gaza clash", "Palestine", ["Palestine", "Israel"],
+     "GUARD: a SOLDIER is a state actor — his country IS a party. Only private individuals "
+     "(man/woman/migrant/victim) carry a nationality that means nothing"),
+    ("Ukrainian drones strike the port of Azov", "Russia", ["Russia", "Ukraine"],
+     "both belligerents are parties, and the country it HAPPENED in leads"),
+    ("Türkiye's Foreign Ministry commemorates Srebrenica genocide", "Turkey", ["Turkey"],
+     "SHIPPED BUG: 'Türkiye' folded to nothing, so the story had NO flag at all"),
+]
+
+
+# Telegram writes background-image:url('…') with PLAIN quotes. The scraper only accepted the
+# HTML-ESCAPED &#39; form, so it found NO photos on a normal post — and an ALBUM (a NOELREPORTS post
+# with four pictures of a struck logistics hub) was scraped as "no media" and the card fell back to a
+# stock photo of the city. We had the pictures all along. (raw_css_url, expected)
+CSS_URL_CASES = [
+    ("'https://cdn4.telesco.pe/file/abc123'", "https://cdn4.telesco.pe/file/abc123"),
+    ("&#39;https://cdn4.telesco.pe/file/abc123&#39;", "https://cdn4.telesco.pe/file/abc123"),
+    ("&quot;https://cdn4.telesco.pe/file/abc123&quot;", "https://cdn4.telesco.pe/file/abc123"),
+    ("https://cdn4.telesco.pe/file/abc123", "https://cdn4.telesco.pe/file/abc123"),
+]
+
+
+# A story must never show the SAME media file twice. The twin substitution (a blocked clip served
+# from a channel whose copy Telegram WILL release) ate its own tail: that playable post also matched
+# the story on its own, so the identical video went out twice, side by side.
+# (list_of_media_urls, expected_unique_count, why)
+MEDIA_DEDUP_CASES = [
+    (["https://cdn4.telesco.pe/file/A.mp4", "https://cdn4.telesco.pe/file/A.mp4"], 1,
+     "SHIPPED BUG: the twin substitution served the same file as itself"),
+    (["https://cdn4.telesco.pe/file/A.mp4", "https://cdn4.telesco.pe/file/B.mp4"], 2,
+     "two genuinely different clips must BOTH survive"),
+    (["https://cdn4.telesco.pe/file/A.jpg", "https://cdn4.telesco.pe/file/A.jpg",
+      "https://cdn4.telesco.pe/file/B.jpg"], 2,
+     "an album's distinct frames survive; a repeated frame does not"),
+]
+
+
+# _collapse_colocated merges dots on the SAME specific place within a few hours, keeping the severest.
+# Each event is (title, cat, place, country, hrs). (events, expected_kept_count, kept_cat_or_None, why)
+def _ev(title, cat, place, country, hrs, image=""):
+    return {"title": title, "cat": cat, "place": place, "country": country,
+            "hrs": hrs, "image": image, "lat": 46.5, "lng": 30.7}
+
+
+# A clip belongs to ONE dot. _media_id must ignore the volatile ?token=; _assign_clips gives each
+# clip to its single best-matching story. (checks run inline in main)
+def _clip_assignment_ok():
+    ok = True
+    # the token must not change a clip's identity
+    a = "https://cdn4.telesco.pe/file/abc123.mp4?token=AAA"
+    b = "https://cdn4.telesco.pe/file/abc123.mp4?token=BBB"
+    ok = ok and (app._media_id(a) == app._media_id(b))
+    # a Sana'a-airport clip should be owned by the airport story, not a generic Yemen one
+    events = [_ev("Sana'a International Airport reopens after Saudi strikes", "security",
+                  "Sana'a International Airport, Yemen", "Yemen", 1.0),
+              _ev("Yemen war: diplomacy stalls in Riyadh", "politics", "Riyadh, Saudi Arabia",
+                  "Saudi Arabia", 2.0)]
+    posts = [{"video": "https://cdn4.telesco.pe/file/clipX.mp4?token=Z",
+              "text": "Footage of Sana'a International Airport reopening after the Saudi strikes."}]
+    app._assign_clips(events, posts)
+    owner = app._CLIP_OWNER.get(app._media_id(posts[0]["video"]))
+    ok = ok and (owner == events[0]["title"])
+    return ok
+
+
+COLLAPSE_CASES = [
+    ([_ev("Kh-22/32 impacts in Odesa", "security", "Odesa, Ukraine", "Ukraine", 0.5),
+      _ev("2 on course for Odesa/Chornomorsk", "politics", "Odesa, Ukraine", "Ukraine", 0.6),
+      _ev("Explosions in Odesa Port", "security", "Odesa, Ukraine", "Ukraine", 0.7)], 1, "security",
+     "SHIPPED BUG: one barrage arrived as 3 terse posts split across categories and STACKED as 3 dots"),
+    ([_ev("Russia strike A", "security", "Russia", "Russia", 1.0),
+      _ev("Russia strike B", "security", "Russia", "Russia", 2.0)], 2, None,
+     "GUARD: a bare COUNTRY is not a specific place — two Russia stories are different events"),
+    ([_ev("Gaza strike at dawn", "security", "Gaza, Palestine", "Palestine", 1.0),
+      _ev("Gaza aid talks at night", "politics", "Gaza, Palestine", "Palestine", 10.0)], 2, None,
+     "GUARD: same place but 9h apart — different incidents, both kept"),
+    ([_ev("Kyiv aid deal signed", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
+      _ev("Kyiv hit by missile strike", "security", "Kyiv, Ukraine", "Ukraine", 2.0)], 1, "security",
+     "co-located within the window collapses to the SEVEREST category (a strike beats an aid story)"),
+]
+
+# the Live Wire must drop an admin's PERSONAL messages (greetings, sign-offs) but keep real news,
+# even speculative firehose news. (text, should_drop, why)
+CHATTER_CASES = [
+    ("Good night, sleep well and see you all tomorrow!", True,
+     "SHIPPED BUG: an admin sign-off showed on the wire as if it were a news post"),
+    ("Thanks for following today, back tomorrow morning", True, "a thank-you + sign-off"),
+    ("That's all for today, stay safe everyone", True, "a wrap-up greeting"),
+    ("Subscribe to our backup channel for more", True, "channel self-promotion"),
+    ("Iran warns Strait of Hormuz will remain closed until US accepts its terms", False,
+     "GUARD: a speculative/threat post is still NEWS — the wire is the firehose, keep it"),
+    ("Israel says it will respond to the attack tomorrow", False,
+     "GUARD: 'tomorrow' inside a real report is not a sign-off"),
+    ("Air defense activity reported over Kuwait, residents urged to stay safe indoors", False,
+     "GUARD: 'stay safe' in a warning is news, not 'stay safe everyone'"),
+    ("Good Friday services held across Rome amid tight security", False,
+     "GUARD: 'Good Friday' is a proper noun, not a greeting"),
+]
+
+# terse OSINT strike posts must classify as security (so they merge), without false positives.
+CLASSIFY_STRIKE_CASES = [
+    ("Kh-22/32 impacts in Odesa.", "security", "missile designation is an unambiguous strong signal"),
+    ("Shahed drones over Kharkiv", "security", "Shahed = attack drone"),
+    ("Geran-2 spotted heading toward Sumy", "security", "Geran loitering munition"),
+    ("Ukraine on course for EU membership talks", "politics",
+     "GUARD: 'on course for' is NOT a strike — it was wrongly added then removed"),
+    ("Economy on course for a soft landing", "economy",
+     "GUARD: an economics idiom must never read as a missile"),
+]
+
+
+# _clean_headline strips a trailing " - Outlet". It must NOT chop a compound word or a range.
+# (raw_rss_title, must_be_preserved_substring, why)
+CLEAN_HEADLINE_CASES = [
+    ("3 senior Iraqi Defense Ministry officers detained in anti-corruption campaign",
+     "anti-corruption campaign",
+     "SHIPPED BUG: `\\s*` made the separator's space optional, so the hyphen in 'anti-corruption' "
+     "counted as ' - Outlet' and the headline was cut to '...detained in anti'"),
+    ("Trump signs sweeping pro-democracy legislation after a long congressional fight",
+     "pro-democracy legislation", "a compound with 'pro-' must survive"),
+    ("Health officials track a new COVID-19 subvariant spreading across the region",
+     "COVID-19 subvariant", "COVID-19 is not an outlet suffix"),
+    ("Russia and Ukraine clash over the 2014-2015 Minsk agreements once again",
+     "2014-2015 Minsk", "a year RANGE has no space before the dash"),
+    ("Sudan faces a worsening humanitarian crisis as fighting spreads - Reuters",
+     "!Reuters", "a GENUINE ' - Outlet' suffix (space before the dash) must still be stripped"),
+    # WIRE-TWEET PROMO must never reach a headline or a story body (Insider Paper et al.).
+    ("BREAKING - India says four nationals killed in attack on ship in Ukraine READ: https://t.co/fopymj0M2y Follow @InsiderPaper for more news",
+     "India says four nationals killed in attack on ship in Ukraine",
+     "the real headline must survive after the BREAKING label, link, READ:, and Follow tail are stripped"),
+    ("India says four nationals killed in attack on ship in Ukraine READ: https://t.co/fopymj0M2y Follow @InsiderPaper for more news",
+     "!http", "a bare link must never reach a headline"),
+    ("India says four nationals killed in attack on ship in Ukraine Follow @InsiderPaper for more news",
+     "!Follow", "a 'Follow @handle for more news' promo tail must be stripped"),
+    ("Follow the money: how sanctioned oligarchs moved billions offshore",
+     "Follow the money", "a legitimate 'Follow the …' headline must NOT be stripped as promo"),
+]
+
+
+# Wire copy opens with filing metadata and attributive padding, not with the news. _sharpen strips it
+# so the fact lands in the first words. (raw, expected_start_or_!banned, why)
+SHARPEN_CASES = [
+    ("MELITOPOL, July 16. /TASS/. Two civilians of the Donetsk People's Republic were killed.",
+     "Two civilians", "SHIPPED: the card opened with the filing dateline, not the news"),
+    ("BEIRUT (Reuters) - Israeli jets struck Beirut's southern suburbs overnight.",
+     "Israeli jets", "the other wire shape: CITY (Agency) -"),
+    ("WASHINGTON, July 3 (AP) — The Senate voted to approve the measure.",
+     "The Senate voted", "CITY, Month D (Agency) —"),
+    ("According to his information, the outskirts of Volnovakha came under attack",
+     "The outskirts", "SHIPPED: the LEAD was a dependent clause about a person not yet named"),
+    ("It was reported that the strike damaged the refinery.",
+     "The strike damaged", "'it was reported that' says nothing"),
+    ("Russian forces set fire to a building of the Kherson Maritime Academy, the vice-rector said.",
+     "Russian forces set fire", "GUARD: ordinary prose must pass through untouched"),
+    ("The Kremlin said on Monday that talks would resume in Istanbul next week.",
+     "The Kremlin said", "GUARD: a real sentence that merely contains 'said' is not padding"),
+]
+
+# a lead has to stand on its own — it cannot open by pointing at something unintroduced
+STANDALONE_CASES = [
+    ("Two civilians were killed and eleven wounded in attacks on the Donetsk region.", True,
+     "a complete, self-contained opening line"),
+    ("He added that the shelling continued into the evening.", False,
+     "'He' — the reader has not met him yet"),
+    ("The official said the strikes would continue for several more days.", False,
+     "'The official' — which official?"),
+]
+
+
+def main():
+    fails = []
+    ran = [0]        # guard: every declared case MUST actually execute
+
+    print("\n=== CATEGORY ===")
+    for title, want, why in CATEGORY_CASES:
+        got = app._classify(title)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("category", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {got:9} (want {want:9}) {title[:44]}")
+
+    print("\n=== GEOLOCATION ===")
+    for title, desc, want, why in GEO_CASES:
+        r = app._geolocate(title, "", desc)
+        got = r[2] if r else None
+        ok = (want is None and got is None) or (want is not None and got is not None and want in got)
+        ran[0] += 1
+        if not ok:
+            fails.append(("geo", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:24]:26} (want {str(want)[:16]:18}) {title[:34]}")
+
+    print("\n=== FLUFF FILTER ===")
+    for title, url, want_drop, why in FLUFF_CASES:
+        got_drop = app._is_fluff(title, url)
+        ok = got_drop == want_drop
+        ran[0] += 1
+        if not ok:
+            fails.append(("fluff", title, want_drop, got_drop, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'DROP' if got_drop else 'KEEP'} (want {'DROP' if want_drop else 'KEEP'}) {title[:44]}")
+
+    print("\n=== GEOLOCATION (article URL as a country hint) ===")
+    for title, desc, url, want, why in GEO_URL_CASES:
+        r = app._geolocate(title, "", desc, url)
+        got = r[2] if r else None
+        if want.startswith("!"):          # this place must NOT be the answer
+            ok = got is None or want[1:] not in got
+        else:
+            ok = got is not None and want in got
+        ran[0] += 1
+        if not ok:
+            fails.append(("geo-url", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:26]:28} (want {want[:18]:20}) {title[:30]}")
+
+    print("\n=== CLIP RELEVANCE (does this clip belong to this story?) ===")
+    for ev, clip, want, why in CLIP_CASES:
+        got = app._clip_matches(ev, clip)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("clip", ev, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'ATTACH' if got else 'REJECT'} (want {'ATTACH' if want else 'REJECT'}) {clip[:40]}")
+
+    print("\n=== DEDUP (different events must stay separate) ===")
+    for a, b, same, why in DEDUP_CASES:
+        ka = app._sigwords(a) - app._GENERIC_WORDS
+        kb = app._sigwords(b) - app._GENERIC_WORDS
+        merged = len(ka & kb) >= 2          # the same-place/same-cat rule in world_events
+        ok = merged == same
+        ran[0] += 1
+        if not ok:
+            fails.append(("dedup", a, same, merged, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'MERGE' if merged else 'KEEP '} (want {'MERGE' if same else 'KEEP '}) shared={sorted(ka & kb)}")
+
+    print("\n=== SIMILARITY METER (same story from two sources = one dot) ===")
+    for a, b, same, why in SIM_CASES:
+        ta, tb = app._norm_tokens(a), app._norm_tokens(b)
+        dup = app._same_story(ta, tb)
+        shared = len(ta & tb)
+        sim = shared / (min(len(ta), len(tb)) or 1)
+        ok = dup == same
+        ran[0] += 1
+        if not ok:
+            fails.append(("similarity", a[:48], same, dup, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'DUP ' if dup else 'KEEP'} (want {'DUP ' if same else 'KEEP'}) shared={shared} sim={sim:.2f}")
+
+    print("\n=== STARRED COUNTRIES (FIPS lookup + name matching) ===")
+    for name, want in FIPS_CASES:
+        got = app._fips_for(name)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("fips", name, want, got, "GDELT sourcecountry: needs the FIPS code, not ISO"))
+        print(f"  {'ok ' if ok else 'FAIL'} {name:26} -> {got or '(unsupported)'}")
+    for a, b, want in CMATCH_CASES:
+        got = app._country_match(a, b)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("cmatch", f"{a} / {b}", want, got, "starred filter must accept naming variants"))
+        print(f"  {'ok ' if ok else 'FAIL'} {a} == {b} ? {got} (want {want})")
+
+    print("\n=== VERSION COMPARE (auto-update) ===")
+    for remote, local, want in VER_CASES:
+        got = app._is_newer(remote, local)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("version", f"{remote} vs {local}", want, got, "update must compare versions numerically"))
+        print(f"  {'ok ' if ok else 'FAIL'} {remote} newer than {local}? {got} (want {want})")
+
+    print("\n=== CURRENT LEADERS (name match + Factbook cross-check) ===")
+    for a, b, want in NAMEMATCH_CASES:
+        got = app._name_match(a, b)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("namematch", f"{a} / {b}", want, got, "a shared surname alone must not merge two people"))
+        print(f"  {'ok ' if ok else 'FAIL'} {a} == {b}? {got} (want {want})")
+    for cands, fb, want, why in LEADER_PICK_CASES:
+        got = app._pick_leader([dict(c) for c in cands], fb)
+        gotname = got["name"] if got else None
+        ok = gotname == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("leader", fb or "(none)", want, gotname, why))
+        print(f"  {'ok ' if ok else 'FAIL'} fb={str(fb) or '-':16} -> {gotname} (want {want})")
+    for raw, expname, exptitle in FB_PARSE_CASES:
+        nm, ti = app._fb_parse(raw)
+        ok = nm.startswith(expname) and ti == exptitle
+        ran[0] += 1
+        if not ok:
+            fails.append(("fbparse", raw[:40], f"{expname}/{exptitle}", f"{nm}/{ti}", "Factbook leader field must parse to name+title"))
+        print(f"  {'ok ' if ok else 'FAIL'} '{nm}' [{ti}]")
+    for na, qa, nb, qb, want in SAME_PERSON_CASES:
+        got = app._same_person(na, qa, nb, qb)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("sameperson", f"{na} / {nb}", want, got,
+                          "a shared surname alone must not merge two people; QIDs are authoritative"))
+        print(f"  {'ok ' if ok else 'FAIL'} same({na!r},{nb!r})={got} (want {want})")
+
+    # RESILIENCE: when Wikidata is rate-limited (429) and returns NOTHING, country_leaders must still
+    # return CLEAN Factbook names (never blank, never the garbled frontend fallback) — and must keep
+    # a distinct head of government (Saudi's MBS) rather than collapsing him into the King.
+    print("\n=== LEADERS RESILIENT TO WIKIDATA 429 (never blank / garbled again) ===")
+    _sa_fb = {"cos": "King and Prime Minister SALMAN bin Abd al-Aziz Al Saud (since 23 January 2015)",
+              "hog": "Crown Prince and Prime Minister MUHAMMAD BIN SALMAN Al Saud (since 27 September 2022)"}
+    _oe, _os = app._wd_entities, app._wd_search_person
+    try:
+        app._wd_entities = lambda *a, **k: {}          # simulate HTTP 429 — Wikidata gives nothing
+        app._wd_search_person = lambda *a, **k: None
+        _r = app.Api().country_leaders("Q99999901", "Saudi Arabia", _sa_fb)
+    finally:
+        app._wd_entities, app._wd_search_person = _oe, _os
+    _names = [L.get("name", "") for L in _r.get("leaders", [])]
+    _clean = len(_names) == 2 and all(_names) and not any("crown salman" in n.lower() for n in _names)
+    ran[0] += 1
+    if not _clean:
+        fails.append(("leaders-429", "Saudi Arabia", "King + MBS, clean names", str(_names),
+                      "a rate-limited fetch must fall back to clean Factbook names, keeping a distinct head of government"))
+    print(f"  {'ok ' if _clean else 'FAIL'} rate-limited Saudi -> {_names}")
+    for labs, want in LEAN_CASES:
+        got = app._lean_from_alignments(labs)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("lean", str(labs)[:36], want, got, "ruling-party alignment must map to a left-right score"))
+        print(f"  {'ok ' if ok else 'FAIL'} {str(labs)[:34]:36} -> {got} (want {want})")
+
+    print("\n=== CO-LOCATION COLLAPSE (one dot per place; keep the severest) ===")
+    for events, want_n, want_cat, why in COLLAPSE_CASES:
+        kept = app._collapse_colocated([dict(e) for e in events])
+        ok = len(kept) == want_n and (want_cat is None or (kept and kept[0]["cat"] == want_cat))
+        ran[0] += 1
+        if not ok:
+            fails.append(("collapse", events[0]["title"], f"{want_n}/{want_cat}",
+                          f"{len(kept)}/{kept[0]['cat'] if kept else '-'}", why))
+        print(f"  {'ok ' if ok else 'FAIL'} {len(kept)} kept (want {want_n}) {events[0]['title'][:34]}")
+
+    print("\n=== CLIP OWNERSHIP (one clip belongs to one dot; token-stable id) ===")
+    ran[0] += 1
+    if not _clip_assignment_ok():
+        fails.append(("clip-owner", "assignment", "owned by best story", "mismatch",
+                      "a clip must have a token-stable id and be assigned to its single best dot"))
+    print(f"  {'ok ' if _clip_assignment_ok() else 'FAIL'} clip assigned to its best-matching story")
+
+    print("\n=== SHARPEN (wire copy -> the fact in the first words) ===")
+    for raw, want, why in SHARPEN_CASES:
+        got = app._sharpen(raw)
+        ok = got.startswith(want)
+        ran[0] += 1
+        if not ok:
+            fails.append(("sharpen", raw[:48], want, got[:48], why))
+        print(f"  {'ok ' if ok else 'FAIL'} {got[:62]}")
+
+    print("\n=== LEAD STANDS ALONE ===")
+    for raw, want, why in STANDALONE_CASES:
+        got = app._standalone(app._sharpen(raw))
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("standalone", raw[:48], want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'LEAD' if got else 'no  '} {raw[:54]}")
+
+    print("\n=== WIRE CHATTER (drop admin greetings/sign-offs; keep real news) ===")
+    for text, want_drop, why in CHATTER_CASES:
+        got = app._tg_is_chatter(text)
+        ok = got == want_drop
+        ran[0] += 1
+        if not ok:
+            fails.append(("chatter", text[:48], want_drop, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'DROP' if got else 'KEEP'} (want {'DROP' if want_drop else 'KEEP'}) {text[:44]}")
+
+    print("\n=== TERSE STRIKE CLASSIFICATION (firehose posts -> security, no false positives) ===")
+    for title, want, why in CLASSIFY_STRIKE_CASES:
+        got = app._classify(title)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("classify-strike", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {got:9} (want {want:9}) {title[:38]}")
+
+    print("\n=== TELEGRAM HEADLINES (never cut mid-word; always Capitalised) ===")
+    for raw, check, why in HEADLINE_CASES:
+        h = app._tg_headline(raw)
+        if check == "no_midword":
+            core = h.rstrip("… ").rstrip()
+            last = core.split()[-1].strip(".,;:!?\"'“”") if core.split() else ""
+            got = bool(last) and re.search(r"\b" + re.escape(last) + r"\b", raw) is not None
+        elif check == "has_content":            # a lead-in ("<name>:") is not a headline
+            got = not h.rstrip().endswith(":") and len(h.split()) >= 6
+        else:                                   # "capitalised"
+            got = bool(h) and h[0].isupper()
+        ran[0] += 1
+        if not got:
+            fails.append(("headline", raw[:60], check, h[:60], why))
+        print(f"  {'ok ' if got else 'FAIL'} {check:12} {h[:52]}")
+
+    print("\n=== CLEAN HEADLINE (strip ' - Outlet', never a compound word) ===")
+    for raw, want, why in CLEAN_HEADLINE_CASES:
+        got = app._clean_headline(raw)
+        if want.startswith("!"):                 # this substring must be GONE
+            ok = want[1:] not in got
+        else:                                     # this substring must SURVIVE
+            ok = want in got
+        ran[0] += 1
+        if not ok:
+            fails.append(("clean-headline", raw[:56], want, got[:56], why))
+        print(f"  {'ok ' if ok else 'FAIL'} {got[:60]}")
+
+    print("\n=== DATELINE (the wire states the event location first) ===")
+    for title, desc, want, why in DATELINE_CASES:
+        r = app._geolocate(title, "", desc)
+        got = r[2] if r else None
+        ok = got is not None and want in got
+        ran[0] += 1
+        if not ok:
+            fails.append(("dateline", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:24]:26} (want {want[:14]:16}) {title[:32]}")
+
+    print("\n=== TELEGRAM MEDIA (the wire's own photos must actually be extracted) ===")
+    for raw, want in CSS_URL_CASES:
+        got = app._css_url(raw)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("media", raw, want, got,
+                          "the scraper only accepted &#39; — so a PLAIN-quoted url() found nothing, "
+                          "and every Telegram album was scraped as 'no media'"))
+        print(f"  {'ok ' if ok else 'FAIL'} {raw[:40]:42} -> {got[:36]}")
+
+    print("\n=== MEDIA DEDUP (never the same file twice under one story) ===")
+    for urls, want, why in MEDIA_DEDUP_CASES:
+        seen, kept = set(), []
+        for u in urls:                       # mirrors _push() in Api.event_media
+            if u and u not in seen:
+                seen.add(u)
+                kept.append(u)
+        ok = len(kept) == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("media-dedup", str(urls)[:60], want, len(kept), why))
+        print(f"  {'ok ' if ok else 'FAIL'} {len(urls)} in -> {len(kept)} out (want {want})")
+
+    print("\n=== FLAGS (who is a PARTY to the event — not who a victim happened to be) ===")
+    for title, country, want, why in FLAG_CASES:
+        got = app._involved_countries(title, country)
+        ok = got == want
+        ran[0] += 1
+        if not ok:
+            fails.append(("flags", title, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:34]:36} (want {str(want)[:24]:26}) {title[:28]}")
+
+    total = (len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+             + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
+             + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
+             + len(SAME_PERSON_CASES) + 1
+
+             + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES)
+             + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
+             + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
+             + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1)
+    print("\n" + "=" * 70)
+    # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
+    # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
+    # the total, printed as "PASSED", and NEVER RUN. A test that does not run is worse than no test:
+    # it reports safety it is not providing.
+    if ran[0] != total:
+        print(f"HARNESS BUG: {total} cases declared, but only {ran[0]} actually executed.")
+        print("A declared case list has no loop running it. Do not trust this run.")
+        return 1
+    if fails:
+        print(f"{len(fails)} of {total} FAILED:\n")
+        for kind, title, want, got, why in fails:
+            print(f"  [{kind}] {title[:60]}")
+            print(f"        wanted {want!r}, got {got!r}")
+            print(f"        this case exists because: {why}\n")
+        return 1
+    print(f"ALL {total} PASSED  (category / geo / dateline / headline / fluff / dedup / clips / flags)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+# Runtime + build dependencies for Meridian's Windows build.
+# Pinned to the versions the shipping v1.1.0 exe was built with, so a cloud (GitHub Actions)
+# build reproduces the local one. stdlib-only modules aren't listed.
+#
+#   pip install -r requirements.txt
+#
+pywebview==6.2.1        # desktop shell (WebView2)
+Pillow==12.2.0          # image processing (hero crops, icon)
+yt-dlp==2026.6.9        # video/clip extraction
+pyinstaller==6.21.0     # builds Meridian.exe
+# NOTE: spaCy is intentionally omitted — it's a lazy, optional import and is not bundled into the exe,
+# so the app runs on its regex fallback. Add spacy + `python -m spacy download en_core_web_sm` +
+# `--collect-all spacy` in build_exe.ps1 only if you decide to ship on-device NER.

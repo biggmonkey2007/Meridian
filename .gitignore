@@ -1,0 +1,37 @@
+# =====================================================================
+#  SECRETS — never commit. Telegram session/creds, API keys, anything private.
+#  (If you add a new secret file, add its name here BEFORE the next commit.)
+# =====================================================================
+*.session
+tg_session*
+telegram_api.txt
+telegram*.txt
+*_api.txt
+*.key
+*secret*
+gemini*.txt
+.env
+.env.*
+
+# ---- local runtime data / per-user config (belongs in %LOCALAPPDATA%\Meridian, not the repo) ----
+channels.txt
+cache/
+update/
+webview/
+*.lnk
+
+# ---- build artifacts ----
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# ---- editor / OS / tooling ----
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
