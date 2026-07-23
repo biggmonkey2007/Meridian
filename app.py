@@ -1364,24 +1364,25 @@ class Api:
         run synchronously only on a cold start, and in a background thread by stale-while-revalidate."""
         cache = os.path.join(CACHE_DIR, "world_%dh.json" % h)
         span = "%dh" % h
-        # fetch GDELT and the RSS feeds in parallel, then merge (dedup handles overlap)
+        # Fetch GDELT, the RSS feeds, and the OSINT Telegram channels ALL AT ONCE, capped by a SINGLE
+        # deadline. The old code awaited GDELT then feeds with separate timeouts (worst case 12s+16s
+        # stacked) and only then fetched Telegram sequentially — so a slow source stretched cold start
+        # badly. Now whatever is ready by the deadline is used; stragglers finish in the background and
+        # are simply dropped from this build (the next 15-min rebuild picks them up).
         arts = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _ex:
-            _fg = _ex.submit(_gdelt_doc, COMBINED_QUERY, span, 250)
-            _ff = _ex.submit(_collect_feeds)
-            try:
-                arts += _fg.result(timeout=12) or []
-            except Exception:
-                pass
-            try:
-                arts += _ff.result(timeout=16) or []
-            except Exception:
-                pass
-        # OSINT Telegram channels — fast, on-the-ground; any post that names a place becomes a dot
+        _ex = concurrent.futures.ThreadPoolExecutor(max_workers=3)
         try:
-            arts += _tg_arts(h)
-        except Exception:
-            pass
+            futs = [_ex.submit(_gdelt_doc, COMBINED_QUERY, span, 250),
+                    _ex.submit(_collect_feeds),
+                    _ex.submit(_tg_arts, h)]
+            done, _pending = concurrent.futures.wait(futs, timeout=16)
+            for fut in done:
+                try:
+                    arts += fut.result() or []
+                except Exception:
+                    pass
+        finally:
+            _ex.shutdown(wait=False)          # don't block on a straggler; its socket timeouts bound it
         events, seen_urls, seen_titles, added_sigs = [], set(), set(), []
         # Freshest first, so the per-category caps keep the NEWEST stories. Previously the caps were
         # first-come-first-served, and a 1h-old strike on the Tver oil depot was silently dropped
@@ -4406,6 +4407,23 @@ def _resolve(gram, mentions):
     return cands[0] + (False,)
 
 
+_GAZ_STARTS = None
+
+
+def _gaz_starts():
+    """First token of every gazetteer key (countries, demonyms, cities). A word that starts no key can
+    start no matching n-gram, so the scanner skips it. Built once, lazily, after the gazetteers load."""
+    global _GAZ_STARTS
+    if _GAZ_STARTS is None:
+        s = set()
+        for d in (COUNTRY_ALIASES, DEMONYMS, CITY_CANDS):
+            for k in d:
+                sp = k.find(" ")
+                s.add(k if sp < 0 else k[:sp])
+        _GAZ_STARTS = s
+    return _GAZ_STARTS
+
+
 def _scan_places(text, spans, mentions):
     """Gazetteer n-gram scan (longest match first), NER veto on city hits, context-aware resolution."""
     toks = [(mm.group(0), mm.start(), mm.end()) for mm in re.finditer(r"[A-Za-z0-9]+", _fold(text or ""))]
@@ -4413,7 +4431,15 @@ def _scan_places(text, spans, mentions):
     orig = [t[0] for t in toks]
     n = len(words)
     hits, i = [], 0
+    starts = _gaz_starts()
     while i < n:
+        # FAST SKIP: no gram starting at words[i] can resolve unless words[i] begins some gazetteer key
+        # (or is the plural of a demonym, e.g. "indians"->"indian"). Skipping the ~80% of tokens that are
+        # ordinary words ("the", "said", "attack") turns the n-gram scan from 14 ms/article to a fraction.
+        w = words[i]
+        if w not in starts and not (len(w) > 4 and w.endswith("s") and w[:-1] in starts):
+            i += 1
+            continue
         got = None
         for size in (5, 4, 3, 2, 1):
             if i + size > n:
@@ -4766,10 +4792,15 @@ def _dateline_place(desc, mentions):
     return r if (r and r[0] == "city") else None
 
 
+@functools.lru_cache(maxsize=4096)
 def _geolocate(title, sourcecountry, desc="", url=""):
     """Best location for an event. Context (other countries named + the article's own section) decides
     between readings of an ambiguous name. If the headline names nowhere we read the story's summary
-    before ever falling back to the outlet's home country."""
+    before ever falling back to the outlet's home country.
+
+    Memoized: an article's inputs don't change between the 15-min rebuilds, so re-geolocation is free
+    after the first pass. The result is a plain tuple/None (deterministic — depends only on the static
+    gazetteer), so caching is safe. Restart clears it, which is exactly what we want after a logic fix."""
     title = title or ""
     mentions = _context_mentions(title + " " + (desc or ""), url)
     dl = _dateline_place(desc, mentions)
