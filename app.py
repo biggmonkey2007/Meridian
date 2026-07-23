@@ -4490,6 +4490,24 @@ def _scan_places(text, spans, mentions):
                     if (_run3 or _prevw in _NAME_VERBS) and _o1[:1].isupper() \
                             and words[i + 1] not in CITY_CANDS and words[i + 1] not in COUNTRY_ALIASES:
                         continue
+                # A small/mid town that is ALSO a personal name ("NANCY Pelosi", "Abrego GARCIA",
+                # "Secretary RUBIO") is the PERSON, not the place, when a capitalised NON-place word sits
+                # right beside it and nothing locates it. Real metros (>=150k) are protected, and a
+                # preposition or a neighbouring place in front keeps the city. This is the surname guard
+                # generalised past the tiny "weak" list — it fixes Garcia/Rubio/Nancy dotting
+                # Mexico/Venezuela/France on serious US news, where NER would have vetoed the name.
+                if prior < 150000 and not located_here:
+                    _is_person = False
+                    for j in (i - 1, i + size):
+                        if 0 <= j < n and orig[j][:1].isupper():
+                            wj = words[j]
+                            if (wj not in _GEO_PREP and wj not in _GEO_ACTION and wj not in CITY_CANDS
+                                    and wj not in COUNTRY_ALIASES and wj not in DEMONYMS
+                                    and wj not in _DIRECTIONS):
+                                _is_person = True
+                                break
+                    if _is_person:
+                        continue
                 nxt = words[i + size] if i + size < n else ""
                 prv = words[i - 1] if i > 0 else ""
                 if nxt in _PERSON_VERBS and prv not in _GEO_PREP and prv not in _GEO_ACTION:

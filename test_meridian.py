@@ -106,6 +106,15 @@ GEO_CASES = [
      "the rocket is North Korean but was recovered IN South Korea"),
     ("Iran's drone shot down over Iraq", "", "Iraq",
      "possessive weapon origin (\"Iran's drone\") must not beat the airspace it was downed over"),
+    # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
+    # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
+    ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",
+     "SHIPPED BUG: surname 'Garcia' dotted Garcia, Mexico over the US he returns to"),
+    ("Nancy Pelosi and 197 Democrats voted against the Stop Insider Trading act", "", "United States",
+     "SHIPPED BUG: forename 'Nancy' dotted Nancy, France — she is a US legislator"),
+    # ...but the town is KEPT when the sentence actually locates it there (preposition = real place).
+    ("Fierce fighting reported in Bakhmut as Russian forces advance", "", "Bakhmut",
+     "a real small-town scene with a locational preposition must NOT be vetoed as a name"),
     # 'Georgia' is a US state AND a country — a named national leader puts their country in context so it
     # resolves at home.
     ("President Trump in Georgia: people trying to bring in drugs by sea are the bravest in history", "",
