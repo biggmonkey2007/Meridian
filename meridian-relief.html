@@ -2284,7 +2284,7 @@ function drawDots(){
 // (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
 function spreadLngLat(clng, clat, idx, k){
   if(k < 2) return [clng, clat];
-  const D = 0.013, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even angular spacing
+  const D = 0.018, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even angular spacing
   const dLng = (Math.cos(ang) * rad) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
   return [clng + dLng, clat + Math.sin(ang) * rad];
 }
