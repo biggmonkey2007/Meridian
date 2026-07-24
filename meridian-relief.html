@@ -1554,7 +1554,6 @@ function initMap(){
 
   map.on("zoomend", updateLabelZoom);
   map.on("zoomend moveend move", schedulePrefetch);   // warm the ring around the view, as you move
-  map.on("zoomend", layoutDots);                        // re-fan the dot piles once the zoom settles
   map.whenReady(schedulePrefetch);
   setTimeout(warmWorldBaseline, 1500);                // lay down the whole-world low-zoom backdrop once the visible tiles are in
   map.on("click", e=>{
@@ -2276,49 +2275,31 @@ function drawDots(){
   updateLegendCounts();
   layoutDots();
 }
-/* When zoomed out, many dots at (or near) the same place stack into what looks like ONE dot. Rather than
-   a count, we FAN the pile out a little — a tight phyllotaxis spiral around the pile's centre — so the
-   dots still overlap but you can clearly see there are several. At high zoom the dots separate on their
-   own, so nothing fans. Positions are pixel-based, so they're recomputed on every draw and on zoom. */
-// Group events whose SCREEN positions fall within THRESH px of each other, at whatever zoom we're at.
-// `project` returns {x,y} pixels for a dot — Leaflet and MapLibre give it differently, so the caller
-// passes the right one, and this one function serves both maps.
-function clusterDots(events, project){
-  const THRESH = 18, clusters = [];
-  events.forEach(d=>{
-    let p; try{ p = project(d); }catch(e){ return; }
-    if(!p) return;
-    let c = null;
-    for(const cl of clusters){ if(Math.abs(p.x-cl.cx)<THRESH && Math.abs(p.y-cl.cy)<THRESH){ c = cl; break; } }
-    if(c){ c.items.push(d); c.sx+=p.x; c.sy+=p.y; c.cx=c.sx/c.items.length; c.cy=c.sy/c.items.length; }
-    else clusters.push({ cx:p.x, cy:p.y, sx:p.x, sy:p.y, items:[d] });
-  });
-  return clusters;
-}
-// Pixel offset for the idx-th dot of a pile of k, in a golden-angle spiral. Step ≈ dot radius, so dots
-// overlap ~half — enough to read "several here" without scattering them. Shared by flat map and globe.
-function spreadOffset(idx, k, r, zoom){
-  if(k < 2) return [0, 0];
-  // Tight when zoomed OUT — the pile stays basically stacked, only the outer few dots peek at the edges.
-  // The fan OPENS as you zoom IN, so a city's stories separate out instead of staying a shrunken clump.
-  const zk = Math.min(7, Math.pow(1.45, Math.max(0, (zoom || 5) - 5)));
-  const step = Math.max(2.5, r * 0.14) * zk, rad = step * Math.sqrt(idx);
-  const ang = idx * 2.399963;                          // ~137.5° — even angular spacing
-  return [Math.cos(ang) * rad, Math.sin(ang) * rad];
+/* When many dots share a place they stack into what looks like ONE dot. We FAN the pile out with a tiny
+   golden-angle spiral so you can see there are several — tight when zoomed out, spreading apart as you
+   zoom in (so you can click the one you want). The offsets are GEOGRAPHIC (fixed), so panning never moves
+   them; clustering is by actual location (clusterByGeo), so rotation never regroups them either. */
+// A dot's fixed GEOGRAPHIC offset within its pile (returns [lng, lat]) — a golden-angle spiral measured
+// in DEGREES, not pixels. So the pile is tight when zoomed out and genuinely SPREADS OUT as you zoom in
+// (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
+function spreadLngLat(clng, clat, idx, k){
+  if(k < 2) return [clng, clat];
+  const D = 0.013, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even angular spacing
+  const dLng = (Math.cos(ang) * rad) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
+  return [clng + dLng, clat + Math.sin(ang) * rad];
 }
 // Reposition the existing dot markers: singletons at their true spot, piles fanned around the centroid.
 function layoutDots(){
   if(!mapReady || !map || !eventMarkers.length) return;
   const byId = {}; eventMarkers.forEach(m=> byId[m.id] = m);
-  const z = map.getZoom();
-  const clusters = clusterDots(eventMarkers.map(m=>m.d), d=> map.latLngToLayerPoint([d.lat,d.lng]));
-  clusters.forEach(cl=>{
+  clusterByGeo(eventMarkers.map(m=>m.d), 0.25).forEach(cl=>{
     const k = cl.items.length;
+    let clat=0, clng=0; cl.items.forEach(d=>{ clat+=d.lat; clng+=d.lng; }); clat/=k; clng/=k;
     cl.items.forEach((d, idx)=>{
       const m = byId[d.id]; if(!m) return;
       if(k < 2){ m.marker.setLatLng([d.lat, d.lng]); return; }
-      const o = spreadOffset(idx, k, baseR(d), z);
-      m.marker.setLatLng(map.layerPointToLatLng([cl.cx + o[0], cl.cy + o[1]]));
+      const c = spreadLngLat(clng, clat, idx, k);        // [lng, lat] — fixed, so it spreads on zoom-in
+      m.marker.setLatLng([c[1], c[0]]);
     });
   });
 }
@@ -2374,22 +2355,11 @@ function clusterByGeo(events, tol){
   });
   return cl;
 }
-// The pile fan baked into FIXED geographic coordinates (not screen pixels), so a dot never shifts when
-// you rotate the globe — it just rotates with it. degPerPx keeps the on-screen size matching the pixel
-// fan at the current zoom, so it still opens up as you zoom in.
-function globeSpread(clng, clat, idx, k, r, zoom){
-  if(k < 2) return [clng, clat];
-  const o = spreadOffset(idx, k, r, zoom);
-  const degPerPx = 360 / (512 * Math.pow(2, zoom));
-  const dLng = (o[0] * degPerPx) / Math.max(0.2, Math.cos(clat * Math.PI/180));
-  return [clng + dLng, clat - o[1] * degPerPx];
-}
 function globeEventsGeo(){
   const evs = visibleEvents();
   const prop = e => ({ id:e.id, cat:e.cat, heat:e.heat||4, read: isRead(e)?1:0, r: Math.round(baseR(e)*0.5*10)/10 });
   let feats = [];
   if(mlMap && mlLoaded){
-    const z = mlMap.getZoom();
     // A dot is visible iff its screen point unprojects back to itself; a far-side dot fails this (its
     // point maps to a different, front location), so it's dropped — you never see a dot for a place you
     // can't see. Because the positions are geographic (fixed), this filter only fades dots in/out at the
@@ -2403,7 +2373,7 @@ function globeEventsGeo(){
       const k = cl.items.length;
       let clng=0, clat=0; cl.items.forEach(e=>{ clng+=e.lng; clat+=e.lat; }); clng/=k; clat/=k;
       cl.items.forEach((e, idx)=>{
-        const c = globeSpread(clng, clat, idx, k, baseR(e), z);
+        const c = spreadLngLat(clng, clat, idx, k);      // fixed geographic fan; spreads on zoom-in
         if(visible(c[0], c[1])) feats.push({ type:"Feature", geometry:{type:"Point",coordinates:c}, properties:prop(e) });
       });
     });
