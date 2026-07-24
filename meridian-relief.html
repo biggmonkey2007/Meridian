@@ -1553,7 +1553,6 @@ function initMap(){
   addCountrySources();
 
   map.on("zoomend", updateLabelZoom);
-  map.on("zoomend", layoutDots);                        // the pile fan depends on zoom (pixel floor) — re-fan on zoom
   map.on("zoomend moveend move", schedulePrefetch);   // warm the ring around the view, as you move
   map.whenReady(schedulePrefetch);
   setTimeout(warmWorldBaseline, 1500);                // lay down the whole-world low-zoom backdrop once the visible tiles are in
@@ -2283,28 +2282,26 @@ function drawDots(){
 // A dot's fixed GEOGRAPHIC offset within its pile (returns [lng, lat]) — a golden-angle spiral measured
 // in DEGREES, not pixels. So the pile is tight when zoomed out and genuinely SPREADS OUT as you zoom in
 // (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
-function spreadLngLat(clng, clat, idx, k, zoom){
+function spreadLngLat(clng, clat, idx, k){
   if(k < 2) return [clng, clat];
-  // A tight, CONSTANT on-screen fan (~3px steps) — the dots heavily overlap with only the outer few
-  // peeking out, so a pile reads as "several here" without scattering. It's the same size at every zoom
-  // (computed from pixels-per-degree), so it never collapses to one dot and never blows out into a blob.
-  const pxPerDeg = 512 * Math.pow(2, (zoom == null ? 4 : zoom)) / 360;
-  const rDeg = (3.2 / pxPerDeg) * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even spacing
-  const dLng = (Math.cos(ang) * rDeg) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
-  return [clng + dLng, clat + Math.sin(ang) * rDeg];
+  // A FIXED geographic fan (offsets in degrees), so the pile is tight when zoomed out and genuinely
+  // SPREADS APART the more you zoom in (the map just reprojects the fixed points) — that's how you get to
+  // click the one you want. It never shifts when you pan/rotate, because the coordinates are fixed.
+  const D = 0.014, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even spacing
+  const dLng = (Math.cos(ang) * rad) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
+  return [clng + dLng, clat + Math.sin(ang) * rad];
 }
 // Reposition the existing dot markers: singletons at their true spot, piles fanned around the centroid.
 function layoutDots(){
   if(!mapReady || !map || !eventMarkers.length) return;
   const byId = {}; eventMarkers.forEach(m=> byId[m.id] = m);
-  const z = map.getZoom();
   clusterByGeo(eventMarkers.map(m=>m.d), 0.25).forEach(cl=>{
     const k = cl.items.length;
     let clat=0, clng=0; cl.items.forEach(d=>{ clat+=d.lat; clng+=d.lng; }); clat/=k; clng/=k;
     cl.items.forEach((d, idx)=>{
       const m = byId[d.id]; if(!m) return;
       if(k < 2){ m.marker.setLatLng([d.lat, d.lng]); return; }
-      const c = spreadLngLat(clng, clat, idx, k, z);     // [lng, lat]
+      const c = spreadLngLat(clng, clat, idx, k);        // [lng, lat] — fixed, so it spreads on zoom-in
       m.marker.setLatLng([c[1], c[0]]);
     });
   });
@@ -2375,12 +2372,11 @@ function globeEventsGeo(){
       try{ sp = mlMap.project([lng, lat]); bk = mlMap.unproject([sp.x, sp.y]); }catch(_){ return false; }
       return _angDist(lng, lat, bk.lng, bk.lat) < 1.5;
     };
-    const z = mlMap.getZoom();
     clusterByGeo(evs, 0.25).forEach(cl=>{
       const k = cl.items.length;
       let clng=0, clat=0; cl.items.forEach(e=>{ clng+=e.lng; clat+=e.lat; }); clng/=k; clat/=k;
       cl.items.forEach((e, idx)=>{
-        const c = spreadLngLat(clng, clat, idx, k, z);   // pixel floor + geographic; opens up on zoom-in
+        const c = spreadLngLat(clng, clat, idx, k);      // fixed geographic fan; spreads on zoom-in
         if(visible(c[0], c[1])) feats.push({ type:"Feature", geometry:{type:"Point",coordinates:c}, properties:prop(e) });
       });
     });
