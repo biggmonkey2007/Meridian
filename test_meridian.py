@@ -130,6 +130,8 @@ GEO_CASES = [
      "'Gaza strikes' (strikes as a NOUN) is still the scene Gaza, not sunk as an attacker"),
     ("Russia strikes Ukrainian port of Odesa", "", "Odesa",
      "the attacker (Russia) sinks; the struck Ukrainian port is the scene"),
+    ("Why Iran's Pickaxe Mountain is a tough target for the US", "", "Pickaxe Mountain",
+     "a named nuclear site (Pickaxe Mountain / Kuh-e Kolang Gaz La by Natanz) plots THERE, not the country centroid"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",

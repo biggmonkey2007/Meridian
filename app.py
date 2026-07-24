@@ -3503,6 +3503,9 @@ _FACILITIES = {
     "shuwaikh port": (29.350, 47.930, "Kuwait"), "al udeid air base": (25.117, 51.315, "Qatar"),
     "ain al asad": (33.785, 42.441, "Iraq"), "muwaffaq salti air base": (32.356, 36.259, "Jordan"),
     "natanz": (33.724, 51.727, "Iran"), "fordow": (34.885, 50.993, "Iran"),
+    # "Pickaxe Mountain" (Kuh-e Kolang Gaz La) — the deep tunnel enrichment complex just south of Natanz.
+    "pickaxe mountain": (33.647, 51.729, "Iran"), "kuh-e kolang gaz la": (33.647, 51.729, "Iran"),
+    "kolang gaz la": (33.647, 51.729, "Iran"),
     "kharg island": (29.231, 50.324, "Iran"), "bandar abbas": (27.183, 56.277, "Iran"),
     "ras tanura": (26.644, 50.158, "Saudi Arabia"), "abqaiq": (25.934, 49.671, "Saudi Arabia"),
     "haifa port": (32.826, 35.001, "Israel"), "dimona": (31.070, 35.033, "Israel"),
