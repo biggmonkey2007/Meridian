@@ -106,6 +106,17 @@ GEO_CASES = [
      "the rocket is North Korean but was recovered IN South Korea"),
     ("Iran's drone shot down over Iraq", "", "Iraq",
      "possessive weapon origin (\"Iran's drone\") must not beat the airspace it was downed over"),
+    # Common words / partial names that were landing dots on tiny same-named US/UK towns.
+    ("Major fire after Ukrainian strike on St Petersburg warehouse", "", "Saint Petersburg",
+     "SHIPPED BUG: 'St Petersburg' fell to Petersburg, Virginia — St must normalise to Saint (Russia)"),
+    ("China's largest memory chipmaker sparks fears of a cash drain", "", "China",
+     "SHIPPED BUG: 'sparks fears' dotted Sparks, Nevada — it's a verb here, not a place"),
+    ("University courses covering Israel-Palestine should be audited", "", "Israel",
+     "SHIPPED BUG: 'University' dotted University, Florida — a generic word, never that town"),
+    ("Protest at the University of Tehran turns violent", "", "Tehran",
+     "the University OF TEHRAN is in Tehran, not the town University, Florida"),
+    ("Explosion reported in Sparks, Nevada overnight", "", "Sparks",
+     "...but a real Sparks dot is KEPT when the sentence actually locates something there"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",

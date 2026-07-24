@@ -3355,6 +3355,14 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
                    # or proper-noun phrase.
                    "save", "america", "liberty", "freedom", "surprise", "protection", "security",
                    "opportunity", "prosperity", "accountability", "unity", "aurora", "energy"}
+# Words GeoNames lists as MID-SIZE towns (so they slip past the "weak" guards) but which in a headline
+# are a generic noun. "University" is essentially NEVER the town University, Florida — even "at the
+# University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
+_NEVER_CITY_WORDS = {"university"}
+# These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
+# dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
+# Sparks, Nevada; "BRENT crude" -> Brent, London.
+_NOT_CITY_WORDS = {"sparks", "brent"}
 _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "silicon valley": (37.387, -122.058, "United States of America"),
     "wall street": (40.706, -74.009, "United States of America"),
@@ -4460,6 +4468,10 @@ def _label_for(gram, country):
 def _resolve(gram, mentions):
     """Every reading of a name, scored. CONTEXT decides: 'Georgia' in a story that is otherwise about
     the US is the state; on its own it is the country. Returns (kind, lat, lng, country, label, prior)."""
+    # "St Petersburg" / "St. Louis" — the gazetteer stores the full "Saint" form, so an unnormalised
+    # "St X" fell through to a tiny same-named US town (Petersburg, Virginia). Normalise the abbreviation.
+    if (gram[:3] == "st " or gram[:4] == "st. ") and ("saint " + gram.split(" ", 1)[1]) in CITY_CANDS:
+        gram = "saint " + gram.split(" ", 1)[1]
     cands = []
     co = COUNTRY_ALIASES.get(gram)
     if co and co in COUNTRY_COORDS:
@@ -4556,6 +4568,12 @@ def _scan_places(text, spans, mentions):
                 if _ner_vetoes(spans, cs, ce, weak, supported, located_here):
                     continue
                 if weak and (gram in _BAD_CITY_NAMES or not orig[i][:1].isupper()):
+                    continue
+                # "University" is never the town University, Florida. "Sparks"/"Brent" are real cities but
+                # usually a verb / oil benchmark — a dot only when the sentence locates something there.
+                if gram in _NEVER_CITY_WORDS:
+                    continue
+                if gram in _NOT_CITY_WORDS and not located_here:
                     continue
                 # SURNAME GUARD. NER is not a safety net — it simply MISSED "Jamieson Greer"
                 # (tagged nothing), so the gazetteer happily read the surname as Greer, South
