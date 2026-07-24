@@ -2299,7 +2299,7 @@ function clusterDots(events, project){
 // overlap ~half — enough to read "several here" without scattering them. Shared by flat map and globe.
 function spreadOffset(idx, k, r){
   if(k < 2) return [0, 0];
-  const step = Math.max(5, r * 0.52), rad = step * Math.sqrt(idx);
+  const step = Math.max(3, r * 0.26), rad = step * Math.sqrt(idx);   // tight — dots heavily overlap, just readable
   const ang = idx * 2.399963;                          // ~137.5° — even, non-overlapping angular spacing
   return [Math.cos(ang) * rad, Math.sin(ang) * rad];
 }
