@@ -429,6 +429,13 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .mk.mk-live .mk-core{box-shadow:0 0 0 2px #fff,0 0 0 3.6px #C0392B}
 /* a dot from a STARRED country wears a subtle gold ring so you can tell it's your pinned feed, not a top story */
 .mk.mk-star .mk-core{box-shadow:0 0 0 1.6px #fff,0 0 0 3.2px rgba(224,169,42,.92),0 1px 4px rgba(20,30,45,.5)}
+/* subtle count on a pile of overlapping dots when zoomed out — tells you "many stories here", cleanly */
+.cluster-badge-wrap{background:none!important;border:0!important}
+.cluster-badge{font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#fff;
+  background:rgba(20,28,42,.82);border:1px solid rgba(255,255,255,.35);border-radius:999px;
+  padding:1.5px 5px;min-width:9px;text-align:center;white-space:nowrap;pointer-events:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.35);letter-spacing:.2px}
+@media (prefers-color-scheme: light){ .cluster-badge{background:rgba(30,40,58,.88)} }
 
 /* strait & port markers */
 .wm{display:flex;align-items:center;gap:5px;pointer-events:none;white-space:nowrap}
@@ -1554,6 +1561,8 @@ function initMap(){
 
   map.on("zoomend", updateLabelZoom);
   map.on("zoomend moveend move", schedulePrefetch);   // warm the ring around the view, as you move
+  map.on("zoomstart", ()=>{ if(clusterLayer) clusterLayer.clearLayers(); });   // hide counts mid-zoom
+  map.on("zoomend moveend", updateClusterBadges);      // re-cluster the count badges once it settles
   map.whenReady(schedulePrefetch);
   setTimeout(warmWorldBaseline, 1500);                // lay down the whole-world low-zoom backdrop once the visible tiles are in
   map.on("click", e=>{
@@ -2273,6 +2282,35 @@ function drawDots(){
   if(globeMode) updateGlobeData();
   buildBriefing();
   updateLegendCounts();
+  updateClusterBadges();
+}
+/* When zoomed out, many dots at (or near) the same place stack into what looks like ONE dot. Drop a
+   small, subtle count on each such pile so you can see there are, say, 14 stories on Kyiv — not one.
+   The badge is non-interactive (clicks fall through to the dots) and lives in its own layer, rebuilt on
+   every draw/zoom/pan. At high zoom the dots separate on their own, so no pile forms and no badge shows. */
+let clusterLayer = null;
+function updateClusterBadges(){
+  if(!mapReady || !map) return;
+  if(!clusterLayer){ try{ clusterLayer = L.layerGroup().addTo(map); }catch(e){ return; } }
+  clusterLayer.clearLayers();
+  let pts;
+  try{ pts = visibleEvents().map(d=>({ d, p: map.latLngToLayerPoint([d.lat,d.lng]) })); }catch(e){ return; }
+  const THRESH = 20;                                  // px: dots closer than this read as one pile
+  const clusters = [];
+  pts.forEach(pt=>{
+    let c = null;
+    for(const cl of clusters){ if(Math.abs(pt.p.x-cl.cx)<THRESH && Math.abs(pt.p.y-cl.cy)<THRESH){ c = cl; break; } }
+    if(c){ c.items.push(pt.d); c.sx+=pt.p.x; c.sy+=pt.p.y; c.cx=c.sx/c.items.length; c.cy=c.sy/c.items.length; }
+    else clusters.push({ cx:pt.p.x, cy:pt.p.y, sx:pt.p.x, sy:pt.p.y, items:[pt.d] });
+  });
+  clusters.forEach(cl=>{
+    if(cl.items.length < 2) return;                   // a lone dot needs no count
+    const n = cl.items.length, r = Math.max.apply(null, cl.items.map(baseR));
+    const ll = map.layerPointToLatLng([cl.cx, cl.cy]);
+    const html = '<div class="cluster-badge">'+(n>99?'99+':n)+'</div>';
+    L.marker(ll, { icon:L.divIcon({ className:"cluster-badge-wrap", html, iconSize:[0,0],
+      iconAnchor:[-(r*0.32), r*0.52] }), interactive:false, keyboard:false, zIndexOffset:1200 }).addTo(clusterLayer);
+  });
 }
 /* Every minute: reshrink dots a touch as they age, and remove any that have crossed the 24h window —
    without a full redraw or a refetch, so dots visibly shrink and then vanish even while a panel is open

@@ -570,6 +570,21 @@ DEAD_LEADER_CASES = [
     ("Ali Khamenei", "Masoud Pezeshkian", False, "a living leader must never be blocked as dead"),
     ("Ali Khamenei", "Mojtaba Khamenei", False, "the living successor shares only the surname — he is not the dead man"),
     ("Ebrahim Raisi", "Ebrahim Raisi", True, "an exact dead name is blocked"),
+    ("Abdullah bin Abdulaziz Al Saud", "Salman bin Abdulaziz Al Saud", False,
+     "a dead former king must NOT mark the living king dead — they only share the family name"),
+]
+
+# vxTwitter/fixvx Telegram reposts: the reposter's throwaway comment must not become the headline, and the
+# emoji reaction-counts must be stripped. (raw_post, headline_must_contain, why)
+TG_CLEAN_CASES = [
+    ("This is a war crime dawg\nhttps://x.com/j/status/1\nvxTwitter / fixvx \U0001f48b 88 \U0001f4e9 36\n"
+     "Jungle Journey ()\nUkraine strikes a gas station in Russia's Belgorod region as civilians wait to fill up "
+     "\U0001f48b40 \U0001f47a35 \U0001f92311",
+     "Ukraine strikes a gas station",
+     "SHIPPED BUG: 'This is a war crime dawg' (the reposter's comment) became the headline over the tweet"),
+    ("Explosions reported in Kharkiv overnight, local officials say\nMore: https://x.com/s/status/9",
+     "Explosions reported in Kharkiv",
+     "a normal post that merely links to X must keep its own text (no over-stripping)"),
 ]
 
 # Governing-lean meter: map a party's documented political alignment to -3..+3 (compound terms like
@@ -923,6 +938,13 @@ def main():
             fails.append(("dead-leader", f"dead={dead} fb={fbname}", want, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} is_dead({fbname!r} | knew {dead!r})={got} (want {want})")
     app._DEAD_LEADERS = _saved_dead
+    for raw, want, why in TG_CLEAN_CASES:
+        got = app._tg_headline(app._tg_clean(raw))
+        ok = want in got
+        ran[0] += 1
+        if not ok:
+            fails.append(("tg-clean", want, want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} tg-headline -> {got[:52]!r}")
 
     # RESILIENCE: when Wikidata is rate-limited (429) and returns NOTHING, country_leaders must still
     # return CLEAN Factbook names (never blank, never the garbled frontend fallback) — and must keep
@@ -931,6 +953,11 @@ def main():
     _sa_fb = {"cos": "King and Prime Minister SALMAN bin Abd al-Aziz Al Saud (since 23 January 2015)",
               "hog": "Crown Prince and Prime Minister MUHAMMAD BIN SALMAN Al Saud (since 27 September 2022)"}
     _oe, _os = app._wd_entities, app._wd_search_person
+    import os as _os_mod
+    try:
+        _os_mod.remove(_os_mod.path.join(app.CACHE_DIR, "leaders_Q99999901.json"))   # deterministic: no stale cache
+    except Exception:
+        pass
     try:
         app._wd_entities = lambda *a, **k: {}          # simulate HTTP 429 — Wikidata gives nothing
         app._wd_search_person = lambda *a, **k: None
@@ -1079,7 +1106,7 @@ def main():
     total = (len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
-             + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + 1
+             + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1
 
              + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)

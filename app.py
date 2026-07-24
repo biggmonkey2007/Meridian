@@ -179,20 +179,45 @@ def _tg_ts(iso):
         return 0.0
 
 
+# vxTwitter / fixvx repost chrome. These bots re-embed an X/Twitter post as
+#   [reposter's throwaway take]  \n  <x.com link>  \n  vxTwitter / fixvx  <emoji+count reactions>
+#   \n  <Author (@handle)>  \n  <the actual tweet>  <emoji+count reactions>
+# The reposter's take is NOT the story ("This is a war crime dawg" went on the map); the embedded tweet is.
+_TG_EMO = ("\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
+           "\U00002190-\U000021FF\U0000FE0F\U0000200D\U000020E3")
+_TG_REACTIONS = re.compile(r"(?:[" + _TG_EMO + r"]+\s?\d+\s*){1,}")           # "💋 88 📩 36", "👺35 🤣11🖤9"
+_TG_EMBED_MARK = re.compile(r"(?i)\b(vx\s*twitter|fx\s*twitter|fix(?:up|v)x|nitter)\b")
+_TG_URL_ONLY = re.compile(r"(?i)^\W*(https?://)?(www\.)?(x|twitter|t|fxtwitter|vxtwitter|fixupx)\.(com|co)/\S*\W*$")
+_TG_EMBED_AUTHOR = re.compile(r"^[\w .,'’\-]{2,40}\s*\(@?[A-Za-z0-9_]*\)\W*$")   # "Jungle Journey (@handle)" byline
+_TG_XLINK = re.compile(r"(?im)^\W*(https?://)?(www\.)?(x|twitter|vxtwitter|fxtwitter|fixupx)\.com/\S+")
+_TG_AD = re.compile(r"(?i)(rainbet|non-kyc|casino|sportsbook|promo code|use code|deposit bonus|betting|\bt\.me/\+|📲|referral)")
+
+
 def _tg_clean(text):
     t = re.sub(r"<br\s*/?>", "\n", text)
     t = re.sub(r"</p>", "\n", t)
     t = re.sub(r"<[^>]+>", "", t)
     t = _htmlmod.unescape(t)
     t = re.sub(r"[ \t]+", " ", t)
-    # drop the channel's own self-promo handle lines, "Read here:" boilerplate and injected ads
-    _AD = re.compile(r"(?i)(rainbet|non-kyc|casino|sportsbook|promo code|use code|deposit bonus|betting|\bt\.me/\+|📲|referral)")
+    # vxTwitter/fixvx repost: everything up to and including the x.com link is the reposter's comment —
+    # the news is the embedded tweet that follows. Only when a provider marker confirms the embed, so a
+    # normal post that merely links to X keeps its own text.
+    if _TG_EMBED_MARK.search(t):
+        m = _TG_XLINK.search(t)
+        if m:
+            t = t[m.end():]
     lines = [ln.strip() for ln in t.split("\n")]
     out = []
     for ln in lines:
         if not ln:
             continue
+        ln = _TG_REACTIONS.sub(" ", ln).strip()                       # strip "💋 88 📩 36" reaction runs
+        ln = _TG_EMBED_MARK.sub(" ", ln).strip(" /|·—–-")             # strip "vxTwitter / fixvx"
+        if not ln:
+            continue
         if re.fullmatch(r"@[A-Za-z0-9_]+", ln):
+            continue
+        if _TG_URL_ONLY.match(ln) or _TG_EMBED_AUTHOR.match(ln):
             continue
         if re.match(r"(?i)^(read (here|more)|subscribe|join our|follow us)\b.*", ln):
             continue
@@ -201,7 +226,9 @@ def _tg_clean(text):
         ln = re.sub(r"(?i)\s*view in telegram\s*", " ", ln).strip()
         if not ln:
             continue
-        if ln.startswith("💧") or _AD.search(ln):
+        if ln.startswith("💧") or _TG_AD.search(ln):
+            continue
+        if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
     return re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()
@@ -2564,8 +2591,16 @@ def _wd_qual_time(c, pid):
     return ""
 
 
+# Connective particles carry no identity — "bin", "al", "de", "von" appear in millions of unrelated names.
+# Counting them as shared tokens made 'Muhammad bin Salman al Saud' match the unrelated 'Muhammad Said
+# al-Attar' (shared "muhammad"+"al") and wrongly flagged the living Crown Prince as a dead leader.
+_NAME_KEY_PARTICLES = {"bin", "bint", "ibn", "al", "el", "la", "le", "van", "von", "der", "den",
+                       "de", "da", "dos", "das", "of", "the", "ben", "abu"}
+
+
 def _name_key(s):
-    return [w for w in re.sub(r"[^a-z ]", " ", _fold(s or "").lower()).split() if len(w) > 1]
+    return [w for w in re.sub(r"[^a-z ]", " ", _fold(s or "").lower()).split()
+            if len(w) > 1 and w not in _NAME_KEY_PARTICLES]
 
 
 def _name_match(a, b):
@@ -2626,12 +2661,13 @@ def _mark_dead(name):
 
 
 def _is_dead(name):
-    """Does this (Factbook) name belong to someone we've learned is deceased? Tolerant of transliteration
-    ('Ali Hoseini-Khamenei' vs 'Ali Khamenei') via the same-person match, so a spelling drift can't sneak
-    a dead leader back onto the map."""
+    """Does this (Factbook) name belong to someone we've learned is deceased? Uses the same-person match
+    (given name AND family name), NOT a bare surname — so 'Ali Hoseini-Khamenei' matches the late Ali
+    Khamenei, but the living King SALMAN bin Abdulaziz Al Saud is NOT confused with a dead former king who
+    shares 'bin Abdulaziz Al Saud'."""
     if not name:
         return False
-    return any(_name_match(name, d) for d in _dead_leaders())
+    return any(_same_person(name, None, d, None) for d in _dead_leaders())
 
 
 def _days_since(datestr):
