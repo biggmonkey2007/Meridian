@@ -429,13 +429,16 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .mk.mk-live .mk-core{box-shadow:0 0 0 2px #fff,0 0 0 3.6px #C0392B}
 /* a dot from a STARRED country wears a subtle gold ring so you can tell it's your pinned feed, not a top story */
 .mk.mk-star .mk-core{box-shadow:0 0 0 1.6px #fff,0 0 0 3.2px rgba(224,169,42,.92),0 1px 4px rgba(20,30,45,.5)}
-/* subtle count on a pile of overlapping dots when zoomed out — tells you "many stories here", cleanly */
-.cluster-badge-wrap{background:none!important;border:0!important}
-.cluster-badge{font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:#fff;
-  background:rgba(20,28,42,.82);border:1px solid rgba(255,255,255,.35);border-radius:999px;
-  padding:1.5px 5px;min-width:9px;text-align:center;white-space:nowrap;pointer-events:none;
-  box-shadow:0 1px 3px rgba(0,0,0,.35);letter-spacing:.2px}
-@media (prefers-color-scheme: light){ .cluster-badge{background:rgba(30,40,58,.88)} }
+/* subtle count on a pile of overlapping dots when zoomed out — tells you "many stories here", cleanly.
+   Sits at the top-right of the pile like a notification badge; crisp white number on a solid navy pill. */
+.cluster-badge-wrap{background:none!important;border:0!important;overflow:visible}
+.cluster-badge{position:absolute;left:0;top:0;
+  transform:translate(-50%,-50%) translate(var(--off,11px), calc(var(--off,11px) * -1));
+  font:700 10px/15px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;font-variant-numeric:tabular-nums;
+  color:#fff;background:#1b2740;border:1.5px solid #fff;border-radius:999px;
+  min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;text-align:center;white-space:nowrap;
+  box-shadow:0 1px 2.5px rgba(10,15,25,.5)}
 
 /* strait & port markers */
 .wm{display:flex;align-items:center;gap:5px;pointer-events:none;white-space:nowrap}
@@ -2288,28 +2291,35 @@ function drawDots(){
    small, subtle count on each such pile so you can see there are, say, 14 stories on Kyiv — not one.
    The badge is non-interactive (clicks fall through to the dots) and lives in its own layer, rebuilt on
    every draw/zoom/pan. At high zoom the dots separate on their own, so no pile forms and no badge shows. */
+// Group events whose SCREEN positions fall within THRESH px of each other, at whatever zoom we're at.
+// `project` returns {x,y} pixels for a dot — Leaflet and MapLibre give it differently, so the caller
+// passes the right one, and this one function serves both maps.
+function clusterDots(events, project){
+  const THRESH = 20, clusters = [];
+  events.forEach(d=>{
+    let p; try{ p = project(d); }catch(e){ return; }
+    if(!p) return;
+    let c = null;
+    for(const cl of clusters){ if(Math.abs(p.x-cl.cx)<THRESH && Math.abs(p.y-cl.cy)<THRESH){ c = cl; break; } }
+    if(c){ c.items.push(d); c.sx+=p.x; c.sy+=p.y; c.cx=c.sx/c.items.length; c.cy=c.sy/c.items.length; }
+    else clusters.push({ cx:p.x, cy:p.y, sx:p.x, sy:p.y, items:[d] });
+  });
+  return clusters;
+}
 let clusterLayer = null;
 function updateClusterBadges(){
   if(!mapReady || !map) return;
   if(!clusterLayer){ try{ clusterLayer = L.layerGroup().addTo(map); }catch(e){ return; } }
   clusterLayer.clearLayers();
-  let pts;
-  try{ pts = visibleEvents().map(d=>({ d, p: map.latLngToLayerPoint([d.lat,d.lng]) })); }catch(e){ return; }
-  const THRESH = 20;                                  // px: dots closer than this read as one pile
-  const clusters = [];
-  pts.forEach(pt=>{
-    let c = null;
-    for(const cl of clusters){ if(Math.abs(pt.p.x-cl.cx)<THRESH && Math.abs(pt.p.y-cl.cy)<THRESH){ c = cl; break; } }
-    if(c){ c.items.push(pt.d); c.sx+=pt.p.x; c.sy+=pt.p.y; c.cx=c.sx/c.items.length; c.cy=c.sy/c.items.length; }
-    else clusters.push({ cx:pt.p.x, cy:pt.p.y, sx:pt.p.x, sy:pt.p.y, items:[pt.d] });
-  });
+  const clusters = clusterDots(visibleEvents(), d=> map.latLngToLayerPoint([d.lat,d.lng]));
   clusters.forEach(cl=>{
     if(cl.items.length < 2) return;                   // a lone dot needs no count
     const n = cl.items.length, r = Math.max.apply(null, cl.items.map(baseR));
     const ll = map.layerPointToLatLng([cl.cx, cl.cy]);
-    const html = '<div class="cluster-badge">'+(n>99?'99+':n)+'</div>';
+    const off = Math.round(r*0.5 + 3);
+    const html = '<div class="cluster-badge" style="--off:'+off+'px">'+(n>99?'99+':n)+'</div>';
     L.marker(ll, { icon:L.divIcon({ className:"cluster-badge-wrap", html, iconSize:[0,0],
-      iconAnchor:[-(r*0.32), r*0.52] }), interactive:false, keyboard:false, zIndexOffset:1200 }).addTo(clusterLayer);
+      iconAnchor:[0,0] }), interactive:false, keyboard:false, zIndexOffset:1200 }).addTo(clusterLayer);
   });
 }
 /* Every minute: reshrink dots a touch as they age, and remove any that have crossed the 24h window —
@@ -2489,10 +2499,27 @@ function buildGlobeLayers(){
     mlMap.addLayer({id:"g-pulse",type:"circle",source:"g-events",paint:{ "circle-radius":5, "circle-color":eventColorExpr(), "circle-opacity":["case",["==",["get","read"],1],0,0.4], "circle-stroke-width":0 }});
     mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["get","r"], "circle-color":eventColorExpr(), "circle-stroke-width":1.7, "circle-stroke-color":"#ffffff" }});
   }
+  if(!mlMap.getSource("g-clusters")){
+    // Same count badge as the flat map, done the globe's way: a SECOND, clustered copy of the points
+    // (g-events still draws every individual dot) renders a navy pill + count where 2+ stack, offset to
+    // the top-right. As a real layer it occludes correctly on the sphere; MapLibre re-clusters on zoom.
+    mlMap.addSource("g-clusters",{type:"geojson",data:globeEventsGeo(),cluster:true,clusterRadius:20,clusterMaxZoom:14});
+    const _cf=["all",["has","point_count"],[">=",["get","point_count"],2]];
+    mlMap.addLayer({id:"g-cluster-badge",type:"circle",source:"g-clusters",filter:_cf,
+      paint:{ "circle-color":"#1b2740","circle-radius":9,"circle-stroke-color":"#ffffff","circle-stroke-width":1.5,"circle-translate":[10,-10] }});
+    mlMap.addLayer({id:"g-cluster-count",type:"symbol",source:"g-clusters",filter:_cf,
+      layout:{ "text-field":["get","point_count_abbreviated"],"text-font":["Open Sans Bold","Open Sans Regular"],"text-size":10,"text-offset":[1.0,-1.0],"text-allow-overlap":true,"text-ignore-placement":true },
+      paint:{ "text-color":"#ffffff" }});
+  }
   addGlobeOverlays();
   startGlobePulse();
 }
-function updateGlobeData(){ if(mlMap && mlLoaded && mlMap.getSource("g-events")) mlMap.getSource("g-events").setData(globeEventsGeo()); }
+function updateGlobeData(){
+  if(mlMap && mlLoaded){
+    if(mlMap.getSource("g-events")) mlMap.getSource("g-events").setData(globeEventsGeo());
+    if(mlMap.getSource("g-clusters")) mlMap.getSource("g-clusters").setData(globeEventsGeo());
+  }
+}
 function applyGlobeStyle(){ setGlobeBasemap(currentBase); }
 async function enterGlobe(){
   if(!hasWebGL()){ toast("The globe needs WebGL — open Meridian in the desktop app, where it works."); return false; }
