@@ -395,18 +395,20 @@ def _tg_headline(text):
     line = re.sub(r"^[\W_]+", "", line)
     line = re.sub(r"\s+https?://\S+$", "", line).strip()   # trailing bare URL
     line = _strip_promo(line)                              # mid-string links, "Follow @x", stray handles
-    if len(line) > 150:
-        # prefer a real sentence end; the lookbehind keeps "U.S." from counting as one
-        cut = -1
-        for mm in re.finditer(r"(?<=[a-z0-9)\"'])[.!?](?:\s|$)", line[:175]):
-            if mm.end() >= 60:
-                cut = mm.end()          # FIRST complete sentence, not the last one that fits
-                break
-        if cut >= 60:
-            line = line[:cut].strip()
-        else:
-            w = line.rfind(" ", 0, 150)
-            line = (line[:w].rstrip(",;:-–— ") if w > 40 else line[:150].rstrip()) + "…"
+    # Keep only the FIRST sentence: a Telegram post's later sentences are context the poster tacked on —
+    # they must neither become the headline nor let a passing clause hijack a clip (this also extracts a
+    # clip's SUBJECT). Whole sentences up to ~230 chars are kept in full (the UI shrinks a long title's
+    # font instead of clipping it); a single very long sentence with no early stop is word-cut at 210.
+    cut = -1
+    for mm in re.finditer(r"(?<=[a-z0-9)\"'])[.!?](?:\s|$)", line[:260]):
+        if mm.end() >= 60:
+            cut = mm.end()              # FIRST complete sentence, not the last one that fits
+            break
+    if cut >= 60:
+        line = line[:cut].strip()
+    elif len(line) > 210:
+        w = line.rfind(" ", 0, 210)
+        line = (line[:w].rstrip(",;:-–— ") if w > 40 else line[:210].rstrip()) + "…"
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()
@@ -3860,6 +3862,11 @@ _OFFICIAL_COUNTRY = {
     "merz": "Germany", "scholz": "Germany", "meloni": "Italy",
     "erdogan": "Turkey", "modi": "India", "kim jong un": "North Korea",
     "milei": "Argentina", "lula": "Brazil", "orban": "Hungary",
+    # US institutions acting/announcing are news at their own seat (Washington), not the foreign topic:
+    # "PENTAGON lowers Iran war death toll", "WHITE HOUSE weighs strike".
+    "pentagon": "United States of America", "white house": "United States of America",
+    "centcom": "United States of America", "state department": "United States of America",
+    "kremlin": "Russia",
 }
 _SAY_VERBS = {"says", "said", "tells", "told", "threatens", "threatened", "warns", "warned",
               "vows", "vowed", "urges", "urged", "calls", "called", "announces", "announced",
@@ -4273,7 +4280,17 @@ def _statement_country(words):
 # are deliberately excluded: there the named place IS the destination.)
 _ACT_VERBS = _SAY_VERBS | {"testifies", "testified", "testify", "testifying",
                            "requests", "requested", "seeks", "sought", "briefs", "briefed",
-                           "signs", "signed", "vetoes", "vetoed"}
+                           "signs", "signed", "vetoes", "vetoed",
+                           # DELIBERATION/decision-making by a leader is news at THEIR seat, not the foreign
+                           # topic: "Trump CONSIDERS attack on Iran", "Trump MET with advisers to decide
+                           # operations against Iran" -> Washington, not Tehran. (Going-verbs like visit/
+                           # travel stay excluded — there the named place is the destination.)
+                           "considers", "considering", "consider", "weighs", "weighed", "weighing",
+                           "mulls", "mulled", "mulling", "met", "meets", "meeting", "plans", "planning",
+                           "decides", "deciding", "huddles", "huddled", "convenes", "convened",
+                           # an institution's ANNOUNCEMENT happens at its seat: "Pentagon LOWERS the toll"
+                           "lowers", "lowered", "raises", "raised", "reports", "reported", "revises",
+                           "revised", "releases", "released", "publishes", "published", "estimates"}
 
 
 def _actor_country(words):
@@ -4295,6 +4312,34 @@ def _actor_country(words):
             for k in range(max(0, j - 4), j):                        # trailing attribution: verb then name
                 if words[k] in _ACT_VERBS:
                     return co
+    return None
+
+
+# A leader who is only CONSIDERING / THREATENING / WEIGHING action on a foreign country. Nothing has
+# happened there — the story is the deliberation, at the leader's own seat — even though a word like
+# "attack"/"strike" makes the target read as "located". "Trump CONSIDERS attack on Iran" is Washington.
+_DELIBERATE_VERBS = {"considers", "considering", "consider", "weighs", "weighing", "weigh", "mulls",
+                     "mulling", "mull", "plans", "planning", "plan", "threatens", "threatened", "threaten",
+                     "vows", "vowed", "vow", "warns", "warned", "warn", "eyes", "eyeing", "readies",
+                     "readying", "prepares", "preparing", "ponders", "pondering", "weighs", "wants"}
+
+
+def _deliberation_country(words):
+    """A leader/official who is the SUBJECT at the start and DELIBERATES or makes a STATEMENT about a
+    foreign country -> THEIR seat. "Trump considers attack on Iran", "Rubio says ... war in Ukraine",
+    "Trump vows tariffs on EU" are all Washington stories — the foreign country is the topic. Going-verbs
+    (visit/arrive/land) are absent from these sets, so "Trump in Tehran" stays Tehran; and the caller only
+    overrides a foreign COUNTRY, never a specific CITY scene ("Zelensky says forces struck Pokrovsk")."""
+    n = len(words)
+    for j in range(0, min(4, n)):
+        for size in (2, 1):
+            if j + size > n:
+                continue
+            co = _OFFICIAL_COUNTRY.get(" ".join(words[j:j + size]))
+            if co:
+                for k in range(j + size, min(j + size + 3, n)):
+                    if words[k] in _ACT_VERBS or words[k] in _DELIBERATE_VERBS:
+                        return co
     return None
 
 
@@ -5016,6 +5061,15 @@ def _geolocate(title, sourcecountry, desc="", url=""):
             _ctx2 = [co for (co, g) in mentions if co in COUNTRY_COORDS]
             if _ctx2 and best[5] not in _ctx2:
                 return best[2], best[3], best[4], _ctx2[0]
+        # A leader only CONSIDERING/THREATENING a move on a foreign country is news at their seat — even
+        # though "attack"/"strike" makes the target look located, the strike is merely being weighed.
+        # "Trump considers attack on Iran" -> Washington. (A real city scene is a `city`, so it never
+        # reaches here.) Skipped if the leader's own country IS the target.
+        if not _is_facility(best) and best[1] in ("country", "demonym"):
+            dc = _deliberation_country(words)
+            if dc and dc in COUNTRY_COORDS and dc != best[5]:
+                la, ln = COUNTRY_COORDS[dc]
+                return la, ln, _co_short(dc), dc
         if not located and not _is_facility(best) and best[1] in ("country", "demonym"):
             # A named official SPEAKING/TESTIFYING is news in their OWN country — the country they name is
             # the topic. "Hegseth testifies on Iran" / "..., says Defense Secretary Hegseth" -> United States.

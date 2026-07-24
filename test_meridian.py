@@ -132,6 +132,17 @@ GEO_CASES = [
      "the attacker (Russia) sinks; the struck Ukrainian port is the scene"),
     ("Why Iran's Pickaxe Mountain is a tough target for the US", "", "Pickaxe Mountain",
      "a named nuclear site (Pickaxe Mountain / Kuh-e Kolang Gaz La by Natanz) plots THERE, not the country centroid"),
+    # A US leader/institution ACTING or DELIBERATING on Iran as the topic is a Washington story, not Tehran.
+    ("Pentagon lowers official Iran war death toll, omitting four killed this month", "", "United States",
+     "SHIPPED BUG: the Pentagon announcing a figure dotted Tehran — it's a Washington story"),
+    ("Trump considers 'massive attack' on Iran as tensions rise", "", "United States",
+     "SHIPPED BUG: a leader only CONSIDERING a strike dotted the target — it's news at their seat"),
+    ("Trump visits Israel for a peace summit", "", "Israel",
+     "...but a leader VISITING a place is AT that place (going-verbs are not deliberation)"),
+    ("Rubio says the US is ready to help end the war in Ukraine", "", "United States",
+     "a US official's STATEMENT about a foreign country is at their seat, even when the topic is 'located'"),
+    ("Netanyahu says Israel will respond to any attack", "", "Israel",
+     "...but the official's OWN country is never overridden away from itself"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",
