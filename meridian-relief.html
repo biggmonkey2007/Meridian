@@ -2285,11 +2285,11 @@ function drawDots(){
 // (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
 function spreadLngLat(clng, clat, idx, k, zoom){
   if(k < 2) return [clng, clat];
-  // A PIXEL FLOOR so a pile never collapses into a single dot when zoomed out (that's what made the map
-  // look empty), PLUS a geographic base so it keeps opening up as you zoom in. Whichever is bigger at the
-  // current zoom wins: the floor holds them apart when far out, the geographic term takes over up close.
+  // A tight, CONSTANT on-screen fan (~3px steps) — the dots heavily overlap with only the outer few
+  // peeking out, so a pile reads as "several here" without scattering. It's the same size at every zoom
+  // (computed from pixels-per-degree), so it never collapses to one dot and never blows out into a blob.
   const pxPerDeg = 512 * Math.pow(2, (zoom == null ? 4 : zoom)) / 360;
-  const rDeg = Math.max(6 / pxPerDeg, 0.02) * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° spacing
+  const rDeg = (3.2 / pxPerDeg) * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even spacing
   const dLng = (Math.cos(ang) * rDeg) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
   return [clng + dLng, clat + Math.sin(ang) * rDeg];
 }
