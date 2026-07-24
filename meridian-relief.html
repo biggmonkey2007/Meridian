@@ -429,14 +429,13 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .mk.mk-live .mk-core{box-shadow:0 0 0 2px #fff,0 0 0 3.6px #C0392B}
 /* a dot from a STARRED country wears a subtle gold ring so you can tell it's your pinned feed, not a top story */
 .mk.mk-star .mk-core{box-shadow:0 0 0 1.6px #fff,0 0 0 3.2px rgba(224,169,42,.92),0 1px 4px rgba(20,30,45,.5)}
-/* count on a pile of overlapping dots when zoomed out — tells you "many stories here". A crisp white
-   number sitting INSIDE the dot, with a dark halo so it stays legible on any dot colour. */
+/* count on a pile of overlapping dots when zoomed out — a plain white number sitting INSIDE the dot,
+   sized a bit smaller than the dot. Just a hairline shadow so it reads on any dot colour. */
 .cluster-badge-wrap{background:none!important;border:0!important;overflow:visible}
 .cluster-badge{position:absolute;left:0;top:0;transform:translate(-50%,-50%);
-  font:700 11px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  -webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;font-variant-numeric:tabular-nums;
-  color:#fff;white-space:nowrap;pointer-events:none;
-  text-shadow:0 0 2px rgba(10,16,28,.95),0 0 3px rgba(10,16,28,.85),0 1px 1px rgba(10,16,28,.9)}
+  font-weight:700;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  line-height:1;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;
+  color:#fff;white-space:nowrap;pointer-events:none;text-shadow:0 0 1.5px rgba(12,18,30,.7)}
 
 /* strait & port markers */
 .wm{display:flex;align-items:center;gap:5px;pointer-events:none;white-space:nowrap}
@@ -2312,9 +2311,12 @@ function updateClusterBadges(){
   const clusters = clusterDots(visibleEvents(), d=> map.latLngToLayerPoint([d.lat,d.lng]));
   clusters.forEach(cl=>{
     if(cl.items.length < 2) return;                   // a lone dot needs no count
-    const n = cl.items.length;
+    const n = cl.items.length, label = n>99?"99+":(""+n);
+    const r = Math.max.apply(null, cl.items.map(baseR));   // the pile's biggest dot (its diameter, px)
+    // font a bit smaller than the dot, and smaller still for more digits so it fits inside
+    const fs = Math.max(8, Math.round(r * (label.length>=3 ? 0.42 : label.length===2 ? 0.6 : 0.78)));
     const ll = map.layerPointToLatLng([cl.cx, cl.cy]);
-    const html = '<div class="cluster-badge">'+(n>99?'99+':n)+'</div>';
+    const html = '<div class="cluster-badge" style="font-size:'+fs+'px">'+label+'</div>';
     L.marker(ll, { icon:L.divIcon({ className:"cluster-badge-wrap", html, iconSize:[0,0],
       iconAnchor:[0,0] }), interactive:false, keyboard:false, zIndexOffset:1200 }).addTo(clusterLayer);
   });
@@ -2503,8 +2505,8 @@ function buildGlobeLayers(){
     mlMap.addSource("g-clusters",{type:"geojson",data:globeEventsGeo(),cluster:true,clusterRadius:20,clusterMaxZoom:14});
     const _cf=["all",["has","point_count"],[">=",["get","point_count"],2]];
     mlMap.addLayer({id:"g-cluster-count",type:"symbol",source:"g-clusters",filter:_cf,
-      layout:{ "text-field":["get","point_count_abbreviated"],"text-font":["Open Sans Bold","Open Sans Regular"],"text-size":11,"text-allow-overlap":true,"text-ignore-placement":true },
-      paint:{ "text-color":"#ffffff","text-halo-color":"#0a101c","text-halo-width":1.6 }});
+      layout:{ "text-field":["get","point_count_abbreviated"],"text-font":["Open Sans Bold","Open Sans Regular"],"text-size":10,"text-allow-overlap":true,"text-ignore-placement":true },
+      paint:{ "text-color":"#ffffff","text-halo-color":"rgba(12,18,30,0.7)","text-halo-width":0.9 }});
   }
   addGlobeOverlays();
   startGlobePulse();
