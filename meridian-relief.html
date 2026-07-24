@@ -429,16 +429,14 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .mk.mk-live .mk-core{box-shadow:0 0 0 2px #fff,0 0 0 3.6px #C0392B}
 /* a dot from a STARRED country wears a subtle gold ring so you can tell it's your pinned feed, not a top story */
 .mk.mk-star .mk-core{box-shadow:0 0 0 1.6px #fff,0 0 0 3.2px rgba(224,169,42,.92),0 1px 4px rgba(20,30,45,.5)}
-/* subtle count on a pile of overlapping dots when zoomed out — tells you "many stories here", cleanly.
-   Sits at the top-right of the pile like a notification badge; crisp white number on a solid navy pill. */
+/* count on a pile of overlapping dots when zoomed out — tells you "many stories here". A crisp white
+   number sitting INSIDE the dot, with a dark halo so it stays legible on any dot colour. */
 .cluster-badge-wrap{background:none!important;border:0!important;overflow:visible}
-.cluster-badge{position:absolute;left:0;top:0;
-  transform:translate(-50%,-50%) translate(var(--off,11px), calc(var(--off,11px) * -1));
-  font:700 10px/15px ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+.cluster-badge{position:absolute;left:0;top:0;transform:translate(-50%,-50%);
+  font:700 11px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;font-variant-numeric:tabular-nums;
-  color:#fff;background:#1b2740;border:1.5px solid #fff;border-radius:999px;
-  min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;text-align:center;white-space:nowrap;
-  box-shadow:0 1px 2.5px rgba(10,15,25,.5)}
+  color:#fff;white-space:nowrap;pointer-events:none;
+  text-shadow:0 0 2px rgba(10,16,28,.95),0 0 3px rgba(10,16,28,.85),0 1px 1px rgba(10,16,28,.9)}
 
 /* strait & port markers */
 .wm{display:flex;align-items:center;gap:5px;pointer-events:none;white-space:nowrap}
@@ -2314,10 +2312,9 @@ function updateClusterBadges(){
   const clusters = clusterDots(visibleEvents(), d=> map.latLngToLayerPoint([d.lat,d.lng]));
   clusters.forEach(cl=>{
     if(cl.items.length < 2) return;                   // a lone dot needs no count
-    const n = cl.items.length, r = Math.max.apply(null, cl.items.map(baseR));
+    const n = cl.items.length;
     const ll = map.layerPointToLatLng([cl.cx, cl.cy]);
-    const off = Math.round(r*0.5 + 3);
-    const html = '<div class="cluster-badge" style="--off:'+off+'px">'+(n>99?'99+':n)+'</div>';
+    const html = '<div class="cluster-badge">'+(n>99?'99+':n)+'</div>';
     L.marker(ll, { icon:L.divIcon({ className:"cluster-badge-wrap", html, iconSize:[0,0],
       iconAnchor:[0,0] }), interactive:false, keyboard:false, zIndexOffset:1200 }).addTo(clusterLayer);
   });
@@ -2500,16 +2497,14 @@ function buildGlobeLayers(){
     mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["get","r"], "circle-color":eventColorExpr(), "circle-stroke-width":1.7, "circle-stroke-color":"#ffffff" }});
   }
   if(!mlMap.getSource("g-clusters")){
-    // Same count badge as the flat map, done the globe's way: a SECOND, clustered copy of the points
-    // (g-events still draws every individual dot) renders a navy pill + count where 2+ stack, offset to
-    // the top-right. As a real layer it occludes correctly on the sphere; MapLibre re-clusters on zoom.
+    // Same count as the flat map, done the globe's way: a SECOND, clustered copy of the points (g-events
+    // still draws every individual dot) puts a crisp white number INSIDE the pile, with a dark halo so it
+    // stays legible on any dot colour. A real symbol layer occludes on the sphere; MapLibre re-clusters on zoom.
     mlMap.addSource("g-clusters",{type:"geojson",data:globeEventsGeo(),cluster:true,clusterRadius:20,clusterMaxZoom:14});
     const _cf=["all",["has","point_count"],[">=",["get","point_count"],2]];
-    mlMap.addLayer({id:"g-cluster-badge",type:"circle",source:"g-clusters",filter:_cf,
-      paint:{ "circle-color":"#1b2740","circle-radius":9,"circle-stroke-color":"#ffffff","circle-stroke-width":1.5,"circle-translate":[10,-10] }});
     mlMap.addLayer({id:"g-cluster-count",type:"symbol",source:"g-clusters",filter:_cf,
-      layout:{ "text-field":["get","point_count_abbreviated"],"text-font":["Open Sans Bold","Open Sans Regular"],"text-size":10,"text-offset":[1.0,-1.0],"text-allow-overlap":true,"text-ignore-placement":true },
-      paint:{ "text-color":"#ffffff" }});
+      layout:{ "text-field":["get","point_count_abbreviated"],"text-font":["Open Sans Bold","Open Sans Regular"],"text-size":11,"text-allow-overlap":true,"text-ignore-placement":true },
+      paint:{ "text-color":"#ffffff","text-halo-color":"#0a101c","text-halo-width":1.6 }});
   }
   addGlobeOverlays();
   startGlobePulse();
