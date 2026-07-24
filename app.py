@@ -4438,7 +4438,12 @@ _GEO_ACTION = {# an AIRSTRIKE marks its target as the scene. SHIPPED: "USAF AIRS
                "bombs", "bombed", "shell", "shells", "shelled", "shelling", "target", "targets",
                "targeted", "raid", "raids", "raided", "storm", "storms", "seize", "seizes", "seized",
                "capture", "captures", "captured", "enter", "enters", "entered", "invade", "invades",
-               "invaded", "besiege", "besieged", "reach", "reaches", "reached", "batter", "batters"}
+               "invaded", "besiege", "besieged", "reach", "reaches", "reached", "batter", "batters",
+               # "US POUNDS Iranian city" was dotting the US: the bombing verb wasn't recognised, so the
+               # Iranian target never became the scene. (cf. "US STRIKES Iranian…" which already worked.)
+               "pound", "pounds", "pounded", "pounding", "hammer", "hammers", "hammered", "pummel",
+               "pummels", "pummelled", "pummeled", "bombard", "bombards", "bombarded", "blitz",
+               "blitzes", "blitzed", "pounds,"}
 
 # Pretty labels for names whose tokenised (apostrophe-as-space) form would title-case to nonsense —
 # "sana a" -> "Sana A". The apostrophe belongs back in the DISPLAY name, never in the match key.
@@ -4737,13 +4742,22 @@ def _nxt_word(h, words):
     return words[i] if i < len(words) else ""
 
 
+# A country bolted onto one of its OWN ASSETS abroad names the owner, not the scene — the asset sits in
+# whatever host country the sentence locates it in. "attacked US BASES in Bahrain" happens in Bahrain, not
+# the US; "US EMBASSY in Beirut" is in Beirut; "Russian TROOPS in Syria" are in Syria.
+_ASSET_NOUNS = {"base", "bases", "embassy", "embassies", "consulate", "consulates", "troops", "forces",
+                "soldiers", "personnel", "installation", "installations", "garrison", "garrisons",
+                "contingent", "outpost", "outposts", "warship", "warships", "convoy", "convoys"}
+
+
 def _is_nationality(h, words):
-    """A country bolted onto a PERSON or a SHIP'S FLAG. Not a place in any sense.
-    SHIPPED BUG: "'US NATIONAL' arrested in India" dotted the US, and "Russia struck the
-    TANZANIA-FLAGGED cargo vessel off Odessa" dotted TANZANIA — a flag of convenience is the
-    least locational fact in existence."""
-    return h[1] == "country" and (_nxt_word(h, words) in _PERSON_NOUNS
-                                  or _nxt_word(h, words) in ("flagged", "born", "based", "owned"))
+    """A country bolted onto a PERSON, a SHIP'S FLAG, or one of its OWN ASSETS abroad. Not the scene.
+    SHIPPED BUG: "'US NATIONAL' arrested in India" dotted the US, "Russia struck the TANZANIA-FLAGGED
+    cargo vessel off Odessa" dotted TANZANIA, and "attacked US BASES in Bahrain" dotted the US — an
+    asset's owner is the least locational fact; the host country ('in Bahrain') is where it is."""
+    nxt = _nxt_word(h, words)
+    return h[1] == "country" and (nxt in _PERSON_NOUNS or nxt in _ASSET_NOUNS
+                                  or nxt in ("flagged", "born", "based", "owned"))
 
 
 def _is_attrib_water(h, words):
@@ -4820,7 +4834,10 @@ def _pick_place(hits, words):
         #                                        Bashkortostan, and Russia is merely the owner.
         #   "STRUCK the TANZANIA-flagged ship" — 'struck' points at the SHIP, not at Tanzania.
         # Both of these put a non-place in `located`, where it was the only candidate and won.
-        if loc and (_nxt(h) == "s" or _is_nationality(h, words)):
+        # A country/demonym that is the SUBJECT of a strike verb ("US POUNDS Iranian city") is the
+        # attacker — an earlier "explosions"/"blast" must not sneak it into `located` over its target.
+        if loc and (_nxt(h) == "s" or _is_nationality(h, words)
+                    or (h[1] in ("country", "demonym") and _nxt(h) in _STRIKE_VERBS)):
             loc = False
         (located if loc else other).append(h)
     # A demonym names the ACTOR, not the scene ("UKRAINIAN drones strike the port of Azov" happens in

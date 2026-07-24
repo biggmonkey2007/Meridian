@@ -117,6 +117,19 @@ GEO_CASES = [
      "the University OF TEHRAN is in Tehran, not the town University, Florida"),
     ("Explosion reported in Sparks, Nevada overnight", "", "Sparks",
      "...but a real Sparks dot is KEPT when the sentence actually locates something there"),
+    # ACTOR-vs-SCENE: a strike belongs where it LANDED, not where the attacker sits, and a country's
+    # asset abroad sits in its HOST country — these were all dotting the United States.
+    ("Heavy explosions as US pounds Iranian city", "", "Iran",
+     "SHIPPED BUG: 'US pounds Iranian city' dotted the US — the scene is the Iranian city"),
+    ("Iran military says attacked US bases in Bahrain, Jordan, Kuwait", "", "Bahrain",
+     "SHIPPED BUG: 'US bases in Bahrain' dotted the US — the bases sit IN the host country"),
+    ("US Embassy in Beirut evacuated after threat", "", "Beirut",
+     "a country's embassy is in its host city (Beirut), not back home"),
+    # regression guards for the above — these must keep working
+    ("Gaza strikes continue for third day", "", "Gaza",
+     "'Gaza strikes' (strikes as a NOUN) is still the scene Gaza, not sunk as an attacker"),
+    ("Russia strikes Ukrainian port of Odesa", "", "Odesa",
+     "the attacker (Russia) sinks; the struck Ukrainian port is the scene"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",
