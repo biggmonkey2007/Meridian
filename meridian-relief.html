@@ -2299,8 +2299,9 @@ function clusterDots(events, project){
 // overlap ~half — enough to read "several here" without scattering them. Shared by flat map and globe.
 function spreadOffset(idx, k, r){
   if(k < 2) return [0, 0];
-  const step = Math.max(3, r * 0.26), rad = step * Math.sqrt(idx);   // tight — dots heavily overlap, just readable
-  const ang = idx * 2.399963;                          // ~137.5° — even, non-overlapping angular spacing
+  // very tight: the pile stays basically stacked, with only the outer few dots peeking out at the edges
+  const step = Math.max(2, r * 0.14), rad = step * Math.sqrt(idx);
+  const ang = idx * 2.399963;                          // ~137.5° — even angular spacing
   return [Math.cos(ang) * rad, Math.sin(ang) * rad];
 }
 // Reposition the existing dot markers: singletons at their true spot, piles fanned around the centroid.
@@ -2353,13 +2354,26 @@ function mlBaseSpec(k){
   if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}"], max:8 };
   return { tiles:cartoTiles("light_nolabels"), max:19 };
 }
+// Angular (great-circle) distance in degrees between two lng/lat — used to tell which dots are on the
+// globe's near hemisphere (facing the camera) vs the far, occluded side.
+function _angDist(aLng, aLat, bLng, bLat){
+  const R = Math.PI/180, la=aLat*R, lb=bLat*R, d=(bLng-aLng)*R;
+  return Math.acos(Math.min(1, Math.max(-1, Math.sin(la)*Math.sin(lb) + Math.cos(la)*Math.cos(lb)*Math.cos(d)))) / R;
+}
 function globeEventsGeo(){
   const evs = visibleEvents();
   const prop = e => ({ id:e.id, cat:e.cat, heat:e.heat||4, read: isRead(e)?1:0, r: Math.round(baseR(e)*0.5*10)/10 });
   let feats = [];
   if(mlMap && mlLoaded){
-    // fan piled-up dots apart (same spiral as the flat map) so several stories read as several, not one
-    clusterDots(evs, e=> mlMap.project([e.lng, e.lat])).forEach(cl=>{
+    // Only fan dots on the NEAR hemisphere. Projecting a far-side dot returns a garbage screen point, and
+    // baking a spread offset onto it flung the dot clear across the sphere (the "moving through the globe"
+    // glitch). Far-side dots keep their true coordinates — they're occluded anyway, so you never see them.
+    const c = mlMap.getCenter(), front = [];
+    evs.forEach(e=>{
+      if(_angDist(c.lng, c.lat, e.lng, e.lat) < 84) front.push(e);
+      else feats.push({ type:"Feature", geometry:{type:"Point",coordinates:[e.lng,e.lat]}, properties:prop(e) });
+    });
+    clusterDots(front, e=> mlMap.project([e.lng, e.lat])).forEach(cl=>{
       const k = cl.items.length;
       cl.items.forEach((e, idx)=>{
         let coords = [e.lng, e.lat];
@@ -2535,7 +2549,7 @@ async function enterGlobe(){
     // globe outruns the tile fetch and you see empty chunks until you stop. Mirrors the flat map, which
     // already pre-warms on "move".
     mlMap.on("move moveend", scheduleGlobeWarm);
-    mlMap.on("zoomend", updateGlobeData);               // re-fan the dot piles for the new zoom
+    mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ selectEvent(ev); return; } } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
