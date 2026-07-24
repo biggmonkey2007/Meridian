@@ -2297,10 +2297,12 @@ function clusterDots(events, project){
 }
 // Pixel offset for the idx-th dot of a pile of k, in a golden-angle spiral. Step ≈ dot radius, so dots
 // overlap ~half — enough to read "several here" without scattering them. Shared by flat map and globe.
-function spreadOffset(idx, k, r){
+function spreadOffset(idx, k, r, zoom){
   if(k < 2) return [0, 0];
-  // very tight: the pile stays basically stacked, with only the outer few dots peeking out at the edges
-  const step = Math.max(2, r * 0.14), rad = step * Math.sqrt(idx);
+  // Tight when zoomed OUT — the pile stays basically stacked, only the outer few dots peek at the edges.
+  // The fan OPENS as you zoom IN, so a city's stories separate out instead of staying a shrunken clump.
+  const zk = Math.min(7, Math.pow(1.45, Math.max(0, (zoom || 5) - 5)));
+  const step = Math.max(2.5, r * 0.14) * zk, rad = step * Math.sqrt(idx);
   const ang = idx * 2.399963;                          // ~137.5° — even angular spacing
   return [Math.cos(ang) * rad, Math.sin(ang) * rad];
 }
@@ -2308,13 +2310,14 @@ function spreadOffset(idx, k, r){
 function layoutDots(){
   if(!mapReady || !map || !eventMarkers.length) return;
   const byId = {}; eventMarkers.forEach(m=> byId[m.id] = m);
+  const z = map.getZoom();
   const clusters = clusterDots(eventMarkers.map(m=>m.d), d=> map.latLngToLayerPoint([d.lat,d.lng]));
   clusters.forEach(cl=>{
     const k = cl.items.length;
     cl.items.forEach((d, idx)=>{
       const m = byId[d.id]; if(!m) return;
       if(k < 2){ m.marker.setLatLng([d.lat, d.lng]); return; }
-      const o = spreadOffset(idx, k, baseR(d));
+      const o = spreadOffset(idx, k, baseR(d), z);
       m.marker.setLatLng(map.layerPointToLatLng([cl.cx + o[0], cl.cy + o[1]]));
     });
   });
@@ -2365,19 +2368,26 @@ function globeEventsGeo(){
   const prop = e => ({ id:e.id, cat:e.cat, heat:e.heat||4, read: isRead(e)?1:0, r: Math.round(baseR(e)*0.5*10)/10 });
   let feats = [];
   if(mlMap && mlLoaded){
-    // Only fan dots on the NEAR hemisphere. Projecting a far-side dot returns a garbage screen point, and
-    // baking a spread offset onto it flung the dot clear across the sphere (the "moving through the globe"
-    // glitch). Far-side dots keep their true coordinates — they're occluded anyway, so you never see them.
-    const c = mlMap.getCenter(), front = [];
-    evs.forEach(e=>{
-      if(_angDist(c.lng, c.lat, e.lng, e.lat) < 84) front.push(e);
-      else feats.push({ type:"Feature", geometry:{type:"Point",coordinates:[e.lng,e.lat]}, properties:prop(e) });
+    // Render ONLY dots on the near, visible hemisphere. A far-side dot projects to a screen point on the
+    // globe's front face, and unprojecting THAT point gives a different (front) location — so a round-trip
+    // that doesn't come back to the original coordinate means the dot is behind the globe. Drop those
+    // entirely (you should never see a dot for a place you can't see), which also kills the old glitch
+    // where a far-side dot's spread offset flung it across the sphere.
+    const z = mlMap.getZoom();
+    const front = evs.filter(e=>{
+      let sp, bk;
+      try{ sp = mlMap.project([e.lng, e.lat]); bk = mlMap.unproject([sp.x, sp.y]); }catch(_){ return false; }
+      return _angDist(e.lng, e.lat, bk.lng, bk.lat) < 1.5;
     });
     clusterDots(front, e=> mlMap.project([e.lng, e.lat])).forEach(cl=>{
       const k = cl.items.length;
       cl.items.forEach((e, idx)=>{
         let coords = [e.lng, e.lat];
-        if(k > 1){ const o = spreadOffset(idx, k, baseR(e)); const ll = mlMap.unproject([cl.cx+o[0], cl.cy+o[1]]); coords = [ll.lng, ll.lat]; }
+        if(k > 1){
+          const o = spreadOffset(idx, k, baseR(e), z);
+          const ll = mlMap.unproject([cl.cx + o[0], cl.cy + o[1]]);
+          if(ll && _angDist(e.lng, e.lat, ll.lng, ll.lat) < 8) coords = [ll.lng, ll.lat];  // else a near-edge fling: keep true spot
+        }
         feats.push({ type:"Feature", geometry:{type:"Point",coordinates:coords}, properties:prop(e) });
       });
     });
