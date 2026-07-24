@@ -2357,38 +2357,54 @@ function mlBaseSpec(k){
   if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Physical_Map/MapServer/tile/{z}/{y}/{x}"], max:8 };
   return { tiles:cartoTiles("light_nolabels"), max:19 };
 }
-// Angular (great-circle) distance in degrees between two lng/lat — used to tell which dots are on the
-// globe's near hemisphere (facing the camera) vs the far, occluded side.
+// Angular (great-circle) distance in degrees between two lng/lat.
 function _angDist(aLng, aLat, bLng, bLat){
   const R = Math.PI/180, la=aLat*R, lb=bLat*R, d=(bLng-aLng)*R;
   return Math.acos(Math.min(1, Math.max(-1, Math.sin(la)*Math.sin(lb) + Math.cos(la)*Math.cos(lb)*Math.cos(d)))) / R;
+}
+// Group dots that sit at (essentially) the SAME place — the country/city centroids many stories share.
+// Geographic, so it never changes as the globe rotates, which is what keeps the fan from drifting.
+function clusterByGeo(events, tol){
+  const cl = [];
+  events.forEach(d=>{
+    const lngTol = tol / Math.max(0.2, Math.cos(d.lat * Math.PI/180));
+    let c = null;
+    for(const g of cl){ if(Math.abs(d.lat-g.lat) < tol && Math.abs(d.lng-g.lng) < lngTol){ c = g; break; } }
+    if(c){ c.items.push(d); } else cl.push({ lat:d.lat, lng:d.lng, items:[d] });
+  });
+  return cl;
+}
+// The pile fan baked into FIXED geographic coordinates (not screen pixels), so a dot never shifts when
+// you rotate the globe — it just rotates with it. degPerPx keeps the on-screen size matching the pixel
+// fan at the current zoom, so it still opens up as you zoom in.
+function globeSpread(clng, clat, idx, k, r, zoom){
+  if(k < 2) return [clng, clat];
+  const o = spreadOffset(idx, k, r, zoom);
+  const degPerPx = 360 / (512 * Math.pow(2, zoom));
+  const dLng = (o[0] * degPerPx) / Math.max(0.2, Math.cos(clat * Math.PI/180));
+  return [clng + dLng, clat - o[1] * degPerPx];
 }
 function globeEventsGeo(){
   const evs = visibleEvents();
   const prop = e => ({ id:e.id, cat:e.cat, heat:e.heat||4, read: isRead(e)?1:0, r: Math.round(baseR(e)*0.5*10)/10 });
   let feats = [];
   if(mlMap && mlLoaded){
-    // Render ONLY dots on the near, visible hemisphere. A far-side dot projects to a screen point on the
-    // globe's front face, and unprojecting THAT point gives a different (front) location — so a round-trip
-    // that doesn't come back to the original coordinate means the dot is behind the globe. Drop those
-    // entirely (you should never see a dot for a place you can't see), which also kills the old glitch
-    // where a far-side dot's spread offset flung it across the sphere.
     const z = mlMap.getZoom();
-    const front = evs.filter(e=>{
+    // A dot is visible iff its screen point unprojects back to itself; a far-side dot fails this (its
+    // point maps to a different, front location), so it's dropped — you never see a dot for a place you
+    // can't see. Because the positions are geographic (fixed), this filter only fades dots in/out at the
+    // terminator as you spin; the ones you can see stay put.
+    const visible = (lng, lat)=>{
       let sp, bk;
-      try{ sp = mlMap.project([e.lng, e.lat]); bk = mlMap.unproject([sp.x, sp.y]); }catch(_){ return false; }
-      return _angDist(e.lng, e.lat, bk.lng, bk.lat) < 1.5;
-    });
-    clusterDots(front, e=> mlMap.project([e.lng, e.lat])).forEach(cl=>{
+      try{ sp = mlMap.project([lng, lat]); bk = mlMap.unproject([sp.x, sp.y]); }catch(_){ return false; }
+      return _angDist(lng, lat, bk.lng, bk.lat) < 1.5;
+    };
+    clusterByGeo(evs, 0.25).forEach(cl=>{
       const k = cl.items.length;
+      let clng=0, clat=0; cl.items.forEach(e=>{ clng+=e.lng; clat+=e.lat; }); clng/=k; clat/=k;
       cl.items.forEach((e, idx)=>{
-        let coords = [e.lng, e.lat];
-        if(k > 1){
-          const o = spreadOffset(idx, k, baseR(e), z);
-          const ll = mlMap.unproject([cl.cx + o[0], cl.cy + o[1]]);
-          if(ll && _angDist(e.lng, e.lat, ll.lng, ll.lat) < 8) coords = [ll.lng, ll.lat];  // else a near-edge fling: keep true spot
-        }
-        feats.push({ type:"Feature", geometry:{type:"Point",coordinates:coords}, properties:prop(e) });
+        const c = globeSpread(clng, clat, idx, k, baseR(e), z);
+        if(visible(c[0], c[1])) feats.push({ type:"Feature", geometry:{type:"Point",coordinates:c}, properties:prop(e) });
       });
     });
   } else {
