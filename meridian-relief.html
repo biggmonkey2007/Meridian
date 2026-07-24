@@ -1695,7 +1695,7 @@ const profileCache = {};
 function _dayStamp(){ const d=new Date(); return ""+d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0"); }
 /* Persist assembled country profiles across relaunches (LRU-capped, quota-safe) so a country you've
    opened before renders INSTANTLY next time — even after a relaunch — instead of re-fetching everything. */
-const _PROF_LS = "meridian_profiles_v6", _PROF_MAX = 16;   // v6: track `degraded` so a Wikidata-429 profile self-refetches
+const _PROF_LS = "meridian_profiles_v7", _PROF_MAX = 16;   // v7: flush stale former-leader profiles (Starmer->Burnham)
 function _loadProfilesLS(){ try{ return JSON.parse(localStorage.getItem(_PROF_LS)) || {}; }catch(e){ return {}; } }
 function readProfileLS(name){ try{ return _loadProfilesLS()[name] || null; }catch(e){ return null; } }
 function writeProfileLS(name, entry){
