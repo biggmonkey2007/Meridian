@@ -156,6 +156,14 @@ GEO_CASES = [
      "'cold turkey' the idiom is not Turkey the country"),
     ("Polish PM Tusk addresses parliament in Warsaw", "", "Poland",
      "...but capitalised 'Polish' IS still the demonym for Poland"),
+    ("Ukraine's National Guard struck a Russian Buk-M3 and S-300 air defense system on the Kostiantynivka front",
+     "", "Kostiantynivka",
+     "SHIPPED BUG: the nationality of a destroyed weapon SYSTEM ('Russian ... air defense system') is not "
+     "the scene — the front it was struck on is"),
+    ("A drone strike hit a hotel in the town of Kyrylivka overnight", "", "Kyrylivka",
+     "a ~1,400-person town named only in the body now pins exactly (GeoNames small-town coverage + 'town of')"),
+    ("Meta used AI to target older workers, lawsuit alleges", "", "!Meta",
+     "a tiny same-named town ('Meta', Italy) must NOT dot a company — tiny towns need explicit location"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",

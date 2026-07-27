@@ -3360,7 +3360,7 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
 # Words GeoNames lists as MID-SIZE towns (so they slip past the "weak" guards) but which in a headline
 # are a generic noun. "University" is essentially NEVER the town University, Florida — even "at the
 # University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
-_NEVER_CITY_WORDS = {"university", "surprise"}
+_NEVER_CITY_WORDS = {"university", "surprise", "middle east"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
@@ -3835,6 +3835,10 @@ def _co_short(name):
 
 
 _GEO_PREP = {"in", "at", "near", "across", "outside", "throughout", "around", "amid", "inside", "over", "above"}
+# "the <these> OF X" declares X a place — enough locational context to accept a small (weak) town.
+_PLACE_OF_NOUNS = {"town", "village", "city", "port", "district", "province", "region", "outskirts",
+                   "suburb", "suburbs", "municipality", "borough", "county", "settlement", "hamlet",
+                   "commune", "capital", "prefecture", "township"}
 # Capitalised words that legitimately sit in front of a place name ("East Aleppo", "South Sudan")
 _DIRECTIONS = {"north", "south", "east", "west", "northern", "southern", "eastern", "western",
                "central", "greater", "upper", "lower", "new", "old", "port", "san", "saint", "st",
@@ -4634,6 +4638,17 @@ def _scan_places(text, spans, mentions):
                 # PERSON guess delete a place the sentence is explicitly pointing at.
                 _p2 = words[max(0, i - 2):i]
                 located_here = any(w in _GEO_PREP or w in _GEO_ACTION for w in _p2)
+                # "the town/village/city/port of X", "outskirts of X" — X is explicitly declared a place,
+                # which is enough locational context to accept a small (weak) town named only in the body,
+                # like Kyrylivka in "a hotel in the town of Kirilovka on the Azov Sea".
+                if not located_here and i >= 2 and words[i - 1] == "of" and words[i - 2] in _PLACE_OF_NOUNS:
+                    located_here = True
+                # TINY towns (pop < 15k — the small-town coverage we added) only dot when the sentence
+                # EXPLICITLY locates something there ("in X", "town of X"). Otherwise a same-named common
+                # word, company or person ("Meta", "Leader", "Middle East") would drop a false dot. Real
+                # cities (pop >= 15k) are unaffected. This is what makes the big gazetteer safe.
+                if prior < 15000 and not located_here:
+                    continue
                 if _ner_vetoes(spans, cs, ce, weak, supported, located_here):
                     continue
                 if weak and (gram in _BAD_CITY_NAMES or not orig[i][:1].isupper()):
@@ -4722,21 +4737,31 @@ _MATERIEL_NOUNS = {
     "warplanes", "jet", "jets", "fighter", "fighters", "bomber", "bombers", "helicopter",
     "helicopters", "warship", "warships", "submarine", "submarines", "tank", "tanks",
     "interceptor", "interceptors", "shell", "shells", "artillery", "gunboat", "gunboats",
+    # air-defence / weapon-SYSTEM head nouns: "Russian Buk-M3 and S-300 air defense SYSTEM"
+    "system", "systems", "battery", "batteries", "launcher", "launchers", "radar", "radars",
+    "sam", "sams", "howitzer", "howitzers", "gun", "guns", "vehicle", "vehicles", "equipment",
+    "hardware", "installation", "installations", "emplacement", "emplacements", "depot", "depots",
 }
 
 
 def _is_materiel_nationality(h, words):
     """A demonym/country attached to a WEAPON names where the weapon is FROM, not where it struck.
-    'Iranian drone', 'Russian missile', "Iran's projectile" — drop it exactly like a person's passport
-    so the actual impact scene ('...at X, Kuwait') can win. Even in the verb reading ('Iran shells
-    Kuwait') dropping the actor is correct, because the scene it names should take the dot."""
+    'Iranian drone', 'Russian missile', "Iran's projectile", 'Russian Buk-M3 and S-300 air defense
+    SYSTEM' — drop it exactly like a person's passport so the actual scene ('...on the Kostiantynivka
+    front') can win. The head noun can sit a few words past the demonym (a compound weapon name), so scan
+    the phrase up to the first verb/preposition."""
     if h[1] not in ("country", "demonym"):
         return False
     j = h[0] + len(str(h[7]).split())
-    nxt = words[j] if j < len(words) else ""
-    if nxt == "s":                                   # possessive: "Iran's drone"
-        nxt = words[j + 1] if j + 1 < len(words) else ""
-    return nxt in _MATERIEL_NOUNS
+    if j < len(words) and words[j] == "s":           # possessive: "Iran's drone"
+        j += 1
+    for k in range(j, min(j + 8, len(words))):
+        w = words[k]
+        if w in _GEO_PREP or w in _GEO_ACTION or w in _SAY_VERBS:
+            break                                    # a verb/preposition ends the weapon phrase
+        if w in _MATERIEL_NOUNS:
+            return True
+    return False
 
 
 def _km(a_lat, a_lng, b_lat, b_lng):

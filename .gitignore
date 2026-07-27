@@ -35,3 +35,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# gazetteer build artifacts (the .json is committed; these are not)
+cities1000.zip
+cities_gaz.backup.json
