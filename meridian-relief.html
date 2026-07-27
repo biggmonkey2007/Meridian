@@ -2264,8 +2264,11 @@ function drawDots(){
     visibleEvents().forEach(d=>{
       const mk = L.marker([d.lat,d.lng], { icon:makeDotIcon(d), keyboard:false });
       mk.on("click", e=>{ L.DomEvent.stop(e); selectEvent(d); });
-      mk.on("mouseover", e=> showTip(e.originalEvent, d));
-      mk.on("mouseout", hideTip);
+      // hover = intent to click: warm the story after a short rest. Each mouseover clears the previous
+      // timer, so a quick sweep only warms the dot the cursor actually settles on (mouseout must NOT clear
+      // it — that could cancel the next dot's warm when moving A->B).
+      mk.on("mouseover", e=>{ showTip(e.originalEvent, d); clearTimeout(_hoverWarmT); _hoverWarmT=setTimeout(()=>warmStory(d), 120); });
+      mk.on("mouseout", e=> hideTip());
       mk.addTo(eventLayer);
       const el = mk.getElement(); if(el) el.addEventListener("mousemove", moveTip);
       eventMarkers.push({ id:d.id, marker:mk, d });
@@ -4257,7 +4260,23 @@ setInterval(()=>{ const api=aiBridge(); if(api && api.world_events && !activeEve
 let _lastInput = Date.now();
 ["mousemove","mousedown","keydown","wheel","touchstart"].forEach(ev=> window.addEventListener(ev, ()=>{ _lastInput=Date.now(); }, {passive:true}));
 const _preMediaDone=new Set(), _preProfDone=new Set();
-let _starRefreshAt=0, _lastProfWarm=0;
+let _starRefreshAt=0, _lastProfWarm=0, _hoverWarmT=null;
+// PRE-WARM a story's slow backend fetches (article text, clips, hero photo, people) so they're cached
+// BEFORE the click — the heavy cost is external network (article scrape, Telegram media), and once warmed
+// the panel opens with no wait. Fired on hover (there's always 100-500ms before the click lands) and by
+// the idle loop. Guarded to once per dot; fire-and-forget; never blocks the UI.
+const _storyWarmed = new Set();
+function warmStory(d){
+  if(!d || !d.id || _storyWarmed.has(d.id)) return;
+  const api = aiBridge(); if(!api) return;
+  _storyWarmed.add(d.id);
+  if(_storyWarmed.size > 800) _storyWarmed.clear();
+  const go = p => { try{ Promise.resolve(p).catch(()=>{}); }catch(e){} };
+  if(d.url && api.article_detail)  go(api.article_detail(d.url));
+  if(api.event_media)              go(api.event_media(d.title, 6));
+  if(!d.image && api.story_photo)  go(api.story_photo(d.title||"", d.sum||"", d.place||"", d.country||""));
+  if(api.event_people)             go(api.event_people(d.title||"", d.sum||""));
+}
 function idlePreload(){
   if(Date.now()-_lastInput < 1600) return;                        // user is active — never compete with them
   const api=aiBridge(); if(!api) return;
@@ -4265,10 +4284,11 @@ function idlePreload(){
   if(_preProfDone.size>400) _preProfDone.clear();
   // (1) keep pinned-country feeds fresh (their server cache is ~15 min)
   if(getStarred().length && Date.now()-_starRefreshAt > 12*60000){ _starRefreshAt=Date.now(); refreshStarred(); return; }
-  // (2) warm one recent dot's clips/photos so opening it is instant
-  if(api.event_media){
-    const ev=EVENTS.slice().sort((a,b)=> b.reportedAt-a.reportedAt).find(e=> e.title && !_preMediaDone.has(e.title));
-    if(ev){ _preMediaDone.add(ev.title); try{ Promise.resolve(api.event_media(ev.title,6)).catch(()=>{}); }catch(e){} return; }
+  // (2) warm one recent dot's FULL story (article text, clips, hero photo, people) so opening it is
+  //     instant — freshest first, paced one per tick, only while the user is idle.
+  {
+    const ev=EVENTS.slice().sort((a,b)=> b.reportedAt-a.reportedAt).find(e=> e.id && e.title && !_storyWarmed.has(e.id));
+    if(ev){ warmStory(ev); return; }
   }
   // (3) warm one country profile (countries with dots first, then starred).
   //     Each profile is several Wikidata calls, so pace them ~6s apart — bursting them is what
