@@ -3360,7 +3360,7 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
 # Words GeoNames lists as MID-SIZE towns (so they slip past the "weak" guards) but which in a headline
 # are a generic noun. "University" is essentially NEVER the town University, Florida — even "at the
 # University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
-_NEVER_CITY_WORDS = {"university"}
+_NEVER_CITY_WORDS = {"university", "surprise"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
@@ -4557,6 +4557,13 @@ def _resolve(gram, mentions):
         best_all = max(cands, key=lambda c: c[5])
         if (best_all[3] != best_ctx[3] and best_all[0] == "city" and best_ctx[0] == "city"
                 and best_all[5] >= 500000 and best_all[5] >= 20 * max(best_ctx[5], 1)):
+            return best_all + (False,)
+        # A COUNTRY must not be demoted to a same-named MINOR town just because that town's country is in
+        # context: "southern Lebanon" in a story that also says "US" is the country, not Lebanon, Tennessee
+        # (pop 30k). A prominent same-named region still stands (Georgia the US STATE, pop 5M, is correctly
+        # the state when the US is the subject) — hence the <500k floor on the town.
+        if (best_ctx[0] == "city" and best_ctx[5] < 500000
+                and best_all[0] in ("country", "demonym") and best_all[5] >= 20 * max(best_ctx[5], 1)):
             return best_all + (False,)
         return best_ctx + (True,)
     cands.sort(key=lambda c: -c[5])          # no context: strongest prior (country > state > big city)

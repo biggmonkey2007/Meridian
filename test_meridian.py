@@ -143,6 +143,12 @@ GEO_CASES = [
      "a US official's STATEMENT about a foreign country is at their seat, even when the topic is 'located'"),
     ("Netanyahu says Israel will respond to any attack", "", "Israel",
      "...but the official's OWN country is never overridden away from itself"),
+    ("Israeli shelling targets southern Lebanon despite the US-mediated framework", "", "Lebanon",
+     "an incidental 'US' in context must NOT demote the COUNTRY Lebanon to Lebanon, Tennessee (pop 30k)"),
+    ("Trump wins Georgia in a tight race", "", "United States",
+     "...but a PROMINENT same-named US region (Georgia the state, pop 5M) DOES win in US context"),
+    ("Singapore tightens monetary policy in a surprise move", "", "Singapore",
+     "'surprise' is the common noun — never a dot on Surprise, Arizona, even after 'in a'"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",
