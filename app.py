@@ -397,18 +397,18 @@ def _tg_headline(text):
     line = _strip_promo(line)                              # mid-string links, "Follow @x", stray handles
     # Keep only the FIRST sentence: a Telegram post's later sentences are context the poster tacked on —
     # they must neither become the headline nor let a passing clause hijack a clip (this also extracts a
-    # clip's SUBJECT). Whole sentences up to ~230 chars are kept in full (the UI shrinks a long title's
-    # font instead of clipping it); a single very long sentence with no early stop is word-cut at 210.
+    # clip's SUBJECT). Cut RIGHT AFTER the first sentence's end punctuation, ALLOWING a closing quote/paren
+    # after it (".”  ?"  .)) — otherwise a quoted title like ...Modernity.” spilled the headline into the
+    # next sentence and got a mid-thought "…". NEVER a mid-word cut: if the line has no sentence end at
+    # all, keep it whole and let the UI shrink the font. The whole line is searched (not just [:260]) so a
+    # long-but-complete first sentence is kept in full rather than clipped.
     cut = -1
-    for mm in re.finditer(r"(?<=[a-z0-9)\"'])[.!?](?:\s|$)", line[:260]):
+    for mm in re.finditer(r"(?<=[\w)\"'’”])[.!?]+[\"'’”)\]]*(?=\s|$)", line):
         if mm.end() >= 60:
-            cut = mm.end()              # FIRST complete sentence, not the last one that fits
+            cut = mm.end()              # FIRST complete sentence, incl. its closing quote
             break
     if cut >= 60:
         line = line[:cut].strip()
-    elif len(line) > 210:
-        w = line.rfind(" ", 0, 210)
-        line = (line[:w].rstrip(",;:-–— ") if w > 40 else line[:210].rstrip()) + "…"
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()

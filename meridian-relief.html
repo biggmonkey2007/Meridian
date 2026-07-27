@@ -884,6 +884,7 @@ video{color-scheme:dark}
 .evt-h.lg{font-size:19px;line-height:1.27}
 .evt-h.xl{font-size:17px;line-height:1.3}
 .evt-h.xxl{font-size:15px;line-height:1.33}
+.evt-h.xxxl{font-size:13.5px;line-height:1.36}
 </style>
 <link href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
 </head>
@@ -1148,6 +1149,9 @@ function coordStr(lat,lng){
 }
 function el(html){ const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// Keep a headline WHOLE: the backend already hands us a complete first sentence, so this is just a sanity
+// cap for a rare run-on — and it cuts at a WORD boundary, never mid-word, and adds no "…".
+function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).trim(); }
 
 /* ============================================================
    MERIDIAN — map engine (Leaflet flat map + globe.gl 3D globe).
@@ -3537,7 +3541,7 @@ async function renderRealEvent(d){
       <span class="live-badge">● LIVE · ${esc(src)}</span>
       <span class="evt-when"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${timeAgo(d.reportedAt)}</span>
     </div>
-    <h2 class="p-title evt-h ${d.title.length>195?"xxl":(d.title.length>150?"xl":(d.title.length>90?"lg":""))}">${esc(d.title)}</h2>
+    <h2 class="p-title evt-h ${d.title.length>270?"xxxl":(d.title.length>195?"xxl":(d.title.length>150?"xl":(d.title.length>90?"lg":"")))}">${esc(d.title)}</h2>
     <div class="listen-bar">
       <button id="re-listen-${d.id}" class="re-listen"><span class="lt-ico">🔊</span><span class="lt-label">Listen</span><span class="lt-dur" id="re-dur-${d.id}">–:––</span></button>
       <label class="lt-speed" title="Reading speed">
@@ -4032,7 +4036,7 @@ function applyWorldEvents(items){
     const hrs=Math.max(0,Math.min(72, isFinite(+it.hrs)?+it.hrs:1));
     built.push({
       id:"live"+i+"_"+Date.now().toString(36),
-      title:String(it.title||"Untitled").slice(0,240),
+      title:titleClip(it.title),
       // the backend already sends the story text. Throwing it away is why a Telegram post — whose
       // post text IS the whole story, with nothing to scrape — sat on "Fetching the full story…"
       // forever, under a headline, with no body at all.
@@ -4068,7 +4072,7 @@ function _mkStarEvent(it, idx){
   const hrs=Math.max(0,Math.min(72, isFinite(+it.hrs)?+it.hrs:1));
   return {
     id:"star"+idx+"_"+Date.now().toString(36),
-    title:String(it.title||"Untitled").slice(0,240),
+    title:titleClip(it.title),
     sum:String(it.sum||"").slice(0,1200), cat, lat, lng,
     place:String(it.place||it.country||"").slice(0,90),
     country:String(it.country||"").slice(0,60),
