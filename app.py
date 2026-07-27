@@ -3365,6 +3365,10 @@ _NEVER_CITY_WORDS = {"university", "surprise"}
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
 _NOT_CITY_WORDS = {"sparks", "brent"}
+# Place names that are ALSO everyday English words — a dot ONLY when Capitalised in the source. "polish"
+# (shine), "china" (porcelain), "turkey" (the bird / cold turkey), "guinea" (guinea pig), "chad" (hanging
+# chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
+_CASED_PLACE_WORDS = {"polish", "china", "turkey", "guinea", "chad"}
 _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "silicon valley": (37.387, -122.058, "United States of America"),
     "wall street": (40.706, -74.009, "United States of America"),
@@ -4612,6 +4616,11 @@ def _scan_places(text, spans, mentions):
             if not r:
                 continue
             kind, lat, lng, country, label, prior, supported = r
+            # A demonym/country that is ALSO a common English word ("a bit of polish", "fine china", "cold
+            # turkey", "guinea pig") is only that PLACE when it is Capitalised in the source — lower-case in
+            # a sentence-case headline is the ordinary word. SHIPPED: "lacking a bit of polish" -> Poland.
+            if size == 1 and gram in _CASED_PLACE_WORDS and not orig[i][:1].isupper():
+                continue
             # A CURATED FACILITY OR WATER IS NEVER VETOED. NER calls "Omsk oil refinery" an ORG and
             # "Afipsky refinery" an ORG — that mislabel is the whole reason the gazetteer leads here.
             # These names are hand-curated and unambiguous; there is no surname to confuse them with.

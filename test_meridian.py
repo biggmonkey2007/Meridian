@@ -149,6 +149,13 @@ GEO_CASES = [
      "...but a PROMINENT same-named US region (Georgia the state, pop 5M) DOES win in US context"),
     ("Singapore tightens monetary policy in a surprise move", "", "Singapore",
      "'surprise' is the common noun — never a dot on Surprise, Arizona, even after 'in a'"),
+    ("Honor Magic V6 review: sleek foldable phone lacking a bit of polish", "", "!Poland",
+     "SHIPPED BUG: 'a bit of polish' (shine) dotted Poland — a place-word that's also an everyday word "
+     "needs a capital to count"),
+    ("Quitting smoking cold turkey is hard after twenty years", "", "!Turkey",
+     "'cold turkey' the idiom is not Turkey the country"),
+    ("Polish PM Tusk addresses parliament in Warsaw", "", "Poland",
+     "...but capitalised 'Polish' IS still the demonym for Poland"),
     # A city name that is ALSO a surname/forename, sitting inside a person's name with no locational
     # context, is the PERSON — not a dot on a same-named town. These are the exact bugs the exe made.
     ("Mistakenly deported man Abrego Garcia returns to US to face charges", "", "United States",
@@ -855,7 +862,10 @@ def main():
     for title, desc, want, why in GEO_CASES:
         r = app._geolocate(title, "", desc)
         got = r[2] if r else None
-        ok = (want is None and got is None) or (want is not None and got is not None and want in got)
+        if want and want.startswith("!"):        # this place must NOT be the answer (None is fine)
+            ok = got is None or want[1:] not in got
+        else:
+            ok = (want is None and got is None) or (want is not None and got is not None and want in got)
         ran[0] += 1
         if not ok:
             fails.append(("geo", title, want, got, why))
