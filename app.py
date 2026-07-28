@@ -118,6 +118,16 @@ def _slug(s):
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")[:80]
 
 
+def _clip(s, n=360):
+    """Trim to <= n chars at a WORD boundary — never mid-word. No ellipsis (the UI adds one if the text
+    still ends mid-sentence)."""
+    s = s or ""
+    if len(s) <= n:
+        return s
+    w = s.rfind(" ", 0, n)
+    return (s[:w] if w > n * 0.6 else s[:n]).rstrip()
+
+
 # ---------------------------------------------------------------------------
 # Live wire — a Telegram-style running feed scraped from public channel previews
 # (t.me/s/<channel>), no API key or login needed. Channels are user-editable via
@@ -545,7 +555,7 @@ def _tg_arts(h):
                 "title": head,
                 "hrs": round(hrs, 2),
                 "socialimage": _img,
-                "desc": (p.get("text") or "")[:360],
+                "desc": _clip(p.get("text") or "", 400),
                 "sourcecountry": "",
                 "geo_text": (p.get("text") or ""),   # geolocate on the FULL post, so "southern Lebanon" beats the "Israeli" demonym
                 "_src": p.get("title") or p.get("channel") or "Telegram",
@@ -1492,7 +1502,7 @@ class Api:
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
                 "image": img if (_is_tg or _good_img(img)) else "",
-                "sum": _strip_promo(a.get("desc") or "")[:360],
+                "sum": _clip(_strip_promo(a.get("desc") or ""), 360),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
                 "tg": _is_tg,
@@ -1581,7 +1591,7 @@ class Api:
                     "source": _domain_name(a.get("domain") or ""),
                     "domain": a.get("domain") or "", "url": url,
                     "image": img if _good_img(img) else "",
-                    "sum": _strip_promo(a.get("desc") or "")[:360],
+                    "sum": _clip(_strip_promo(a.get("desc") or ""), 360),
                     "involved": (_involved_countries(title, ev_country) or [ev_country]),
                     "starred": True, "tg": False, "channel": "",
                 })
@@ -5025,6 +5035,17 @@ def _dateline_place(desc, mentions):
     return r if (r and r[0] == "city") else None
 
 
+def _sea_country(b, mentions):
+    """A sea's filed country is arbitrary (GeoNames files the Black Sea under Turkey). Take it from the
+    STORY instead. The actor tends to lead the sentence and the struck location follows, so prefer the
+    LAST country named: 'Russian MOD ... strikes on Ukrainian ports' -> Black Sea, Ukraine."""
+    if b[7] in _WATER_NAMES:
+        ctx = [co for (co, g) in mentions if co in COUNTRY_COORDS]
+        if ctx and b[5] not in ctx:
+            return ctx[-1]
+    return b[5]
+
+
 @functools.lru_cache(maxsize=4096)
 def _geolocate(title, sourcecountry, desc="", url=""):
     """Best location for an event. Context (other countries named + the article's own section) decides
@@ -5052,7 +5073,7 @@ def _geolocate(title, sourcecountry, desc="", url=""):
                 dh = [h for h in dh if not _is_person_nationality(h, dw) and not _is_materiel_nationality(h, dw)]
                 if dh:
                     b = _pick_place(dh, dw)
-                    return b[2], b[3], b[4], b[5]
+                    return b[2], b[3], b[4], _sea_country(b, mentions)
             hits = []                     # title held only nationalities -> use the fallback ladder
     # THE HEADLINE NAMES NO SCENE — ONLY WHO DID IT, OR A COASTLINE. The story's own summary almost
     # always names the actual place, so read it before settling for the actor's country.
@@ -5065,7 +5086,7 @@ def _geolocate(title, sourcecountry, desc="", url=""):
         if dscenes:
             b = _pick_place(dscenes, dw)
             if b is not None:
-                return b[2], b[3], b[4], b[5]
+                return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
         best = _pick_place(hits, words)
         # The headline gave only a broad area, but the wire dateline names the actual town. Trust the

@@ -1152,6 +1152,9 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 // Keep a headline WHOLE: the backend already hands us a complete first sentence, so this is just a sanity
 // cap for a rare run-on — and it cuts at a WORD boundary, never mid-word, and adds no "…".
 function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).trim(); }
+// A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
+// not broken: end it on an ellipsis unless it already closes on sentence punctuation.
+function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
 
 /* ============================================================
    MERIDIAN — map engine (Leaflet flat map + globe.gl 3D globe).
@@ -3555,7 +3558,7 @@ async function renderRealEvent(d){
     </div>
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
-    <p class="lead" id="re-lead-${d.id}">${d.sum?esc(d.sum):`<span class="spin"></span> Fetching the full story…`}</p>
+    <p class="lead" id="re-lead-${d.id}">${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}"></div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     <div id="re-sides-${d.id}" class="round-table"></div>
@@ -3738,7 +3741,7 @@ function selectEvent(d){
     ${d.live?`<span class="live-badge">● LIVE · pulled from the web ${timeAgo(d.reportedAt)}</span>`:""}
     <h2 class="p-title" style="font-size:22px;margin-top:10px;line-height:1.22">${esc(d.title)}</h2>
     <div class="evt-meta"><span><b>Reported</b> ${timeAgo(d.reportedAt)}</span><span><b>Occurred</b> ~${timeAgo(d.occurredAt)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
-    <p class="lead">${esc(d.sum)}</p>
+    <p class="lead">${esc(leadText(d.sum))}</p>
     <div class="bcast" data-bcast role="button" tabindex="0"><div class="bcast-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div><div class="bcast-tx"><div class="bcast-t">Broadcast &amp; video</div><div class="bcast-s">Tap to preview &mdash; verified clips stream here in the live app.</div></div><div class="bcast-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div></div>
     <div class="bcast-frame" data-bcast-frame hidden><div class="bcast-screen"><div class="bcast-grid"></div><div class="bcast-bigplay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div></div><div class="bcast-note">Demo build &mdash; no clip is attached to this sample story. In production the verified broadcast or wire-service video plays in this frame, with source provenance and a transcript.</div></div>
     ${d.facts&&d.facts.length?`<div class="sec-label">The key points</div><ul class="facts">${d.facts.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>`:""}
