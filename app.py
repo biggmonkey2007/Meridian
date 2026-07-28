@@ -870,51 +870,6 @@ class Api:
         except Exception as ex:
             return {"error": str(ex)}
 
-    def perspectives(self, query, domains):
-        """Headlines for an event from ONE country's own outlets (domains) so readers can compare sides. Cached 30 min."""
-        try:
-            query = (query or "").strip()
-            domains = [str(d).strip() for d in (domains or []) if d][:6]
-            if not query:
-                return {"items": []}
-            words = [w for w in re.findall(r"[A-Za-z][A-Za-z'\-]{3,}", query) if w.lower() not in _STOP]
-            # search on DISTINCTIVE words first (places/names) so we don't drop "Lebanon" for generic filler
-            dist = [w for w in words if _stem(w.lower()) not in _GENERIC_WORDS]
-            picked = (dist or words)[:5]
-            terms = " ".join(picked) if picked else query
-            if domains:
-                q = terms + " (" + " OR ".join("site:" + d for d in domains) + ") when:6d"
-            else:
-                q = terms + " when:6d"
-            cache = os.path.join(CACHE_DIR, "persp_" + _slug(q)[:90] + ".json")
-            if _fresh(cache, 1800):
-                try:
-                    return json.load(open(cache, encoding="utf-8"))
-                except Exception:
-                    pass
-            res = _news_get_q(q, 14)
-            # RELEVANCE GATE: a site: search on Google News falls back to the outlet's TOP story when it
-            # has nothing on the event — so require real word-overlap with the event title, or we'd show
-            # e.g. "Russian strikes kill 28 in Kyiv" under a story about a Jordan air base.
-            qsig = _sigwords(query)
-            qdist = qsig - _GENERIC_WORDS   # distinctive words (places, names) — not generic conflict filler
-            items = []
-            for it in (res.get("items") or []):
-                isig = _sigwords(it.get("title") or "")
-                if qdist:
-                    if qdist & isig:            # must share a distinctive word (Jordan, Iranian, Muwaffaq…)
-                        items.append(it)
-                elif len(qsig & isig) >= 2:     # query had only generic words — fall back to strong overlap
-                    items.append(it)
-            out = {"items": items[:8]}
-            try:
-                json.dump(out, open(cache, "w", encoding="utf-8"))
-            except Exception:
-                pass
-            return out
-        except Exception as ex:
-            return {"error": str(ex)}
-
     def live_feed(self, limit=400):
         """A Telegram-style running wire covering the LAST 24 HOURS, then auto-dropping older posts.
 

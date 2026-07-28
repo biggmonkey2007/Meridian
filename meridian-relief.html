@@ -706,14 +706,6 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .on-load{font-size:11px;color:var(--ink-3);padding:8px 3px}
 
 .persp{margin-top:16px}
-.round-table{margin-top:20px}
-.rt-row{display:flex;gap:11px;padding:12px 0;border-top:1px solid var(--line)}
-.rt-flag{flex:0 0 auto;padding-top:2px}
-.rt-flag img{width:23px;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
-.rt-co{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);margin-bottom:4px}
-.rt-claim{font-size:14px;line-height:1.42;color:var(--ink-1);font-weight:600}
-.rt-note{font-size:11.5px;color:var(--ink-3);margin-top:11px;line-height:1.5;font-style:italic}
-.rt-load{font-size:12px;color:var(--ink-3);padding:9px 0}
 .persp-lbl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);align-self:center;margin-right:2px}
 .persp-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:7px 0 9px}
 .persp-tab{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink-2);cursor:pointer}
@@ -3561,7 +3553,6 @@ async function renderRealEvent(d){
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
-    <div id="re-sides-${d.id}" class="round-table"></div>
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
   `;
   openDetail();
@@ -3584,7 +3575,6 @@ async function renderRealEvent(d){
     rs.onchange=()=>setTtsRate(rs.value, d);   // takes effect immediately, mid-sentence
   }
   updateListenTime(d);          // the headline alone, until the article body arrives
-  if(d.involved && d.involved.length>1) loadSides(d);
   loadEventMedia(d);
   loadEventPeople(d);            // headline names first — usually the officials
   // give the REAL sources (article image, then a matched wire photo) their chance to land first;
@@ -3717,25 +3707,6 @@ async function loadEventMedia(d){
           return `<div class="em-item">${media}<div class="em-meta"><a class="em-ch" href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.channel)}</a><span class="em-t">${esc(wireAgo(it.time))}</span></div>${body}</div>`;
         }).join("");
   }catch(e){ if(box) box.innerHTML=""; }
-}
-async function loadSides(d){
-  const api=aiBridge(); const box=document.getElementById("re-sides-"+d.id);
-  if(!box || !api || !api.perspectives) return;
-  const countries=(d.involved||[]).filter(Boolean).slice(0,4);
-  if(countries.length<2) return;
-  box.innerHTML=`<div class="sec-label">How each side is framing it</div><div class="rt-load"><span class="spin"></span> Comparing coverage from each side…</div>`;
-  try{
-    const results=await Promise.all(countries.map(async c=>{
-      const domains=(typeof OUTLETS!=="undefined" && OUTLETS[c]) ? OUTLETS[c].map(o=>o[2]) : [];
-      try{ const r=await api.perspectives(d.title, domains); return {c, it:(r&&r.items&&r.items[0])||null}; }catch(e){ return {c, it:null}; }
-    }));
-    if(activeEvent!==d.id) return;
-    const rows=results.filter(x=>x.it && x.it.title);
-    if(rows.length<2){ box.innerHTML=""; return; }
-    box.innerHTML=`<div class="sec-label">How each side is framing it</div>`
-      + rows.map(x=>`<div class="rt-row"><div class="rt-flag">${flagImg(ISO2[x.c]||"")}</div><div class="rt-body"><div class="rt-co">${esc(coName(x.c))} press · ${esc(x.it.source||"")}</div><div class="rt-claim">“${esc(x.it.title)}”</div></div></div>`).join("")
-      + `<div class="rt-note">Each line is that country's own press, in its own words — read across to see how the framing differs. Use the tabs above to open either side in full.</div>`;
-  }catch(e){ box.innerHTML=""; }
 }
 function selectEvent(d){
   hideTip();
