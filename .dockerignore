@@ -1,0 +1,21 @@
+# Keep the image small and secrets OUT. The server reads the key from the SUMMARY_API_KEY env var,
+# never from a baked-in file.
+.git
+cache/
+feed_out/
+hosted_*.json
+*.exe
+build/
+dist/
+__pycache__/
+*.pyc
+# secrets / local-only
+summary_key.txt
+gemini_key.txt
+*secret*
+*.key
+tg_session*
+telegram*.txt
+channels.txt
+cities_gaz.backup.json
+cities1000.zip

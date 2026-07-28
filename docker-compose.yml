@@ -1,0 +1,45 @@
+# Production feed server with automatic HTTPS at the edge (Caddy). Two services share one volume:
+#   builder — rebuilds the world feed every few minutes into /data/feed_out
+#   caddy   — serves that directory over HTTPS with CORS + cache headers (a CDN can sit in front too)
+#
+#   1. Point a DNS A record (e.g. feed.example.com) at this box.
+#   2. Put your domain + Groq key in a .env file next to this (see below).
+#   3. docker compose up -d
+#
+# .env:
+#   FEED_DOMAIN=feed.example.com
+#   SUMMARY_API_KEY=gsk_your_groq_key
+#
+# Then set the clients' feed base to https://feed.example.com (feed_base.txt / FEED_BASE_DEFAULT).
+services:
+  builder:
+    build: .
+    command: python build_feed.py --loop 180
+    environment:
+      SUMMARY_API_KEY: ${SUMMARY_API_KEY:-}
+      MERIDIAN_FEED_BASE: https://${FEED_DOMAIN}
+      FEED_OUT: /data/feed_out
+      MERIDIAN_DATA: /data
+    volumes:
+      - feeddata:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on: [builder]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      FEED_DOMAIN: ${FEED_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - feeddata:/data:ro
+      - caddy_data:/data/caddy
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  feeddata:
+  caddy_data:
+  caddy_config:

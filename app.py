@@ -56,7 +56,10 @@ import urllib.parse
 # Let WebView2 use the GPU (and fall back to software if ever needed) so WebGL/globe runs.
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--ignore-gpu-blocklist --enable-unsafe-swiftshader --autoplay-policy=no-user-gesture-required"
 
-import webview
+try:
+    import webview                       # desktop shell only; the feed SERVER imports this module headless
+except Exception:                        # (no pywebview / no GUI backend on a VPS) — that's fine, main() isn't run there
+    webview = None
 
 # Paths work both as a plain script AND as a bundled .exe (PyInstaller). When frozen, read-only resources
 # (the HTML UI) are unpacked to sys._MEIPASS, while everything WRITABLE — the caches, the user-editable
@@ -67,7 +70,9 @@ if getattr(sys, "frozen", False):
     DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "Meridian")
 else:
     RES_DIR  = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = RES_DIR
+    # writable data (caches, the 30-day summary cache) can be redirected to a persistent volume on the feed
+    # server via MERIDIAN_DATA, while read-only resources (gazetteer, HTML) still load from the repo dir.
+    DATA_DIR = os.environ.get("MERIDIAN_DATA") or RES_DIR
 BASE_DIR  = RES_DIR                                       # back-compat alias for resource lookups
 APP_HTML  = os.path.join(RES_DIR, "meridian-relief.html")
 KEY_FILE  = os.path.join(DATA_DIR, "gemini_key.txt")
