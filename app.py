@@ -161,10 +161,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 
 
 def _summary_cfg():
-    """(api_key, endpoint). Configure with SUMMARY_API_KEY (env) or a summary_key.txt in DATA_DIR, plus an
-    optional SUMMARY_API_URL (default OpenAI-compatible). Works with OpenAI, Groq, Together, a local model,
-    etc. No key -> we fall back to a local model (see _local_llm); failing that, summaries are simply off
-    (the app stays on the safe attributed-lead + link)."""
+    """(api_key, endpoint, model). Just drop your key in summary_key.txt (DATA_DIR) or set SUMMARY_API_KEY —
+    a Groq key (starts with 'gsk_') auto-routes to Groq's free API; anything else defaults to OpenAI. Override
+    the endpoint/model with SUMMARY_API_URL / SUMMARY_MODEL if you use a different provider. No key -> we fall
+    back to a local model (see _local_llm); failing that, summaries are off (safe attributed-lead + link)."""
     key = (os.environ.get("SUMMARY_API_KEY") or "").strip()
     if not key:
         try:
@@ -173,8 +173,13 @@ def _summary_cfg():
                 key = open(p, encoding="utf-8").read().strip()
         except Exception:
             pass
-    url = (os.environ.get("SUMMARY_API_URL") or "https://api.openai.com/v1/chat/completions").strip()
-    return key, url
+    is_groq = key.startswith("gsk_")                         # Groq keys are 'gsk_...' -> use Groq's free endpoint + model
+    url = (os.environ.get("SUMMARY_API_URL")
+           or ("https://api.groq.com/openai/v1/chat/completions" if is_groq
+               else "https://api.openai.com/v1/chat/completions")).strip()
+    model = (os.environ.get("SUMMARY_MODEL")
+             or ("llama-3.1-8b-instant" if is_groq else "gpt-4o-mini")).strip()
+    return key, url, model
 
 
 _LOCAL_LLM = None   # probe result, cached for the process: (url, model) once found, or False if none
@@ -210,8 +215,8 @@ def _summarize(title, text):
     """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
     copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
     LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
-    key, url = _summary_cfg()
-    model, timeout = SUMMARY_MODEL, 25
+    key, url, model = _summary_cfg()
+    timeout = 25
     text = (text or "").strip()
     if not (title or text):
         return ""
