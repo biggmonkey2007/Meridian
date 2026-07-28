@@ -163,7 +163,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 def _summary_cfg():
     """(api_key, endpoint). Configure with SUMMARY_API_KEY (env) or a summary_key.txt in DATA_DIR, plus an
     optional SUMMARY_API_URL (default OpenAI-compatible). Works with OpenAI, Groq, Together, a local model,
-    etc. No key -> summaries are simply off (the app stays on the safe attributed-lead + link)."""
+    etc. No key -> we fall back to a local model (see _local_llm); failing that, summaries are simply off
+    (the app stays on the safe attributed-lead + link)."""
     key = (os.environ.get("SUMMARY_API_KEY") or "").strip()
     if not key:
         try:
@@ -176,14 +177,49 @@ def _summary_cfg():
     return key, url
 
 
+_LOCAL_LLM = None   # probe result, cached for the process: (url, model) once found, or False if none
+
+
+def _local_llm():
+    """The FREE, UNLIMITED summarizer: a locally-running Ollama (ollama.com). No API key, no rate limit, no
+    per-call cost — the model runs on this machine (or, at scale, on the feed server). If Ollama is up with a
+    model pulled, summaries 'just work'; otherwise we return None and the app stays on the safe lead + link.
+    Probe once per process (a localhost GET that fails instantly when Ollama isn't installed)."""
+    global _LOCAL_LLM
+    if _LOCAL_LLM is not None:
+        return _LOCAL_LLM or None
+    _LOCAL_LLM = False
+    host = (os.environ.get("OLLAMA_HOST") or "http://127.0.0.1:11434").strip().rstrip("/")  # 127.0.0.1, not localhost (skips the slow IPv6 ::1 attempt)
+    if "://" not in host:
+        host = "http://" + host
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))               # bypass any system proxy for the localhost probe
+        j = json.loads(opener.open(host + "/api/tags", timeout=1.2).read().decode("utf-8", "replace"))
+        names = [(m.get("name") or "") for m in (j.get("models") or []) if m.get("name")]
+        if not names:
+            return None
+        pref = ("llama3.2", "qwen2.5", "llama3.1", "gemma2", "phi", "mistral", "qwen", "llama3", "gemma", "llama")
+        pick = next((n for p in pref for n in names if n.lower().startswith(p)), names[0])
+        _LOCAL_LLM = (host + "/v1/chat/completions", pick)
+        return _LOCAL_LLM
+    except Exception:
+        return None
+
+
 def _summarize(title, text):
     """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
     copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
     LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
     key, url = _summary_cfg()
+    model, timeout = SUMMARY_MODEL, 25
     text = (text or "").strip()
-    if not key or not (title or text):
+    if not (title or text):
         return ""
+    if not key:                              # no paid key -> try the free, unlimited local model (Ollama)
+        loc = _local_llm()
+        if not loc:
+            return ""
+        url, model, key, timeout = loc[0], loc[1], "local", 45   # local server ignores the auth token
     text = text[:4500]
     cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
@@ -191,15 +227,15 @@ def _summarize(title, text):
             return json.load(open(cache, encoding="utf-8")).get("s", "")
         except Exception:
             pass
-    prompt = ("Summarize this news story in 2-3 clear sentences, in YOUR OWN words, reporting only the facts. "
+    prompt = ("Summarize this news story in 3-4 clear sentences, in YOUR OWN words, reporting only the facts. "
               "Do NOT copy any run of four or more consecutive words from the source. Neutral, concise, no "
               "preamble, no opinion, no 'the article says'.\n\nHEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     try:
-        body = json.dumps({"model": SUMMARY_MODEL, "temperature": 0.3, "max_tokens": 200,
+        body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 260,
                            "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + key})
-        j = json.loads(urllib.request.urlopen(req, timeout=25).read().decode("utf-8", "replace"))
+        j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
         s = ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
         s = re.sub(r"\s+", " ", s).strip()
         if s:
@@ -447,6 +483,9 @@ _PROMO_TAIL   = re.compile(
     r"[\s\-–—|]*follow\s+(?:@[\w.]+|us)\b.*$"                                  # "Follow @Handle …" / "Follow us …"
     r"|[\s\-–—|]*(?:subscribe|join our (?:channel|telegram|whatsapp))\b.*$"    # channel plugs
     r"|[\s\-–—|]*for\s+more\s+(?:news|updates?|stories|info|coverage)\b.*$"    # "… for more news"
+    r"|[\s\-–—|.]*read\s+(?:the\s+)?full\s+(?:article|story|report|coverage|piece|version)\b.*$"   # "Read Full Article at RT.com"
+    r"|[\s\-–—|.]*(?:read\s+(?:the\s+)?(?:article|story|original|more)|continue\s+reading)"        # "Read more at cnn.com" / "Read the original at …"
+    r"(?:\s*[:@]|\s+(?:at|on|via|here|below)\b|\s*[»›→]|\s*$).*$"                                   # …but only as a real CTA (source pointer or end), not prose "read the report"
     r"|[\s\-–—|]*(?:read(?:\s+more)?|watch|more|link|source|via|details?|full\s+story)\s*:\s*$",  # a label + colon left dangling after the URL was cut
     re.I | re.S)
 _PROMO_HANDLE = re.compile(r"(?<![\w@])@[A-Za-z]\w{2,}")                            # stray "@InsiderPaper"
@@ -1621,7 +1660,7 @@ class Api:
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
                 "image": img if _good_img(img) else "",   # filter Telegram link-preview logos too (TASS/RT cards)
-                "sum": _clip(_strip_promo(a.get("desc") or ""), 360),
+                "sum": _clip(_strip_promo(a.get("desc") or ""), 460),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
                 "tg": _is_tg,
@@ -1710,7 +1749,7 @@ class Api:
                     "source": _domain_name(a.get("domain") or ""),
                     "domain": a.get("domain") or "", "url": url,
                     "image": img if _good_img(img) else "",
-                    "sum": _clip(_strip_promo(a.get("desc") or ""), 360),
+                    "sum": _clip(_strip_promo(a.get("desc") or ""), 460),
                     "involved": (_involved_countries(title, ev_country) or [ev_country]),
                     "starred": True, "tg": False, "channel": "",
                 })

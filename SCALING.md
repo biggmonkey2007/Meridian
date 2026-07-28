@@ -77,9 +77,14 @@ The app never republishes an article body (that's substantial copying). It shows
 from the facts (facts aren't copyrightable; the wording is newly generated). Turn it on by giving the
 backend a key:
 
-- `SUMMARY_API_KEY` (env) or `summary_key.txt` in `%LOCALAPPDATA%\Meridian`. Optional `SUMMARY_API_URL`
-  (default OpenAI-compatible) + `SUMMARY_MODEL`. Works with OpenAI, **Groq (free tier)**, Together, or a
-  local model. No key -> summaries are simply off (the safe lead+link stands).
+- **Free + UNLIMITED (no key, no rate limit):** install [Ollama](https://ollama.com) and pull a small model
+  (`ollama pull llama3.2`). Meridian auto-detects it on `127.0.0.1:11434` and summarizes locally — zero cost,
+  no per-day cap, the model runs on the machine. On the feed server, one Ollama summarizes every article ONCE
+  for all users. Override the host with `OLLAMA_HOST` (e.g. point the desktop app at a home server).
+- **Hosted key (optional):** `SUMMARY_API_KEY` (env) or `summary_key.txt` in `%LOCALAPPDATA%\Meridian`.
+  Optional `SUMMARY_API_URL` (default OpenAI-compatible) + `SUMMARY_MODEL`. Works with OpenAI, **Groq (free
+  tier)**, Together, etc. A key takes precedence over local Ollama.
+- No key **and** no local model -> summaries are simply off (the safe lead+link stands).
 - `Api.summarize_event(title, url|text)` reads the text once, rewrites it, and caches 30 days. The client
   calls it on open (and warms it on hover). Cost is ~a fraction of a cent per story.
 - **At scale:** run this on the feed server, cache per story, and serve the summary IN the feed JSON (or
