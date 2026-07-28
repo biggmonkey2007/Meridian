@@ -1565,7 +1565,7 @@ class Api:
                 "source": (a.get("_src") or _domain_name(a.get("domain") or "")),
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
-                "image": img if (_is_tg or _good_img(img)) else "",
+                "image": img if _good_img(img) else "",   # filter Telegram link-preview logos too (TASS/RT cards)
                 "sum": _clip(_strip_promo(a.get("desc") or ""), 360),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
@@ -2950,11 +2950,27 @@ def _clean_headline(t):
 
 
 def _good_img(u):
+    """A REAL news photo, not a logo / flag / branded 'share card'. Outlets (esp. state wires like TASS/RT)
+    ship a house-brand card as og:image when an article has no photo — those must be rejected so the app
+    falls back to a real event or LOCATION photo. Telegram link-previews carry the same cards, so this now
+    filters them too (see the event build)."""
     if not u or not u.startswith("http"):
         return False
     lu = u.lower()
-    bad = ("og-image.png", "placeholder", "default.jp", "default.pn", "/logo",
-           "sprite", "favicon", "blank.", "-logo", "logo.", "share_default", "_default.")
+    bad = (
+        # generic 'no real photo' cards
+        "og-image", "og_image", "og-default", "og_default", "/og-", "/og_", "opengraph", "open-graph",
+        "twitter-card", "twittercard", "summary-card", "placeholder", "no-image", "noimage", "no_image",
+        "default.jp", "default.pn", "default-", "-default.", "_default.", "/default", "share_default",
+        "share-image", "share-card", "-share.", "/social", "social-", "socialcard", "meta-image",
+        "meta_image", "preview-default", "/card.", "card-default", "generic-", "stub.",
+        # logos / brand marks / flags
+        "/logo", "-logo", "logo.", "logo_", "_logo", "site-logo", "header-logo", "brand-", "/brand",
+        "sprite", "favicon", "blank.", "watermark", "/flag", "-flag.", "flag-",
+        # house 'brand card' filenames (extend as spotted — keep to the CARD, not the whole domain, so real
+        # photos from the same outlet still show)
+        "tass_logo", "og-tass", "tass-card", "tass-cover", "tass-og", "rt-logo", "sputnik-logo", "ria-logo",
+    )
     return not any(b in lu for b in bad)
 
 
