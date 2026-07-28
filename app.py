@@ -96,6 +96,29 @@ def _update_repo():
     return UPDATE_REPO_DEFAULT
 
 
+# THIN-CLIENT / SCALE. When this points at a hosted feed (e.g. "https://feed.example.com"), the app stops
+# building the world map itself and just FETCHES the server-built JSON — one fast, CDN-cacheable request
+# that serves every user identically. That is what lets the same backend hold millions of users (and feed
+# an iOS/Android app) instead of every copy independently hammering GDELT/Wikidata/Telegram. Empty =
+# self-contained local build (today's behaviour), so the app always works even with no server.
+FEED_BASE_DEFAULT = ""
+
+
+def _feed_base():
+    try:
+        v = (os.environ.get("MERIDIAN_FEED_BASE") or "").strip()
+        if v:
+            return v
+        cfg = os.path.join(DATA_DIR, "feed_base.txt")   # drop-in, no rebuild — mirrors update_repo.txt
+        if os.path.exists(cfg):
+            v = open(cfg, encoding="utf-8").read().strip()
+            if v:
+                return v
+    except Exception:
+        pass
+    return FEED_BASE_DEFAULT
+
+
 def _ver_tuple(v):
     """'v1.2.3' / '1.2.3' -> (1,2,3) for comparison; junk -> (0,)."""
     nums = re.findall(r"\d+", re.sub(r"^v", "", (v or "").strip(), flags=re.I))
@@ -1374,6 +1397,11 @@ class Api:
             h = 24
         if h not in (6, 12, 24, 48):
             h = 24
+        base = _feed_base()
+        if base:                                        # THIN CLIENT: one GET of the server-built feed
+            hosted = self._hosted_world_events(base, h)
+            if hosted is not None:
+                return hosted                           # (falls through to the local build if unreachable)
         cache = os.path.join(CACHE_DIR, "world_%dh.json" % h)
         # STALE-WHILE-REVALIDATE: serve ANY cached copy INSTANTLY so the map fills the moment the app opens
         # (the cache is a file on disk, so it survives relaunches). If the copy is stale, kick off a
@@ -1397,6 +1425,36 @@ class Api:
                 cached["stale"] = True
             return cached
         return self._build_world_events(h)
+
+    def _hosted_world_events(self, base, h):
+        """THIN-CLIENT PATH — fetch the pre-built feed from the hosted backend. This is one small, CDN-cached
+        GET that every user shares, so the origin does the GDELT/geolocate/Telegram work ONCE for everybody
+        (the model that scales to millions and powers the mobile apps). A 60s client cache keeps the 10-min
+        poll from refetching; a stale hosted copy is served on a hiccup; None means 'server unreachable —
+        use the local build' so the desktop app still works offline."""
+        cache = os.path.join(CACHE_DIR, "hosted_%dh.json" % h)
+        cached = None
+        if os.path.exists(cache):
+            try:
+                cached = json.load(open(cache, encoding="utf-8"))
+            except Exception:
+                cached = None
+        if cached and _fresh(cache, 60):
+            return cached                               # very fresh — serve instantly, no network at all
+        try:
+            data = json.loads(_http_get(base.rstrip("/") + "/world_%dh.json" % h, 10))
+            if not isinstance(data, dict) or "events" not in data:
+                raise ValueError("bad feed")
+            if isinstance(data.get("clip_owner"), dict):
+                global _CLIP_OWNER
+                _CLIP_OWNER = data["clip_owner"]
+            try:
+                json.dump(data, open(cache, "w", encoding="utf-8"))
+            except Exception:
+                pass
+            return data
+        except Exception:
+            return cached                               # last hosted copy, or None to fall back to local
 
     def _build_world_events(self, h):
         """The live build — GDELT + feeds + Telegram, geolocated and deduped, written to the cache. Blocks;

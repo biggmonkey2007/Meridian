@@ -4064,6 +4064,9 @@ function applyWorldEvents(items){
   if(_prevSeen){ const fresh=built.filter(e=>!_prevSeen.has(evKey(e))); if(fresh.length) notifyNew(fresh); }
   _liveSeen=new Set(built.map(evKey));
   sweepReadMedia();                 // a read dot that has GAINED footage lights back up on its own
+  // PROACTIVE WARM: the newest handful of stories are the most likely first click — warm their article/
+  // clips/photo the instant the feed lands (not only when idle), staggered so we don't burst all at once.
+  try{ built.slice().sort((a,b)=> b.reportedAt-a.reportedAt).slice(0,6).forEach((e,i)=> setTimeout(()=>{ try{ warmStory(e); }catch(_){} }, 250*i)); }catch(e){}
   return built.length;
 }
 /* ---- merge pinned ("starred") countries' news into the map ---- */

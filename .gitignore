@@ -39,3 +39,7 @@ desktop.ini
 # gazetteer build artifacts (the .json is committed; these are not)
 cities1000.zip
 cities_gaz.backup.json
+
+# hosted-feed server output
+feed_out/
+hosted_*.json
