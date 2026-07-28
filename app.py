@@ -151,6 +151,12 @@ def _clip(s, n=360):
     return (s[:w] if w > n * 0.6 else s[:n]).rstrip()
 
 
+def _share_id(url, title=""):
+    """A short, stable, URL-safe id for a story's shareable page — the SAME story always maps to the same
+    id (keyed by the article URL, or the title when there's none), so a re-shared link keeps its emblem."""
+    return hashlib.sha1(((url or title or "").strip().lower()).encode("utf-8")).hexdigest()[:12]
+
+
 # ---------------------------------------------------------------------------
 # Live wire — a Telegram-style running feed scraped from public channel previews
 # (t.me/s/<channel>), no API key or login needed. Channels are user-editable via
@@ -1552,7 +1558,7 @@ class Api:
             img = a.get("socialimage") or ""
             _is_tg = bool(a.get("_tg"))
             events.append({
-                "title": title, "cat": cat,
+                "title": title, "cat": cat, "sid": _share_id(url, title),
                 "lat": round(lat, 4), "lng": round(lng, 4),
                 "place": place, "country": country,
                 "hrs": round(hrs, 1),
@@ -1643,7 +1649,7 @@ class Api:
                 cat = _classify(title, a.get("desc") or "")            # every category kept — even "bland"
                 img = a.get("socialimage") or ""
                 events.append({
-                    "title": title, "cat": cat,
+                    "title": title, "cat": cat, "sid": _share_id(url, title),
                     "lat": round(lat, 4), "lng": round(lng, 4),
                     "place": place, "country": ev_country, "hrs": round(hrs, 1),
                     "source": _domain_name(a.get("domain") or ""),
@@ -1670,7 +1676,8 @@ class Api:
             return {"events": [], "country": country, "error": str(ex)}
 
     def app_version(self):
-        return {"version": APP_VERSION, "frozen": bool(getattr(sys, "frozen", False)), "repo": _update_repo()}
+        return {"version": APP_VERSION, "frozen": bool(getattr(sys, "frozen", False)),
+                "repo": _update_repo(), "feed": _feed_base()}    # feed base doubles as the share-page host
 
     def check_update(self):
         """Ask GitHub Releases whether a newer Meridian.exe exists. Returns {available, version, url, notes}.

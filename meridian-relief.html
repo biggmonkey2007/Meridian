@@ -4407,21 +4407,27 @@ const CHECK_ICON = '<svg class="sh-ico" viewBox="0 0 24 24" fill="none" stroke="
 
 /* What a shared story should say: the headline, where it happened, when, who reported it, and the
    link to the original. Plain text, so it pastes intact into anything. */
+// When a hosted feed is configured, share Meridian's OWN branded story page (rich Open-Graph card =
+// "our emblem"); otherwise share the original article link (still a real preview). Fetched once on start.
+let _shareBase = "";
+_whenBridgeReady(()=>{ const api=aiBridge(); if(api&&api.app_version){ try{ Promise.resolve(api.app_version()).then(v=>{ if(v&&v.feed) _shareBase=String(v.feed).replace(/\/+$/,""); }).catch(()=>{}); }catch(e){} } });
+function shareUrl(d){ return (_shareBase && d.sid) ? (_shareBase+"/s/"+d.sid) : (d.url||""); }
 function shareText(d){
+  const url = shareUrl(d);
   const bits = [String(d.title||"").trim()];
   const where = d.place || shortCountry(d.country) || "";
   const when  = d.reportedAt ? timeAgo(d.reportedAt) : "";
   const meta  = [where, when && ("reported " + when), d.source || d.domain || ""].filter(Boolean);
   if(meta.length) bits.push(meta.join(" · "));
-  if(d.url) bits.push(d.url);
   bits.push("— via Meridian");
+  if(url) bits.push(url);          // URL LAST, on its own line, so chat/social render its preview card cleanly
   return bits.join("\n");
 }
 async function shareEvent(d, btn){
   const txt = shareText(d);
   let ok = false;
   try{
-    if(navigator.share){ await navigator.share({ title:d.title||"Meridian", text:txt, url:d.url||"" }); ok = true; }
+    if(navigator.share){ await navigator.share({ title:d.title||"Meridian", text:txt, url:shareUrl(d) }); ok = true; }
   }catch(e){ if(e && e.name==="AbortError") return; }        // the user closed the sheet — say nothing
   if(!ok){
     try{ await navigator.clipboard.writeText(txt); ok = true; }
