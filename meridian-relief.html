@@ -3559,7 +3559,7 @@ async function renderRealEvent(d){
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
     <p class="lead" id="re-lead-${d.id}">${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
-    <div id="re-body-${d.id}"></div>
+    <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     <div id="re-sides-${d.id}" class="round-table"></div>
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>

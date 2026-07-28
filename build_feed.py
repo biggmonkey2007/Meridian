@@ -22,6 +22,7 @@ import sys
 import json
 import time
 import tempfile
+import concurrent.futures
 import html as _html
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,9 +58,51 @@ _CSS = ("*{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,Blink
         "margin-top:16px;color:#9fb3d0;text-decoration:none;font-size:14px}")
 
 
+def _article_text(api, ev):
+    """Best available text to summarize: the scraped article body (cached 1 day), else the outlet dek."""
+    url = ev.get("url") or ""
+    if url and not ev.get("tg"):
+        try:
+            meta = api.article_detail(url) or {}
+            paras = meta.get("paragraphs") or []
+            if paras:
+                return "\n".join(paras[:10])
+            if meta.get("desc"):
+                return meta["desc"]
+        except Exception:
+            pass
+    return ev.get("sum") or ""
+
+
+def enrich_summaries(api, events):
+    """Pre-generate Meridian's OWN copyright-free summary for every story, ONCE, here on the server — so
+    every user who opens that story gets the SAME summary with zero client work (it ships baked into the
+    feed JSON as ev["summary"]). Skips entirely when no summarizer is configured. Both the article scrape
+    and the summary are cached, so only the first build pays the cost; later builds reuse the cache."""
+    if not (app._summary_cfg()[0] or app._local_llm()):
+        return 0
+
+    def work(ev):
+        try:
+            s = app._summarize(ev.get("title") or "", _article_text(api, ev))
+            if s:
+                ev["summary"] = s
+                return 1
+        except Exception:
+            pass
+        return 0
+
+    n = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        for r in ex.map(work, events):
+            n += r
+    return n
+
+
 def _share_page(ev):
     e = lambda s: _html.escape(str(s or ""), quote=True)
-    title, desc = e(ev.get("title")), e(ev.get("sum"))
+    title = e(ev.get("title"))
+    desc = e(ev.get("summary") or ev.get("sum"))   # our own copyright-free summary on the share card when we have it
     img = e(ev.get("image") or "")
     art = e(ev.get("url") or "#")
     meta = e(" · ".join(x for x in [ev.get("place") or ev.get("country") or "", ev.get("source") or ""] if x))
@@ -115,12 +158,13 @@ def build_once():
         try:
             data = dict(api._build_world_events(h))
             data["generated"] = int(time.time())
+            ns = enrich_summaries(api, data.get("events", []))   # bake OUR summary into every story, once, for all users
             _write_atomic(os.path.join(OUT, "world_%dh.json" % h),
                           json.dumps(data, ensure_ascii=False, separators=(",", ":")))
             if h == 24:                              # share pages from the widest, most-shared window
                 pages = write_share_pages(data)
-            print("  world_%dh.json  %d events  %.1fs" % (h, len(data.get("events", [])), time.time() - t),
-                  flush=True)
+            print("  world_%dh.json  %d events  %d summaries  %.1fs" % (
+                h, len(data.get("events", [])), ns, time.time() - t), flush=True)
         except Exception as ex:
             print("  world_%dh.json FAILED: %s" % (h, ex), flush=True)
     print("  wrote %d share pages -> %s/s/" % (pages, OUT), flush=True)
