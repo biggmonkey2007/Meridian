@@ -1,0 +1,11 @@
+{
+  "appId": "com.meridian.news",
+  "appName": "Meridian",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  },
+  "ios": { "contentInset": "always" },
+  "android": { "backgroundColor": "#0b1220" }
+}

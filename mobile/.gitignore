@@ -1,0 +1,7 @@
+# Generated / installed — not source
+node_modules/
+www/
+ios/
+android/
+feed_base.txt
+.DS_Store

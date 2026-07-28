@@ -2847,8 +2847,35 @@ function afterProfileRender(name, fb){
   if(document.getElementById("xp-live")) enrichExpert(name);
   if(document.getElementById("xp-clip")) embedClips(name);
 }
-/* ---- desktop AI/clips bridge (Python pywebview) ---- */
-function aiBridge(){ try{ return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null; }catch(e){ return null; } }
+/* ---- backend bridge ----
+   Desktop: the Python pywebview API (window.pywebview.api.*) — full enrichments.
+   Web / iOS / Android: NO desktop bridge, so aiBridge() returns a thin fetch()-backed API that reads the
+   hosted feed (world_<h>h.json) built once on the server. It implements world_events + app_version; every
+   other method is intentionally absent, so each `if(!api || !api.x)` guard makes that enrichment a graceful
+   no-op until a hosted enrichment API exists. The pre-baked ev.summary still renders (it's in the feed), so
+   the map, headlines and copyright-free summaries all work cross-platform from the same HTML.
+   Configure the feed URL via window.MERIDIAN_FEED_BASE or <meta name="meridian-feed-base" content="…">. */
+const FEED_BASE = (function(){ try{
+  return (window.MERIDIAN_FEED_BASE || (document.querySelector('meta[name="meridian-feed-base"]')||{}).content || "").replace(/\/+$/,"");
+}catch(e){ return ""; } })();
+let _webApi = null;
+function webApi(){
+  if(!FEED_BASE) return null;
+  if(_webApi) return _webApi;
+  _webApi = {
+    _web: true,
+    world_events: async (h)=>{
+      const hh=[6,12,24,48].indexOf(+h)>=0?+h:24;
+      const r=await fetch(FEED_BASE+"/world_"+hh+"h.json",{cache:"no-cache"});
+      if(!r.ok) throw new Error("feed "+r.status);
+      return await r.json();
+    },
+    app_version: async ()=>({feed: FEED_BASE, web: true})
+  };
+  return _webApi;
+}
+/* ---- desktop AI/clips bridge (Python pywebview), else the hosted-feed web API ---- */
+function aiBridge(){ try{ if(window.pywebview && window.pywebview.api) return window.pywebview.api; }catch(e){} return webApi(); }
 function newsAgo(pub){ try{ const t=new Date(pub).getTime(); if(!t) return ""; const m=Math.floor((Date.now()-t)/60000); if(m<1) return "now"; if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<24) return h+"h ago"; return Math.floor(h/24)+"d ago"; }catch(e){ return ""; } }
 async function loadCountryNews(name){
   const slot=document.getElementById("ctry-news"); if(!slot) return;
