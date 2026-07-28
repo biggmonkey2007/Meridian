@@ -3608,16 +3608,19 @@ async function renderRealEvent(d){
       const meta=await api.article_detail(d.url);
       if(activeEvent!==d.id) return;
       const desc=(meta && (meta.desc||meta.description))||"";
-      const paras=(meta && meta.paragraphs)||[];
-      // a wire lead often opens by restating the headline verbatim — same duplication, same fix
-      if(lead){ const L=bodyMinusHeadline(d.title, desc||d.sum||paras[0]||"");
+      const paras=(meta && meta.paragraphs)||[];   // used only to FIND people below — never displayed verbatim
+      // a short, ATTRIBUTED lead (the article's own dek) is fair use; a body paragraph is not, so the lead
+      // never falls back to paras.
+      if(lead){ const L=bodyMinusHeadline(d.title, d.sum||desc||"");
                 if(L){ lead.textContent=L; lead.style.display=""; } else { hideLead(); } }
       const bodyEl=document.getElementById("re-body-"+d.id);
-      // SHARP & TO THE POINT: news leads with the facts (inverted pyramid), so a tight few paragraphs ARE
-      // the story — the rest is background, a click away via "Read the original". Drop stubby fragments too.
-      const rest = (desc ? paras : paras.slice(1)).filter(p=> p && p.trim().length>45).slice(0,6);
-      if(bodyEl && rest.length){
-        bodyEl.innerHTML=`<div class="sec-label">What’s happening</div><div class="body">${rest.map(p=>`<p>${esc(p)}</p>`).join("")}</div>`;
+      // COPYRIGHT-SAFE: we do NOT republish the source's article body (multi-paragraph verbatim = substantial
+      // copying). The aggregator model stands — a short attributed lead above + the "Read the original" link
+      // below. When the backend generates an ORIGINAL summary (d.summary), show THAT, in our own words.
+      if(bodyEl){
+        bodyEl.innerHTML = d.summary
+          ? `<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`
+          : "";
       }
       if(hero && img && !d.image && meta && meta.image){ img.onload=()=>hero.classList.add("has-photo"); img.src=meta.image; }
       // the article names people the headline never did (a senator quoted in paragraph two)
