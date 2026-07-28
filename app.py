@@ -5330,7 +5330,11 @@ _PARA_BAD = ("cookie", "subscribe", "sign up", "newsletter", "advertisement",
              "on facebook", "on twitter", " on google", "add al jazeera", "published on",
              "photo/file", "getty images", "/ap photo", "reuters/", "click here",
              "sign in to", "log in", "download the app", "most read", "related stories",
-             "you may also", "recommended", "advertisement", "skip to", "listen to this")
+             "you may also", "recommended", "advertisement", "skip to", "listen to this",
+             # trailing byline / housekeeping fluff that pads the end of wire copy
+             "contributed to this", "additional reporting", "with reporting by", "reporting by",
+             "editing by", "this article was", "originally published", "editor's note", "editor’s note",
+             "correction:", "this is a developing", "was updated", "support our journalism")
 
 
 # ── SHARP WIRE PROSE ─────────────────────────────────────────────────────────────────────────────

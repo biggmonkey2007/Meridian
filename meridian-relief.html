@@ -3613,9 +3613,11 @@ async function renderRealEvent(d){
       if(lead){ const L=bodyMinusHeadline(d.title, desc||d.sum||paras[0]||"");
                 if(L){ lead.textContent=L; lead.style.display=""; } else { hideLead(); } }
       const bodyEl=document.getElementById("re-body-"+d.id);
-      const rest = desc ? paras : paras.slice(1);
+      // SHARP & TO THE POINT: news leads with the facts (inverted pyramid), so a tight few paragraphs ARE
+      // the story — the rest is background, a click away via "Read the original". Drop stubby fragments too.
+      const rest = (desc ? paras : paras.slice(1)).filter(p=> p && p.trim().length>45).slice(0,6);
       if(bodyEl && rest.length){
-        bodyEl.innerHTML=`<div class="sec-label">What’s happening</div><div class="body">${rest.slice(0,12).map(p=>`<p>${esc(p)}</p>`).join("")}</div>`;
+        bodyEl.innerHTML=`<div class="sec-label">What’s happening</div><div class="body">${rest.map(p=>`<p>${esc(p)}</p>`).join("")}</div>`;
       }
       if(hero && img && !d.image && meta && meta.image){ img.onload=()=>hero.classList.add("has-photo"); img.src=meta.image; }
       // the article names people the headline never did (a senator quoted in paragraph two)
