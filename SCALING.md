@@ -71,6 +71,20 @@ feed + enrichment API above exist:
 Result: desktop, iOS, Android and web are all thin clients of one backend — the same data, updated in one
 place, scaling on the CDN.
 
+## Copyright-safe AI summaries
+The app never republishes an article body (that's substantial copying). It shows a short attributed lead
++ "Read the original", and — when configured — **Meridian's own** 2-3 sentence summary written by an LLM
+from the facts (facts aren't copyrightable; the wording is newly generated). Turn it on by giving the
+backend a key:
+
+- `SUMMARY_API_KEY` (env) or `summary_key.txt` in `%LOCALAPPDATA%\Meridian`. Optional `SUMMARY_API_URL`
+  (default OpenAI-compatible) + `SUMMARY_MODEL`. Works with OpenAI, **Groq (free tier)**, Together, or a
+  local model. No key -> summaries are simply off (the safe lead+link stands).
+- `Api.summarize_event(title, url|text)` reads the text once, rewrites it, and caches 30 days. The client
+  calls it on open (and warms it on hover). Cost is ~a fraction of a cent per story.
+- **At scale:** run this on the feed server, cache per story, and serve the summary IN the feed JSON (or
+  via the enrichment proxy) — so each article is summarized ONCE for all users, not per user.
+
 ## Speed wins already in place (client side)
 Parallel source fetch under one deadline · memoised geolocation · gazetteer scan pre-filter · hover +
 idle **preloading** of a story's article/clips/photos/people so a click opens with no wait · blank-until-

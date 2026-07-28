@@ -157,6 +157,61 @@ def _share_id(url, title=""):
     return hashlib.sha1(((url or title or "").strip().lower()).encode("utf-8")).hexdigest()[:12]
 
 
+SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
+
+
+def _summary_cfg():
+    """(api_key, endpoint). Configure with SUMMARY_API_KEY (env) or a summary_key.txt in DATA_DIR, plus an
+    optional SUMMARY_API_URL (default OpenAI-compatible). Works with OpenAI, Groq, Together, a local model,
+    etc. No key -> summaries are simply off (the app stays on the safe attributed-lead + link)."""
+    key = (os.environ.get("SUMMARY_API_KEY") or "").strip()
+    if not key:
+        try:
+            p = os.path.join(DATA_DIR, "summary_key.txt")
+            if os.path.exists(p):
+                key = open(p, encoding="utf-8").read().strip()
+        except Exception:
+            pass
+    url = (os.environ.get("SUMMARY_API_URL") or "https://api.openai.com/v1/chat/completions").strip()
+    return key, url
+
+
+def _summarize(title, text):
+    """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
+    copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
+    LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
+    key, url = _summary_cfg()
+    text = (text or "").strip()
+    if not key or not (title or text):
+        return ""
+    text = text[:4500]
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            return json.load(open(cache, encoding="utf-8")).get("s", "")
+        except Exception:
+            pass
+    prompt = ("Summarize this news story in 2-3 clear sentences, in YOUR OWN words, reporting only the facts. "
+              "Do NOT copy any run of four or more consecutive words from the source. Neutral, concise, no "
+              "preamble, no opinion, no 'the article says'.\n\nHEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
+    try:
+        body = json.dumps({"model": SUMMARY_MODEL, "temperature": 0.3, "max_tokens": 200,
+                           "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json", "Authorization": "Bearer " + key})
+        j = json.loads(urllib.request.urlopen(req, timeout=25).read().decode("utf-8", "replace"))
+        s = ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
+        s = re.sub(r"\s+", " ", s).strip()
+        if s:
+            try:
+                json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
+            except Exception:
+                pass
+        return s
+    except Exception:
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Live wire — a Telegram-style running feed scraped from public channel previews
 # (t.me/s/<channel>), no API key or login needed. Channels are user-editable via
@@ -1894,6 +1949,19 @@ class Api:
             return res
         except Exception as ex:
             return {"leaders": [], "error": str(ex)}
+
+    def summarize_event(self, title, url="", text=""):
+        """Meridian's OWN copyright-free summary of a story (2-3 original sentences). If given only a URL it
+        reads the article text first — which is NEVER shown verbatim, only summarized in new words. Cached.
+        Returns {"summary": ""} when no LLM key is configured, so the UI keeps the safe attributed lead+link."""
+        try:
+            body = (text or "").strip()
+            if not body and url and str(url).startswith("http"):
+                d = self.article_detail(url) or {}
+                body = " ".join((d.get("paragraphs") or [])[:10]).strip() or (d.get("desc") or "")
+            return {"summary": _summarize(title or "", body)}
+        except Exception:
+            return {"summary": ""}
 
     def article_detail(self, url):
         """One article's picture + clean text for the detail panel. Cached 1 day.

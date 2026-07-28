@@ -43,3 +43,5 @@ cities_gaz.backup.json
 # hosted-feed server output
 feed_out/
 hosted_*.json
+
+summary_key.txt
