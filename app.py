@@ -158,6 +158,7 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
+_SUM_PROMPT_VER = "2"   # bump when the summary prompt/format changes, so cached summaries regenerate
 
 
 def _summary_cfg():
@@ -226,7 +227,7 @@ def _summarize(title, text):
             return ""
         url, model, key, timeout = loc[0], loc[1], "local", 45   # local server ignores the auth token
     text = text[:4500]
-    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             return json.load(open(cache, encoding="utf-8")).get("s", "")
@@ -234,13 +235,16 @@ def _summarize(title, text):
             pass
     system = ("You are a wire-service news editor. You write tight, original, copyright-free briefs and you "
               "NEVER copy the source's wording — every sentence is rephrased from scratch.")
-    prompt = ("Rewrite the story below as a sharp factual brief of 3-4 short sentences for a world-news map.\n"
+    prompt = ("Rewrite the story below as ONE sharp, self-contained news brief of 3-4 complete sentences for a "
+              "world-news map — the reader sees only your brief, so it must stand on its own.\n"
               "- Lead with the core development, then the key supporting facts.\n"
               "- Keep the specifics: names, numbers, places, dates. No fluff, no filler.\n"
+              "- Write in complete sentences (no fragments); do not restate the headline word-for-word.\n"
               "- Facts only — no opinion, no speculation, no editorializing, no 'the article says'/'reportedly'.\n"
+              "- Never comment on what the source leaves out (no 'the timing is unspecified', 'details are "
+              "unclear', 'it is not stated'); simply omit anything not given.\n"
               "- Write ENTIRELY in your own words to stay copyright-free: do not copy any run of four or more "
-              "consecutive words from the source, and never quote it.\n"
-              "- Include only what is in the source; if a detail isn't there, leave it out.\n\n"
+              "consecutive words from the source, and never quote it.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     try:
         body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 260,

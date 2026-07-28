@@ -3558,7 +3558,7 @@ async function renderRealEvent(d){
     </div>
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
-    <p class="lead" id="re-lead-${d.id}">${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
+    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     <div id="re-sides-${d.id}" class="round-table"></div>
@@ -3594,23 +3594,31 @@ async function renderRealEvent(d){
   const api=aiBridge();
   const lead=document.getElementById("re-lead-"+d.id);
   const hideLead=()=>{ if(lead){ lead.textContent=""; lead.style.display="none"; } };
+  // ONE clean article: OUR copyright-free summary is the single body. The source's dek only stands in as a
+  // lead WHILE the summary is being written, or if there's no summary at all (no key / failure) — never both
+  // at once. brief(sum) hides the dek and shows the summary; brief("") clears it and the attributed dek+link
+  // stays.
+  const bodyEl=document.getElementById("re-body-"+d.id);
+  const BRIEF=`<div class="sec-label">In brief · Meridian</div>`;
+  const showBrief=(sum, dek)=>{
+    if(sum){ d.summary=sum; if(lead) lead.style.display="none";
+             if(bodyEl) bodyEl.innerHTML=`${BRIEF}<div class="body"><p>${esc(sum)}</p></div>`; }
+    else { if(bodyEl) bodyEl.innerHTML="";
+           if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
+  };
   if(d.tg && (!d.url || /t\.me\//.test(d.url))){
-    // A PURE Telegram post: the post text IS the story (no article page to scrape). Fill the lead from what
-    // we have — and if the post is substantial, generate OUR copyright-free summary of it too. (A TG event
-    // that links to a real article falls through to the article branch below and gets summarized there.)
-    if(lead){
-      const body=bodyMinusHeadline(d.title, d.sum);
-      if(body){ lead.textContent=body; lead.style.display=""; } else { hideLead(); }
-    }
-    const bodyEl=document.getElementById("re-body-"+d.id);
-    if(bodyEl && !d.summary && api && api.summarize_event && (d.sum||"").length>=180){
-      bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p class="sum-load"><span class="spin"></span> Summarizing…</p></div>`;
-      Promise.resolve(api.summarize_event(d.title||"", "", d.sum)).then(r=>{
-        if(activeEvent!==d.id || !bodyEl) return;
-        if(r && r.summary){ d.summary=r.summary;
-          bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(r.summary)}</p></div>`; }
-        else bodyEl.innerHTML="";
-      }).catch(()=>{ if(bodyEl) bodyEl.innerHTML=""; });
+    // A PURE Telegram post: the post text IS the story (no article page to scrape). Show the post as the lead;
+    // if it's substantial, replace it with OUR summary once ready. (A TG event that links to a real article
+    // falls through to the article branch below and is summarized from the article.)
+    const dek=bodyMinusHeadline(d.title, d.sum);
+    if(d.summary){ showBrief(d.summary, dek); }
+    else {
+      if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
+      if(api && api.summarize_event && (d.sum||"").length>=180){
+        Promise.resolve(api.summarize_event(d.title||"", "", d.sum)).then(r=>{
+          if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
+        }).catch(()=>{});
+      }
     }
     updateListenTime(d);
   }
@@ -3620,28 +3628,18 @@ async function renderRealEvent(d){
       if(activeEvent!==d.id) return;
       const desc=(meta && (meta.desc||meta.description))||"";
       const paras=(meta && meta.paragraphs)||[];   // used only to FIND people below — never displayed verbatim
-      // a short, ATTRIBUTED lead (the article's own dek) is fair use; a body paragraph is not, so the lead
-      // never falls back to paras.
-      if(lead){ const L=bodyMinusHeadline(d.title, d.sum||desc||"");
-                if(L){ lead.textContent=L; lead.style.display=""; } else { hideLead(); } }
-      const bodyEl=document.getElementById("re-body-"+d.id);
-      // COPYRIGHT-SAFE: we do NOT republish the source's article body (multi-paragraph verbatim = substantial
-      // copying). The aggregator model stands — a short attributed lead above + the "Read the original" link
-      // below. When the backend generates an ORIGINAL summary (d.summary), show THAT, in our own words.
-      if(bodyEl){
-        bodyEl.innerHTML = d.summary
-          ? `<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`
-          : (api.summarize_event ? `<div class="sec-label">In brief · Meridian</div><div class="body"><p class="sum-load"><span class="spin"></span> Summarizing…</p></div>` : "");
-      }
-      // OUR OWN copyright-free summary — an LLM rewrites the facts in new words (never the source's phrasing).
-      // Reuses the text we already scraped, so no second fetch. Empty (no key configured) -> lead+link stands.
-      if(bodyEl && api.summarize_event && (paras.length || desc)){
-        Promise.resolve(api.summarize_event(d.title||"", "", (paras.slice(0,10).join(" ")||desc))).then(r=>{
-          if(activeEvent!==d.id || !bodyEl) return;
-          if(r && r.summary){ d.summary=r.summary;
-            bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(r.summary)}</p></div>`; }
-          else { bodyEl.innerHTML=""; }        // no key / failed -> the attributed lead + "Read the original" stands
-        }).catch(()=>{ if(bodyEl) bodyEl.innerHTML=""; });
+      // the dek (article's own blurb) is fair use as a lead; a body paragraph is not, so it never falls back to paras.
+      const dek=bodyMinusHeadline(d.title, d.sum||desc||"");
+      // COPYRIGHT-SAFE: we never republish the source's article body. OUR original summary is the single body;
+      // the dek only leads while it generates, or stands alone if no summary is produced.
+      if(d.summary){ showBrief(d.summary, dek); }
+      else {
+        if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
+        if(api.summarize_event && (paras.length || desc)){
+          Promise.resolve(api.summarize_event(d.title||"", "", (paras.slice(0,10).join(" ")||desc))).then(r=>{
+            if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
+          }).catch(()=>{});
+        }
       }
       if(hero && img && !d.image && meta && meta.image){ img.onload=()=>hero.classList.add("has-photo"); img.src=meta.image; }
       // the article names people the headline never did (a senator quoted in paragraph two)
