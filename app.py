@@ -232,12 +232,20 @@ def _summarize(title, text):
             return json.load(open(cache, encoding="utf-8")).get("s", "")
         except Exception:
             pass
-    prompt = ("Summarize this news story in 3-4 clear sentences, in YOUR OWN words, reporting only the facts. "
-              "Do NOT copy any run of four or more consecutive words from the source. Neutral, concise, no "
-              "preamble, no opinion, no 'the article says'.\n\nHEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
+    system = ("You are a wire-service news editor. You write tight, original, copyright-free briefs and you "
+              "NEVER copy the source's wording — every sentence is rephrased from scratch.")
+    prompt = ("Rewrite the story below as a sharp factual brief of 3-4 short sentences for a world-news map.\n"
+              "- Lead with the core development, then the key supporting facts.\n"
+              "- Keep the specifics: names, numbers, places, dates. No fluff, no filler.\n"
+              "- Facts only — no opinion, no speculation, no editorializing, no 'the article says'/'reportedly'.\n"
+              "- Write ENTIRELY in your own words to stay copyright-free: do not copy any run of four or more "
+              "consecutive words from the source, and never quote it.\n"
+              "- Include only what is in the source; if a detail isn't there, leave it out.\n\n"
+              "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     try:
         body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 260,
-                           "messages": [{"role": "user", "content": prompt}]}).encode("utf-8")
+                           "messages": [{"role": "system", "content": system},
+                                        {"role": "user", "content": prompt}]}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + key})
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
@@ -1528,6 +1536,7 @@ class Api:
                 _spawn_world_refresh(self, h)
                 cached = dict(cached)
                 cached["stale"] = True
+            _spawn_summary_prewarm(self, h, cached)   # warm summaries for the served feed too (e.g. cold open)
             return cached
         return self._build_world_events(h)
 
@@ -1690,6 +1699,7 @@ class Api:
                 json.dump(res, open(cache, "w", encoding="utf-8"))
             except Exception:
                 pass
+        _spawn_summary_prewarm(self, h, res)   # new news dropped -> summarize it all NOW, before anyone clicks
         return res
 
     def country_news(self, country, hours=24):
@@ -1995,7 +2005,7 @@ class Api:
             return {"leaders": [], "error": str(ex)}
 
     def summarize_event(self, title, url="", text=""):
-        """Meridian's OWN copyright-free summary of a story (2-3 original sentences). If given only a URL it
+        """Meridian's OWN copyright-free summary of a story (3-4 original sentences). If given only a URL it
         reads the article text first — which is NEVER shown verbatim, only summarized in new words. Cached.
         Returns {"summary": ""} when no LLM key is configured, so the UI keeps the safe attributed lead+link."""
         try:
@@ -2006,6 +2016,27 @@ class Api:
             return {"summary": _summarize(title or "", body)}
         except Exception:
             return {"summary": ""}
+
+    def _prewarm_summaries(self, events):
+        """Summarize a whole feed's worth of stories AHEAD of any click, so the 'In brief' is already cached
+        by the time a dot is opened (this is what makes the click instant for everyone). Uses the SAME code
+        path a click would — an article URL scrapes+summarizes the article; a pure-Telegram post summarizes
+        its own text — so the 30-day cache is shared and the click is a pure cache hit. Cheap after the first
+        pass (article scrape + summary are both cached); a no-op when no summarizer is set. Runs in a pool."""
+        def one(ev):
+            try:
+                u = (ev.get("url") or "").strip()
+                if u.startswith("http") and "t.me/" not in u:
+                    self.summarize_event(ev.get("title") or "", u)              # real article -> summarize it
+                elif ev.get("tg") and len((ev.get("sum") or "")) >= 180:
+                    _summarize(ev.get("title") or "", ev.get("sum") or "")       # substantial pure-TG post
+            except Exception:
+                pass
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                list(ex.map(one, list(events)[:120]))   # top ~120 (already sorted best-first) covers the map
+        except Exception:
+            pass
 
     def article_detail(self, url):
         """One article's picture + clean text for the detail panel. Cached 1 day.
@@ -2674,6 +2705,30 @@ def _spawn_world_refresh(api, h):
             with _WORLD_REFRESH_LOCK:
                 _WORLD_REFRESH.discard(h)
     threading.Thread(target=_run, daemon=True).start()
+
+
+# The moment a feed is built/served, summarize every story in the BACKGROUND so that by the time anyone
+# clicks a dot the copyright-free "In brief" is already cached — no spinner, no wait. Deduped per feed
+# build (window + generated-timestamp) so a 10-min poll doesn't re-spawn it.
+_PREWARMED = set()
+_PREWARM_LOCK = threading.Lock()
+
+
+def _spawn_summary_prewarm(api, h, data):
+    if not isinstance(data, dict) or not data.get("events"):
+        return
+    if not (_summary_cfg()[0] or _local_llm()):     # no summarizer configured -> nothing to warm
+        return
+    key = (h, data.get("generated"))
+    with _PREWARM_LOCK:
+        if key in _PREWARMED:
+            return
+        _PREWARMED.add(key)
+        if len(_PREWARMED) > 64:
+            _PREWARMED.clear()
+            _PREWARMED.add(key)
+    events = list(data.get("events") or [])
+    threading.Thread(target=api._prewarm_summaries, args=(events,), daemon=True).start()
 
 
 # Country name -> FIPS 10-4 code, for GDELT's sourcecountry: filter (which is NOT ISO). Keyed by the

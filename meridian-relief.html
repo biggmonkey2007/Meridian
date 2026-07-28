@@ -3594,12 +3594,23 @@ async function renderRealEvent(d){
   const api=aiBridge();
   const lead=document.getElementById("re-lead-"+d.id);
   const hideLead=()=>{ if(lead){ lead.textContent=""; lead.style.display="none"; } };
-  if(d.tg){
-    // The post text IS the story — there is no article to scrape, so the lead must be filled from
-    // what we already have, or the card sits on "Fetching the full story…" for ever.
+  if(d.tg && (!d.url || /t\.me\//.test(d.url))){
+    // A PURE Telegram post: the post text IS the story (no article page to scrape). Fill the lead from what
+    // we have — and if the post is substantial, generate OUR copyright-free summary of it too. (A TG event
+    // that links to a real article falls through to the article branch below and gets summarized there.)
     if(lead){
       const body=bodyMinusHeadline(d.title, d.sum);
       if(body){ lead.textContent=body; lead.style.display=""; } else { hideLead(); }
+    }
+    const bodyEl=document.getElementById("re-body-"+d.id);
+    if(bodyEl && !d.summary && api && api.summarize_event && (d.sum||"").length>=180){
+      bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p class="sum-load"><span class="spin"></span> Summarizing…</p></div>`;
+      Promise.resolve(api.summarize_event(d.title||"", "", d.sum)).then(r=>{
+        if(activeEvent!==d.id || !bodyEl) return;
+        if(r && r.summary){ d.summary=r.summary;
+          bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(r.summary)}</p></div>`; }
+        else bodyEl.innerHTML="";
+      }).catch(()=>{ if(bodyEl) bodyEl.innerHTML=""; });
     }
     updateListenTime(d);
   }
@@ -3625,7 +3636,7 @@ async function renderRealEvent(d){
       // OUR OWN copyright-free summary — an LLM rewrites the facts in new words (never the source's phrasing).
       // Reuses the text we already scraped, so no second fetch. Empty (no key configured) -> lead+link stands.
       if(bodyEl && api.summarize_event && (paras.length || desc)){
-        Promise.resolve(api.summarize_event(d.title||"", "", (paras.slice(0,10).join("\n")||desc))).then(r=>{
+        Promise.resolve(api.summarize_event(d.title||"", "", (paras.slice(0,10).join(" ")||desc))).then(r=>{
           if(activeEvent!==d.id || !bodyEl) return;
           if(r && r.summary){ d.summary=r.summary;
             bodyEl.innerHTML=`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(r.summary)}</p></div>`; }

@@ -58,20 +58,16 @@ _CSS = ("*{box-sizing:border-box}body{margin:0;font:16px/1.5 -apple-system,Blink
         "margin-top:16px;color:#9fb3d0;text-decoration:none;font-size:14px}")
 
 
-def _article_text(api, ev):
-    """Best available text to summarize: the scraped article body (cached 1 day), else the outlet dek."""
-    url = ev.get("url") or ""
-    if url and not ev.get("tg"):
-        try:
-            meta = api.article_detail(url) or {}
-            paras = meta.get("paragraphs") or []
-            if paras:
-                return "\n".join(paras[:10])
-            if meta.get("desc"):
-                return meta["desc"]
-        except Exception:
-            pass
-    return ev.get("sum") or ""
+def _story_summary(api, ev):
+    """Our copyright-free summary for one story, via the SAME code path a click uses (so the 30-day cache is
+    shared): a real article URL scrapes+summarizes the article; a substantial pure-Telegram post summarizes
+    its own text. Returns "" when there's nothing summarize-worthy or no summarizer is configured."""
+    u = (ev.get("url") or "").strip()
+    if u.startswith("http") and "t.me/" not in u:
+        return (api.summarize_event(ev.get("title") or "", u) or {}).get("summary") or ""
+    if ev.get("tg") and len((ev.get("sum") or "")) >= 180:
+        return app._summarize(ev.get("title") or "", ev.get("sum") or "")
+    return ""
 
 
 def enrich_summaries(api, events):
@@ -84,7 +80,7 @@ def enrich_summaries(api, events):
 
     def work(ev):
         try:
-            s = app._summarize(ev.get("title") or "", _article_text(api, ev))
+            s = _story_summary(api, ev)
             if s:
                 ev["summary"] = s
                 return 1
