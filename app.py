@@ -247,7 +247,9 @@ def _summarize(title, text):
                            "messages": [{"role": "system", "content": system},
                                         {"role": "user", "content": prompt}]}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
-            "Content-Type": "application/json", "Authorization": "Bearer " + key})
+            "Content-Type": "application/json", "Authorization": "Bearer " + key,
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
         s = ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
         s = re.sub(r"\s+", " ", s).strip()
