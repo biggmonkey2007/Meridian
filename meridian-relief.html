@@ -42,8 +42,9 @@ header{
 .tagline b{color:var(--ink-2);font-weight:600}
 .hdr-sep{width:1px;height:24px;background:var(--line)}
 .hdr-center{display:flex;align-items:center;gap:10px;margin:0 auto}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel-2)}
-.seg button{border:none;background:transparent;padding:6px 12px;font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel-2);padding:2px}
+.seg button{border:none;background:transparent;padding:5px 13px;font-size:12.5px;font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums;letter-spacing:.02em;border-radius:7px;transition:background .14s,color .14s}
+.seg button:hover{color:var(--ink)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
 .seg-label{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;margin-right:2px}
 .hdr-right{display:flex;align-items:center;gap:14px}
@@ -53,8 +54,9 @@ header{
 @keyframes livepulse{0%{transform:scale(.6);opacity:.6}100%{transform:scale(1.8);opacity:0}}
 .clock{font-family:var(--mono);font-size:12.5px;color:var(--ink);letter-spacing:.02em}
 .clock span{color:var(--ink-3)}
-.icon-btn{position:relative;width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);color:var(--ink-2)}
-.icon-btn:hover{background:#fff;color:var(--ink)}
+.icon-btn{position:relative;width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);color:var(--ink-2);transition:background .14s,color .14s,border-color .14s,box-shadow .14s}
+.icon-btn:hover{background:#fff;color:var(--ink);border-color:var(--ink-3);box-shadow:0 1px 5px rgba(20,30,50,.10)}
+.icon-btn:active{transform:translateY(.5px)}
 .icon-btn svg{width:17px;height:17px}
 /* unread counter on the Live Wire button — Telegram/Discord style. Shown on open, ticks down as you read. */
 .wire-badge{display:none;position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;align-items:center;justify-content:center;background:#e0403a;color:#fff;font-size:10px;font-weight:800;line-height:1;letter-spacing:-.02em;border-radius:9px;border:2px solid var(--panel);font-variant-numeric:tabular-nums;box-shadow:0 1px 3px rgba(0,0,0,.28);pointer-events:none}
@@ -96,7 +98,7 @@ header{
   overflow:hidden;
 }
 #briefing{top:66px;left:14px;width:344px;max-height:calc(100vh - 80px)}
-#detail{top:66px;right:14px;width:366px;max-height:calc(100vh - 80px);transform:translateX(420px);opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s}
+#detail{top:66px;right:14px;width:366px;max-height:calc(100vh - 80px);transform:translateX(420px);opacity:0;pointer-events:none;transition:transform .2s cubic-bezier(.22,1,.36,1),opacity .14s ease-out}
 #detail.open{transform:none;opacity:1;pointer-events:auto}
 .panel.collapsed{display:none}
 .p-head{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 11px;border-bottom:1px solid var(--line)}
@@ -335,9 +337,10 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 /* ---------- Bottom-left controls ---------- */
 .controls{position:fixed;left:14px;bottom:14px;z-index:25;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .zoomers{position:fixed;right:14px;bottom:14px;z-index:20;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
-.zoomers button{width:38px;height:36px;border:none;background:transparent;font-size:18px;color:var(--ink-2);display:grid;place-items:center;border-bottom:1px solid var(--line)}
+.zoomers button{width:38px;height:36px;border:none;background:transparent;font-size:18px;color:var(--ink-2);display:grid;place-items:center;border-bottom:1px solid var(--line);transition:background .14s,color .14s}
 .zoomers button:last-child{border-bottom:none;font-size:13px}
 .zoomers button:hover{background:var(--panel-2);color:var(--ink)}
+.zoomers button:active{background:var(--line)}
 .legend{background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:8px 10px;max-width:170px}
 .legend h5{margin:0 0 6px;font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);font-weight:700;display:flex;align-items:center;justify-content:space-between}
 .legend h5 .clear{cursor:pointer;color:#8aa0c0;letter-spacing:.04em;text-transform:none;font-size:10px}
@@ -377,7 +380,7 @@ img.flag-img{object-fit:cover;background:#eef1f5}
   /* a story fills the screen (over the mobar), slides up from the bottom, and is closed by its × */
   #detail{inset:0;width:auto;max-height:none;height:100%;height:100dvh;border-radius:0;transform:translateY(100%);opacity:1;z-index:60;
           padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
-          transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+          transition:transform .24s cubic-bezier(.22,1,.36,1)}
   #detail.open{transform:none}
   #dmin{display:none}                                   /* no "minimize" in a full-screen story — the × closes it */
   #detail .p-head{padding:14px 16px 12px;position:sticky;top:0;background:var(--panel);z-index:2}
