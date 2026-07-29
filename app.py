@@ -54,7 +54,7 @@ import urllib.request
 import urllib.parse
 
 # Let WebView2 use the GPU (and fall back to software if ever needed) so WebGL/globe runs.
-os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--ignore-gpu-blocklist --enable-unsafe-swiftshader --autoplay-policy=no-user-gesture-required"
+os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--ignore-gpu-blocklist --enable-unsafe-swiftshader --autoplay-policy=no-user-gesture-required" + (" --remote-debugging-port=9222" if os.environ.get("MERIDIAN_DEBUG") else "")
 
 try:
     import webview                       # desktop shell only; the feed SERVER imports this module headless

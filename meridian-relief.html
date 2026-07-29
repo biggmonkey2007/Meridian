@@ -2553,7 +2553,10 @@ function buildGlobeLayers(){
   startGlobePulse();
 }
 function updateGlobeData(){
-  if(mlMap && mlLoaded && mlMap.getSource("g-events")) mlMap.getSource("g-events").setData(globeEventsGeo());
+  if(mlMap && mlLoaded && mlMap.getSource("g-events")){
+    mlMap.getSource("g-events").setData(globeEventsGeo());
+    try{ mlMap.triggerRepaint(); }catch(e){}   // globe can hold a frame after setData — force the dots to paint now, not on the next pan
+  }
 }
 function applyGlobeStyle(){ setGlobeBasemap(currentBase); }
 async function enterGlobe(){
@@ -2566,7 +2569,10 @@ async function enterGlobe(){
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/110); mlMap.scrollZoom.setZoomRate(1/55); }catch(e){}
     mlMap.on("error", ()=>{});
-    mlMap.on("load", ()=>{ mlLoaded=true; try{ mlMap.setProjection({type:"globe"}); }catch(e){ try{ mlMap.setProjection("globe"); }catch(_){} } buildGlobeLayers(); warmWorldBaseline(); warmGlobeView(); });
+    mlMap.on("load", ()=>{ mlLoaded=true; try{ mlMap.setProjection({type:"globe"}); }catch(e){ try{ mlMap.setProjection("globe"); }catch(_){} } buildGlobeLayers(); warmWorldBaseline(); warmGlobeView();
+      // if the feed already loaded before the globe finished (common on a warm cache), push the dots in now
+      // and again on the next idle frame — otherwise the globe can come up with an empty event layer.
+      updateGlobeData(); mlMap.once("idle", updateGlobeData); });
     // Warm tiles DURING the rotate/pan (throttled), not just after it settles — otherwise panning the
     // globe outruns the tile fetch and you see empty chunks until you stop. Mirrors the flat map, which
     // already pre-warms on "move".
