@@ -1458,9 +1458,9 @@ function _runWarm(){
   if(_warmRun) return; _warmRun = true;
   (function step(){
     let n = 0;
-    while(_warmQ.length && n < 12){ const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} img.src = _warmQ.shift(); n++; }   // was 40 — leave the browser's ~6-per-host connections free for MapLibre's REAL tiles (warming was starving them, so black lingered)
-    if(_warmSeen.size > 24000) _warmSeen.clear();
-    if(_warmQ.length) setTimeout(step, 120); else _warmRun = false;
+    while(_warmQ.length && n < 24){ const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} img.src = _warmQ.shift(); n++; }   // low-priority over HTTP/2 (single host) multiplexes without starving MapLibre's active tiles; higher throughput = the prefetch ring fills before you reach it
+    if(_warmSeen.size > 40000) _warmSeen.clear();
+    if(_warmQ.length) setTimeout(step, 90); else _warmRun = false;
   })();
 }
 let _worldWarmed = false;
@@ -1505,10 +1505,15 @@ function prefetchZooms(){
 let _gWarmLast = 0, _gWarmT = null;
 function scheduleGlobeWarm(){
   const now = Date.now();
-  if(now - _gWarmLast > 350){ _gWarmLast = now; warmGlobeView(); }
-  else { clearTimeout(_gWarmT); _gWarmT = setTimeout(function(){ _gWarmLast = Date.now(); warmGlobeView(); }, 200); }
+  if(now - _gWarmLast > 200){ _gWarmLast = now; warmGlobeView(); }   // re-warm ahead more often while panning
+  else { clearTimeout(_gWarmT); _gWarmT = setTimeout(function(){ _gWarmLast = Date.now(); warmGlobeView(); }, 140); }
 }
 /* Globe: warm the tiles under the current view (+ one zoom in) so a rotate/zoom lands on loaded tiles. */
+// PREDICTIVE PREFETCH: warm a WIDE ring around the view (so you pan into already-loaded tiles) AND the
+// neighbouring zoom levels (so a zoom in/out lands on loaded tiles) — the tiles are primed in the browser
+// cache before MapLibre asks for them, so they render on arrival instead of streaming in as chunks. The
+// current zoom gets the biggest margin (that's where you pan); z-1/z+1 get a thinner one. Tiles are fetched
+// low-priority over HTTP/2, so this doesn't slow the tiles MapLibre is actively drawing.
 function warmGlobeView(){
   if(!(mlMap && mlLoaded)) return;
   let bb; try{ bb = mlMap.getBounds(); }catch(e){ return; }
@@ -1516,11 +1521,12 @@ function warmGlobeView(){
   const z0 = Math.round(mlMap.getZoom());
   const lon2x = (lon, zz)=> Math.floor((lon + 180) / 360 * (1 << zz));
   const lat2y = (lat, zz)=>{ const r = Math.max(-85, Math.min(85, lat)) * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << zz)); };
-  [z0, z0 + 1].forEach(function(zz){
-    zz = Math.round(zz); if(zz < 0 || zz > 12) return;
+  [[z0 - 1, 1], [z0, 4], [z0 + 1, 2]].forEach(function(pair){
+    const zz = Math.round(pair[0]), pad = pair[1];
+    if(zz < 0 || zz > 13) return;
     const span = 1 << zz;
-    let x0 = lon2x(w, zz) - 1, x1 = lon2x(e, zz) + 1, y0 = lat2y(n, zz) - 1, y1 = lat2y(s, zz) + 1;
-    if(x1 - x0 > 40 || x1 < x0){ x0 = 0; x1 = span - 1; }          // whole-world wrap at low zoom / dateline
+    let x0 = lon2x(w, zz) - pad, x1 = lon2x(e, zz) + pad, y0 = lat2y(n, zz) - pad, y1 = lat2y(s, zz) + pad;
+    if(x1 - x0 > 48 || x1 < x0){ x0 = 0; x1 = span - 1; }          // whole-world wrap at low zoom / dateline
     for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
       if(y < 0 || y >= span) continue;
       const xx = ((x % span) + span) % span;
@@ -2441,16 +2447,10 @@ async function addCartoVector(before){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-base-lo","g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
-  // ALWAYS-LOADED LOW-RES UNDERLAY: the same imagery capped at a low native zoom, so it's a tiny tile set
-  // that stays resident and covers the WHOLE view at any zoom. When the detailed base is still fetching
-  // (fast zoom, big pans), this stretched low-res world shows through the gaps — blurry for an instant, but
-  // NEVER a black/blank chunk. The crisp base then paints on top.
-  mlMap.addSource("g-base-lo",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(5,b.max)});
-  mlMap.addLayer({id:"g-base-lo",type:"raster",source:"g-base-lo",paint:{"raster-fade-duration":0}}, before);
   mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
   mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
   // NOTE: the globe copies the flat map EXACTLY (RULE 2) — the same CARTO raster base + label tiles, no
