@@ -3090,7 +3090,16 @@ def _clean_headline(t):
         # and ranges (2020–2024) have NO space before the dash and are now safe.
         t = re.sub(r"\s+[-–—|]\s*[^-–—|]{2,32}$", "", t)
     t = re.sub(r"\s{2,}", " ", t).strip()
-    return t[:200]
+    if len(t) <= 200:
+        return t
+    # NEVER a mid-word chop (shipped "…and Western offici"): trim to the last clause break, else the last
+    # whole word, within the limit, and mark it continued with "…".
+    seg = t[:200]
+    mcl = max(seg.rfind(", "), seg.rfind("; "))
+    if mcl >= 100:
+        return seg[:mcl].rstrip(" ,;:–—-") + "…"
+    sp = seg.rfind(" ")
+    return (seg[:sp] if sp >= 100 else seg).rstrip(" ,;:–—-") + "…"
 
 
 def _good_img(u):

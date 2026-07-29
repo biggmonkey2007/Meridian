@@ -3627,10 +3627,15 @@ async function renderRealEvent(d){
   // loadEventMedia finds a real photo of THIS event on the wire. We never invent one.
   const hero=document.getElementById("hero-"+d.id);
   const img=hero?hero.querySelector(".hero-photo"):null;
-  if(img && d.image){
-    img.onload=()=>{ hero.classList.add("has-photo"); const cr=hero.querySelector(".hero-credit"); if(cr) cr.textContent=src; };
-    img.onerror=()=>{};
-    img.src=d.image;
+  // Show the picture IMMEDIATELY: the article image, or the photo we already resolved+prefetched for this
+  // dot (d._photo, set by warmPhoto when the feed loaded). Prefetched -> it paints instantly, no 1-5s wait.
+  const heroSrc = d.image || d._photo || "";
+  if(img && heroSrc){
+    const isFile = !d.image;
+    img.onload=()=>{ hero.classList.add("has-photo"); if(isFile) hero.classList.add("has-file"); const cr=hero.querySelector(".hero-credit"); if(cr) cr.textContent=(d.image?src:(d._photoTitle||"")); };
+    img.onerror=()=>{ if(isFile){ hero.classList.remove("has-photo","has-file"); } };
+    img.referrerPolicy="no-referrer";
+    img.src=heroSrc;
   }
   const dc=document.getElementById("dclose"); if(dc) dc.onclick=deselectAll;
   const lb=document.getElementById("re-listen-"+d.id); if(lb) lb.onclick=()=>speakEvent(d);
@@ -4128,6 +4133,9 @@ function applyWorldEvents(items){
   // PROACTIVE WARM: the newest handful of stories are the most likely first click — warm their article/
   // clips/photo the instant the feed lands (not only when idle), staggered so we don't burst all at once.
   try{ built.slice().sort((a,b)=> b.reportedAt-a.reportedAt).slice(0,6).forEach((e,i)=> setTimeout(()=>{ try{ warmStory(e); }catch(_){} }, 250*i)); }catch(e){}
+  // PRELOAD EVERY DOT'S PICTURE (lighter than a full warmStory) so ANY dot opens with its photo already
+  // there — the article image is prefetched, and for the rest we resolve+prefetch the story photo now.
+  try{ built.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 55*i)); }catch(e){}
   return built.length;
 }
 /* ---- merge pinned ("starred") countries' news into the map ---- */
@@ -4337,16 +4345,30 @@ let _starRefreshAt=0, _lastProfWarm=0, _hoverWarmT=null;
 // the panel opens with no wait. Fired on hover (there's always 100-500ms before the click lands) and by
 // the idle loop. Guarded to once per dot; fire-and-forget; never blocks the UI.
 const _storyWarmed = new Set();
+const _photoWarmed = new Set();
+function _prefetchImg(u){ if(!u) return; try{ const im=new Image(); im.referrerPolicy="no-referrer"; im.decoding="async"; try{ im.fetchPriority="low"; }catch(e){} im.src=u; }catch(e){} }
+// Resolve + PREFETCH a dot's picture ahead of any click, and stash it on the event (d._photo) so opening
+// the dot paints the photo instantly, instead of waiting 1-5s for story_photo + the image download.
+function warmPhoto(d){
+  if(!d || !d.id || _photoWarmed.has(d.id)) return;
+  _photoWarmed.add(d.id);
+  if(_photoWarmed.size > 1200) _photoWarmed.clear();
+  if(d.image){ _prefetchImg(d.image); return; }               // article's own image -> just prime the cache
+  const api = aiBridge(); if(!api || !api.story_photo) return;
+  Promise.resolve(api.story_photo(d.title||"", d.sum||"", d.place||"", d.country||"")).then(r=>{
+    if(r && r.url){ d._photo=r.url; d._photoTitle=r.title||""; _prefetchImg(r.url); }
+  }).catch(()=>{});
+}
 function warmStory(d){
   if(!d || !d.id || _storyWarmed.has(d.id)) return;
   const api = aiBridge(); if(!api) return;
   _storyWarmed.add(d.id);
   if(_storyWarmed.size > 800) _storyWarmed.clear();
   const go = p => { try{ Promise.resolve(p).catch(()=>{}); }catch(e){} };
+  warmPhoto(d);                                                // the picture — prefetched + stored on d
   if(d.url && api.article_detail)  go(api.article_detail(d.url));
   if(d.url && api.summarize_event) go(api.summarize_event(d.title||"", d.url||""));   // warm our summary
   if(api.event_media)              go(api.event_media(d.title, 6));
-  if(!d.image && api.story_photo)  go(api.story_photo(d.title||"", d.sum||"", d.place||"", d.country||""));
   if(api.event_people)             go(api.event_people(d.title||"", d.sum||""));
 }
 function idlePreload(){
