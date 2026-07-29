@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Meridian</title>
 <style>
 :root{
@@ -105,7 +105,7 @@ header{
 .p-sub{font-size:12px;color:var(--ink-2);margin-top:4px;font-variant-numeric:tabular-nums}
 .p-close{margin-left:auto;width:28px;height:28px;flex:0 0 auto;border:none;background:var(--chip);border-radius:7px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center}
 .p-close:hover{background:#e3e9ef;color:var(--ink)}
-.p-body{padding:12px 14px 16px;overflow-y:auto;overflow-x:hidden}
+.p-body{padding:12px 14px 16px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch}
 .ill-tag{display:inline-block;margin-left:6px;font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;vertical-align:middle}
 .stmts{display:flex;flex-direction:column;gap:9px;margin-top:2px}
 .stmt{display:flex;gap:10px;align-items:flex-start;background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:10px 11px}
@@ -365,22 +365,31 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 /* mobile bottom bar */
 #mobar{display:none}
 
-@media (max-width:880px){
+/* ---- COMPACT layout: phones AND tablets (tablets ride the same "big-phone" model) ----
+   Side panels become bottom sheets; opening a STORY is a full-screen takeover closed by the × in its header. */
+@media (max-width:1024px){
   .tagline,.hdr-sep{display:none}
   .hdr-center{gap:6px}
   .seg-label{display:none}
-  #briefing{top:auto;bottom:62px;left:8px;right:8px;width:auto;max-height:54vh;border-radius:14px 14px 0 0}
+  /* the briefing (country/filters) stays a draggable bottom sheet */
+  #briefing{top:auto;bottom:calc(62px + env(safe-area-inset-bottom,0px));left:8px;right:8px;width:auto;max-height:60vh;border-radius:16px 16px 0 0}
   #briefing.collapsed{display:none}
-  #detail{top:auto;bottom:62px;left:8px;right:8px;width:auto;max-height:62vh;transform:translateY(110%);border-radius:14px 14px 0 0}
+  /* a story fills the screen (over the mobar), slides up from the bottom, and is closed by its × */
+  #detail{inset:0;width:auto;max-height:none;height:100%;height:100dvh;border-radius:0;transform:translateY(100%);opacity:1;z-index:60;
+          padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+          transition:transform .3s cubic-bezier(.2,.8,.2,1)}
   #detail.open{transform:none}
-  .controls{bottom:70px;left:8px}
+  #dmin{display:none}                                   /* no "minimize" in a full-screen story — the × closes it */
+  #detail .p-head{padding:14px 16px 12px;position:sticky;top:0;background:var(--panel);z-index:2}
+  #detail .p-close{width:38px;height:38px;font-size:20px}   /* a comfortable touch target */
+  .controls{bottom:calc(70px + env(safe-area-inset-bottom,0px));left:8px}
   .legend{display:none}
-  .legend.show{display:block;position:fixed;bottom:70px;left:8px;right:8px;max-width:none}
-  #mobar{display:flex;position:fixed;bottom:0;left:0;right:0;height:54px;z-index:45;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);align-items:stretch}
+  .legend.show{display:block;position:fixed;bottom:calc(70px + env(safe-area-inset-bottom,0px));left:8px;right:8px;max-width:none}
+  #mobar{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(54px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);z-index:45;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);align-items:stretch}
   #mobar button{flex:1;border:none;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;color:var(--ink-3);letter-spacing:.02em}
   #mobar button.on{color:var(--ink)}
   #mobar button svg{width:19px;height:19px}
-  #hint{bottom:64px}
+  #hint{bottom:calc(64px + env(safe-area-inset-bottom,0px))}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.001ms !important;transition-duration:.001ms !important}
@@ -1655,13 +1664,13 @@ function focusCountry(name){
   // Compute the zoom from an IN-RANGE box (shift west to 0) and fly to a WRAPPED centre, so Leaflet's
   // camera never sees a >180° longitude — that out-of-range value made flyToBounds silently bail and
   // leave the map at the default whole-world view (the bug you saw when clicking Russia / the USA).
-  const padX = innerWidth>880 ? 740 : 40, padY = 140;
+  const padX = innerWidth>1024 ? 740 : 40, padY = 140;
   let z = 3; try{ z = map.getBoundsZoom(L.latLngBounds([b.south,0],[b.north,Math.min(span,355)]), false, L.point(padX,padY)); }catch(e){}
   z = Math.min(z, 5);
   let clng = (b.west+b.east)/2; while(clng>180) clng-=360; while(clng<-180) clng+=360;
   try{
     const yMid = (map.project([b.south,clng],z).y + map.project([b.north,clng],z).y)/2;   // Mercator-correct vertical centre
-    const xMid = map.project([0,clng],z).x + (innerWidth>880 ? 180 : 0);                   // nudge the country left of the right-hand panel
+    const xMid = map.project([0,clng],z).x + (innerWidth>1024 ? 180 : 0);                   // nudge the country left of the right-hand panel
     map.flyTo(map.unproject(L.point(xMid,yMid), z), z, { duration:0.7 });
   }catch(e){ map.flyTo([(b.south+b.north)/2, clng], z, { duration:0.7 }); }
 }
@@ -3885,7 +3894,7 @@ function selectCountry(name){
   loadCountryProfile(name);
 }
 
-function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); if(innerWidth<=880){ document.getElementById("briefing").classList.add("collapsed"); setMobar("map"); } }
+function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); if(innerWidth<=1024){ document.getElementById("briefing").classList.add("collapsed"); setMobar("map"); } }
 function deselectAll(){
   activeEvent=null; activeCountry=null;
   detail.classList.remove("open");
@@ -4705,7 +4714,7 @@ document.addEventListener("click", async (e)=>{
 buildBriefing();
 updateLegendCounts();
 window.addEventListener("resize",()=>{ clearTimeout(window._rs); window._rs=setTimeout(size,150); });
-if(innerWidth<=880 && briefingPanel) briefingPanel.classList.add("collapsed");
+if(innerWidth<=1024 && briefingPanel) briefingPanel.classList.add("collapsed");
 // load the map library on demand and start the map (UI above already rendered)
 startMap();
 </script>
