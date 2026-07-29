@@ -566,6 +566,17 @@ def _tg_headline(text):
             break
     if cut >= 60:
         line = line[:cut].strip()
+    elif len(line) > 120:
+        # No sentence end and the text is long -> the source TRUNCATED it (Telegram/RSS previews cut
+        # mid-word: "…and Western offici"). Never ship a mid-word headline: fall back to the last clause
+        # break, else the last whole word, within a headline length, and mark it continued with "…".
+        seg = line[:180]
+        mcl = max(seg.rfind(", "), seg.rfind("; "))
+        if mcl >= 90:
+            line = seg[:mcl].rstrip(" ,;:–—-") + "…"
+        else:
+            sp = seg.rfind(" ", 0, 172)
+            line = (seg[:sp] if sp >= 90 else seg[:172]).rstrip(" ,;:–—-") + "…"
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()

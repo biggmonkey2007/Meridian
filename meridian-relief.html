@@ -1155,7 +1155,7 @@ function el(html){ const t=document.createElement("template"); t.innerHTML=html.
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Keep a headline WHOLE: the backend already hands us a complete first sentence, so this is just a sanity
 // cap for a rare run-on — and it cuts at a WORD boundary, never mid-word, and adds no "…".
-function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).trim(); }
+function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—\s]+$/,"").trim()+"…"; }
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
 function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
@@ -1521,7 +1521,7 @@ function warmGlobeView(){
   const z0 = Math.round(mlMap.getZoom());
   const lon2x = (lon, zz)=> Math.floor((lon + 180) / 360 * (1 << zz));
   const lat2y = (lat, zz)=>{ const r = Math.max(-85, Math.min(85, lat)) * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << zz)); };
-  [[z0 - 1, 1], [z0, 4], [z0 + 1, 2]].forEach(function(pair){
+  [[z0 - 2, 1], [z0 - 1, 2], [z0, 4], [z0 + 1, 2], [z0 + 2, 1]].forEach(function(pair){   // ±2 zoom levels covered, so fast zoom jumps land on primed tiles
     const zz = Math.round(pair[0]), pad = pair[1];
     if(zz < 0 || zz > 13) return;
     const span = 1 << zz;
@@ -2670,7 +2670,9 @@ function renderCitiesNoop(){}
 
 /* ----------------------------- PANEL MINIMIZE ----------------------------- */
 function setHead(title){
-  dHead.innerHTML=`<button class="p-min" id="dmin" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button><div class="p-head-title">${esc(title)}</div><button class="p-close" id="dclose" aria-label="Close">×</button>`;
+  // No title text here — it just repeated the headline shown right below (the user found it useless).
+  // Keep only the controls: minimise (collapse) on the left, close on the right.
+  dHead.innerHTML=`<button class="p-min" id="dmin" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button><button class="p-close" id="dclose" aria-label="Close">×</button>`;
   document.getElementById("dclose").onclick=deselectAll;
   document.getElementById("dmin").onclick=toggleMinimize;
 }
