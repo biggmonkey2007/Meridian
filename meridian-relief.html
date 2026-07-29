@@ -2408,7 +2408,9 @@ function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f26
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
 function globeBgExpr(k){
   const hi = (k==="satellite") ? "#0a1622" : "#e6ebf0";   // up-close gap tone: deep water / light relief
-  return ["interpolate",["linear"],["zoom"], 3.4,"#0a0f18", 5.4, hi];
+  // Dark "space" only while the globe is small in view (zoomed way out); by z4 the globe fills the screen,
+  // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
+  return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
 }
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
