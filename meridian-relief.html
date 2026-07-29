@@ -1455,9 +1455,9 @@ function _runWarm(){
   if(_warmRun) return; _warmRun = true;
   (function step(){
     let n = 0;
-    while(_warmQ.length && n < 40){ const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} img.src = _warmQ.shift(); n++; }
+    while(_warmQ.length && n < 12){ const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} img.src = _warmQ.shift(); n++; }   // was 40 — leave the browser's ~6-per-host connections free for MapLibre's REAL tiles (warming was starving them, so black lingered)
     if(_warmSeen.size > 24000) _warmSeen.clear();
-    if(_warmQ.length) setTimeout(step, 200); else _warmRun = false;
+    if(_warmQ.length) setTimeout(step, 120); else _warmRun = false;
   })();
 }
 let _worldWarmed = false;
@@ -2400,6 +2400,13 @@ function globeEventsGeo(){
 function catColorExpr(){ const x=["match",["get","cat"]]; CAT_ORDER.forEach(c=>{ x.push(c, CAT[c].hex); }); x.push("#888888"); return x; }
 function eventColorExpr(){ return ["case",["==",["get","read"],1], READ_COL, catColorExpr()]; }
 function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f2630"; }
+// Globe backdrop: dark "space" only when the whole globe is in view; as you zoom IN (space no longer
+// visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
+// instead of a black hole. This is what actually kills the "black chunks" while panning up close.
+function globeBgExpr(k){
+  const hi = (k==="satellite") ? "#0a1622" : "#e6ebf0";   // up-close gap tone: deep water / light relief
+  return ["interpolate",["linear"],["zoom"], 3.4,"#0a0f18", 5.4, hi];
+}
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2425,6 +2432,7 @@ async function addCartoVector(before){
 }
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
+  try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
   ["g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
@@ -2551,7 +2559,7 @@ async function enterGlobe(){
   const g = globeEl(); g.style.display="block";
   const m = document.getElementById("map"); if(m) m.style.display="none";
   if(!mlMap){
-    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":"#0a0f18"}}] }, center:[14,22], zoom:1.5, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:true, renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:0 });
+    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom:1.5, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:true, renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:0 });
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/110); mlMap.scrollZoom.setZoomRate(1/55); }catch(e){}
     mlMap.on("error", ()=>{});
