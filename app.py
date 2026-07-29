@@ -573,10 +573,10 @@ def _tg_headline(text):
         seg = line[:180]
         mcl = max(seg.rfind(", "), seg.rfind("; "))
         if mcl >= 90:
-            line = seg[:mcl].rstrip(" ,;:–—-") + "…"
+            line = seg[:mcl].rstrip(" ,;:–—-.") + "."
         else:
             sp = seg.rfind(" ", 0, 172)
-            line = (seg[:sp] if sp >= 90 else seg[:172]).rstrip(" ,;:–—-") + "…"
+            line = (seg[:sp] if sp >= 90 else seg[:172]).rstrip(" ,;:–—-.") + "."
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()
@@ -3097,9 +3097,9 @@ def _clean_headline(t):
     seg = t[:200]
     mcl = max(seg.rfind(", "), seg.rfind("; "))
     if mcl >= 100:
-        return seg[:mcl].rstrip(" ,;:–—-") + "…"
+        return seg[:mcl].rstrip(" ,;:–—-.") + "."
     sp = seg.rfind(" ")
-    return (seg[:sp] if sp >= 100 else seg).rstrip(" ,;:–—-") + "…"
+    return (seg[:sp] if sp >= 100 else seg).rstrip(" ,;:–—-.") + "."
 
 
 def _good_img(u):

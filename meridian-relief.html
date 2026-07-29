@@ -1155,7 +1155,7 @@ function el(html){ const t=document.createElement("template"); t.innerHTML=html.
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Keep a headline WHOLE: the backend already hands us a complete first sentence, so this is just a sanity
 // cap for a rare run-on — and it cuts at a WORD boundary, never mid-word, and adds no "…".
-function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—\s]+$/,"").trim()+"…"; }
+function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—.\s]+$/,"").trim()+"."; }
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
 function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
@@ -2452,7 +2452,7 @@ function setGlobeBasemap(k){
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
   mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
-  mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
+  mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":180}}, before);   // short cross-fade so tiles blend in on zoom instead of popping as chunks
   // NOTE: the globe copies the flat map EXACTLY (RULE 2) — the same CARTO raster base + label tiles, no
   // vector-style swap. The vector style drifted from the flat raster (different labels/sea names/relief),
   // which is the divergence that was showing. Same tiles in, same map out; only the projection differs.
@@ -3120,7 +3120,7 @@ health:'<path d="M316 112 C268 80 256 56 280 42 C297 32 316 50 316 50 C316 50 33
 society:'<circle cx="286" cy="50" r="14" fill="#fff"/><circle cx="346" cy="50" r="14" fill="#fff"/><circle cx="316" cy="44" r="16" fill="#fff"/><path d="M262 102 a24 24 0 0 1 48 0 Z" fill="#fff"/><path d="M322 102 a24 24 0 0 1 48 0 Z" fill="#fff"/><path d="M290 98 a26 26 0 0 1 52 0 Z" fill="#fff"/>',
 sports:'<path d="M296 36 H356 V50 a30 30 0 0 1 -60 0 Z" fill="#fff"/><path d="M296 40 h-15 a15 15 0 0 0 15 15" fill="none" stroke="#fff" stroke-width="6"/><path d="M356 40 h15 a15 15 0 0 1 -15 15" fill="none" stroke="#fff" stroke-width="6"/><rect x="321" y="64" width="10" height="18" fill="#fff"/><rect x="300" y="100" width="52" height="12" rx="3" fill="#fff"/><rect x="312" y="86" width="28" height="9" fill="#fff"/>'
 };
-function heroBanner(d){ const c=CAT[d.cat]; const c1=c.hex, c2=shade(c.hex,0.6); return `<div class="hero" id="hero-${d.id}"><svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="hg-${d.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="225" fill="url(#hg-${d.id})"/><g opacity="0.17" transform="translate(0,48)">${MOTIF[d.cat]||''}</g></svg><div class="hero-mark">${CAT_ICON[d.cat]||""}</div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div><div class="hero-bar"><div class="hero-tag" title="${esc(c.label)}"><span class="hero-ico">${CAT_ICON[d.cat]||""}</span></div>${d.place?`<div class="hero-loc"><span>${esc(d.place)}</span></div>`:""}</div></div>`; }
+function heroBanner(d){ const c=CAT[d.cat]; const c1=c.hex, c2=shade(c.hex,0.6); return `<div class="hero" id="hero-${d.id}"><svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="hg-${d.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="225" fill="url(#hg-${d.id})"/><g opacity="0.17" transform="translate(0,48)">${MOTIF[d.cat]||''}</g></svg><div class="hero-mark">${CAT_ICON[d.cat]||""}</div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div><div class="hero-bar"><div class="hero-tag" title="${esc(c.label)}"><span class="hero-ico">${CAT_ICON[d.cat]||""}</span></div></div></div>`; }
 const CAT_ICON={
   security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6z"/><path d="M12 9v4"/><circle cx="12" cy="16" r=".6" fill="currentColor"/></svg>',
   politics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 21h18M5 21V10m4 11V10m6 11V10m4 11V10M12 3L3 8h18z"/></svg>',
@@ -3198,7 +3198,7 @@ function heroMapCrop(d){
     hero._map=m;
     hero.classList.add("has-photo","has-file","has-map");
     const cr=hero.querySelector(".hero-credit");
-    if(cr) cr.textContent=(d.place||shortCountry(d.country)||"");
+    if(cr) cr.textContent="";                  // no location label on the picture — it's shown under the headline
     setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 60);
   }catch(e){}
 }
