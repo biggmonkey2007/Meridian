@@ -1272,11 +1272,25 @@ function forceEnglish(style){
   });
   return style;
 }
+// DECLUTTER the zoomed-out globe: show COUNTRIES (and continents) when zoomed out, and hold cities/towns/
+// villages back until you actually zoom into a region — otherwise every capital "pokes out" over the globe.
+// Mirrors how the old raster map (and Google's globe) read at world scale: mostly country names.
+function tunePlaces(style){
+  (style.layers||[]).forEach(l=>{
+    if(l.type!=="symbol" || l["source-layer"]!=="place") return;
+    const id = l.id||"";
+    if(/continent/.test(id))      l.minzoom = 0;
+    else if(/country/.test(id))   l.minzoom = Math.min(l.minzoom==null?99:l.minzoom, 1.5);   // countries at zoom-out
+    else if(/state/.test(id))     l.minzoom = Math.max(l.minzoom||0, 4.5);                    // regions a touch later
+    else                          l.minzoom = Math.max(l.minzoom||0, 5.6);                    // cities/towns/villages/capitals: only once zoomed in
+  });
+  return style;
+}
 async function englishCartoStyle(){
   if(_enStyle) return JSON.parse(JSON.stringify(_enStyle));
   const r = await fetch(CARTO_VECTOR_STYLE);
   if(!r.ok) throw new Error("style "+r.status);
-  _enStyle = forceEnglish(await r.json());
+  _enStyle = tunePlaces(forceEnglish(await r.json()));
   return JSON.parse(JSON.stringify(_enStyle));
 }
 const ESRI_REF   = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -2484,17 +2498,13 @@ function setGlobeBasemap(k){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:6});
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
-      // TERRAIN: hillshade over the base, under the labels — keeps "Clean relief" its relief.
+      // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
         mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.25}}, belowLabels);
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.35}}, belowLabels);
       }
-      // z<3 the vector shows only continents, so add ESRI's ENGLISH reference labels for a dense, English
-      // overview (country/city names) — matching the vector English used from z3 up (no language switch).
-      if(layers.labels && !mlMap.getSource("g-labels")){
-        mlMap.addSource("g-labels",{type:"raster",tiles:[ESRI_ENLBL],tileSize:256,maxzoom:16});
-        mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
-      }
+      // No extra raster labels: the vector's OWN English country/continent labels (tuned via tunePlaces to
+      // show at world scale) render on top of the raster overview, so z<3 reads clean and English.
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
