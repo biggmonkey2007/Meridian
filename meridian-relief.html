@@ -1261,6 +1261,10 @@ const CARTO_LBL  = "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/
    {"stops":[[8,"{name_en}"],[13,"{name}"]]} — which is why cities turned Cyrillic at high zoom.
    forceEnglish() rewrites all 26 of them to one rule: name_en -> name_int -> name.  */
 const CARTO_VECTOR_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+// Positron's SPRITE — without it the map can't load the little dot icon (circle-11) that its capital/city
+// "dot" label layers require, so MapLibre drops those whole symbols (dot + name) and cities appear to load
+// inconsistently. Setting it on the map makes the city/capital labels render exactly like Positron.
+const CARTO_SPRITE = "https://tiles.basemaps.cartocdn.com/gl/positron-gl-style/sprite";
 const EN_TEXT = ["coalesce", ["get","name_en"], ["get","name_int"], ["get","name"]];
 let _enStyle = null;
 function forceEnglish(style){
@@ -2638,7 +2642,7 @@ async function showMap(proj){          // proj: "globe" | "flat"
     g.style.background = (mlProj==="globe") ? "" : flatBg;     // "" restores the CSS dark-space gradient for the globe
   };
   if(!mlMap){
-    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom: mlProj==="globe"?1.5:2.4, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:mlProj==="globe", renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
+    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sprite:CARTO_SPRITE, sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom: mlProj==="globe"?1.5:2.4, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:mlProj==="globe", renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/121); mlMap.scrollZoom.setZoomRate(1/61); }catch(e){}   // ~10% gentler zoom
     mlMap.on("error", ()=>{});
