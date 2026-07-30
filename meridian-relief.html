@@ -1272,21 +1272,37 @@ function forceEnglish(style){
   });
   return style;
 }
-// Match the OLD raster map's label hierarchy exactly: the biggest COUNTRIES read at world scale, smaller ones
-// next, then regions, then cities -> towns -> villages appear progressively as you zoom in — each its own
-// size and colour (which the Positron style already defines). We only (a) stagger WHEN each tier appears so
-// the zoomed-out globe stays clean, and (b) swap the distinctive Montserrat for a neutral Open Sans to match
-// the flat map. Names are already ONE English name each (forceEnglish -> name_en).
-const _PLACE_MINZOOM = {
-  place_continent:0, place_country_1:1.6, place_country_2:3.2, place_state:5,
-  place_capital_dot_z7:6, place_city_dot_r2:5, place_city_dot_r4:6, place_city_dot_r7:7, place_city_dot_z7:7.5,
-  place_city_r5:7.5, place_city_r6:8.5, place_town:9, place_villages:11, place_suburbs:12.5, place_hamlet:13
+// Style the vector labels to READ like the old raster (flat) map: a clear tier hierarchy where the biggest
+// COUNTRIES show at world scale, then smaller countries, regions, and cities -> towns -> villages appear as
+// you zoom in — each its own size, WEIGHT and (darker, higher-contrast) COLOUR, one English name each. Carto's
+// VECTOR Positron is a lighter/thinner design than their raster, so we darken it back to the flat map's read.
+// [minzoom, text-color, bold?]
+const _PLACE = {
+  place_continent:      [0,   "#8b95a0", true],
+  place_country_1:      [1.6, "#5c6873", true],   // big countries, at the globe view
+  place_country_2:      [3.2, "#6c7883", true],   // smaller countries a bit later
+  place_state:          [5,   "#95a1ab", false],  // regions
+  place_capital_dot_z7: [4.2, "#333f49", true],   // CAPITALS: darkest + bold, appear early like the flat map
+  place_city_dot_r2:    [4.6, "#414d58", true],   // major cities
+  place_city_dot_r4:    [6,   "#4d5964", false],
+  place_city_dot_r7:    [7,   "#5a6570", false],
+  place_city_dot_z7:    [7.5, "#5a6570", false],
+  place_city_r5:        [7.5, "#414d58", true],
+  place_city_r6:        [8.5, "#4d5964", true],
+  place_town:           [9,   "#697079", false],
+  place_villages:       [11,  "#7a828b", false],
+  place_suburbs:        [12.5,"#8a929b", false],
+  place_hamlet:         [13,  "#8a929b", false]
 };
 function tunePlaces(style){
   (style.layers||[]).forEach(l=>{
     if(l.type!=="symbol") return;
-    if(l["source-layer"]==="place" && l.id in _PLACE_MINZOOM) l.minzoom = _PLACE_MINZOOM[l.id];
-    if(l.layout && l.layout["text-font"]){                            // neutral Open Sans, keeping bold/regular intent
+    const cfg = (l["source-layer"]==="place") ? _PLACE[l.id] : null;
+    if(cfg){
+      l.minzoom = cfg[0];
+      l.paint = Object.assign({}, l.paint, {"text-color":cfg[1], "text-halo-color":"#ffffff", "text-halo-width":1.1, "text-halo-blur":0.4});
+      if(l.layout){ l.layout["text-font"] = cfg[2] ? ["Open Sans Bold"] : ["Open Sans Regular"]; }
+    } else if(l.layout && l.layout["text-font"]){                     // any other labels: same neutral Open Sans
       const bold = JSON.stringify(l.layout["text-font"]).search(/Bold|Medium|Semibold/i) >= 0;
       l.layout["text-font"] = bold ? ["Open Sans Bold"] : ["Open Sans Regular"];
     }
@@ -2640,7 +2656,7 @@ async function enterGlobe(){
   const g = globeEl(); g.style.display="block";
   const m = document.getElementById("map"); if(m) m.style.display="none";
   if(!mlMap){
-    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom:1.5, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:true, renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:0 });
+    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom:1.5, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:true, renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/121); mlMap.scrollZoom.setZoomRate(1/61); }catch(e){}   // ~10% gentler zoom
     mlMap.on("error", ()=>{});
@@ -4321,8 +4337,8 @@ function _initialLoad(){
   const attempt=async ()=>{
     tries++;
     try{ await loadLive(true); }catch(e){}
-    if((typeof EVENTS!=="undefined" && EVENTS.length) || tries>=8) return;   // got dots, or gave it a fair shot
-    setTimeout(attempt, Math.min(6000, 1500*tries));                          // 1.5s, 3s, 4.5s, 6s, 6s…
+    if((typeof EVENTS!=="undefined" && EVENTS.length) || tries>=14) return;   // got dots, or gave it a fair shot
+    setTimeout(attempt, Math.min(3000, 400*tries));                           // brisk: 0.4s, 0.8s, 1.2s… — the first bridge call often returns {} before the api is warm, so retry FAST
   };
   attempt();
 }
