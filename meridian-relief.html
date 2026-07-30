@@ -1521,7 +1521,7 @@ function warmGlobeView(){
   const z0 = Math.round(mlMap.getZoom());
   const lon2x = (lon, zz)=> Math.floor((lon + 180) / 360 * (1 << zz));
   const lat2y = (lat, zz)=>{ const r = Math.max(-85, Math.min(85, lat)) * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << zz)); };
-  [[z0 - 2, 1], [z0 - 1, 2], [z0, 4], [z0 + 1, 2], [z0 + 2, 1]].forEach(function(pair){   // ±2 zoom levels covered, so fast zoom jumps land on primed tiles
+  [[z0 - 2, 1], [z0 - 1, 3], [z0, 8], [z0 + 1, 3], [z0 + 2, 1]].forEach(function(pair){   // wide ring at the current zoom (pad 8) so a drag stays inside primed tiles; ±2 zoom for zoom jumps
     const zz = Math.round(pair[0]), pad = pair[1];
     if(zz < 0 || zz > 13) return;
     const span = 1 << zz;
@@ -2421,17 +2421,18 @@ function globeBgExpr(k){
   // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
   return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
 }
-// Web-Mercator tiles only exist to ±85.05° latitude, so the globe's polar CAPS have no tiles and show the
-// dark space backdrop — the "black chunks at the poles". Fill them with a solid ice tone (a static polygon,
-// so it's always there instantly, never loads). Two caps: north (85→90) and south (-85→-90).
-function polarCapGeo(){
-  const cap=(a,b)=>{ const r=[]; for(let x=-180;x<=180;x+=10) r.push([x,a]); for(let x=180;x>=-180;x-=10) r.push([x,b]); r.push([-180,a]); return [r]; };
-  return {type:"FeatureCollection",features:[
-    {type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:cap(85,89.99)}},
-    {type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:cap(-85,-89.99)}}
-  ]};
+// A SOLID sphere under the tiles. The globe surface is fully painted a map tone, so ANY place a tile is
+// missing — the tile-less polar caps (Mercator stops at ±85°), or a street tile still loading while you pan
+// — shows this tone, NEVER the dark space background and never a black chunk. It's a static polygon (whole
+// world, -89.9..89.9), so it's there instantly and never loads. Tiles paint on top when they arrive.
+function globeSphereGeo(){
+  const r=[];
+  for(let x=-180;x<=180;x+=5) r.push([x, 89.9]);      // top edge (near N pole), densified for smooth globe fill
+  for(let x=180;x>=-180;x-=5) r.push([x,-89.9]);      // bottom edge (near S pole)
+  r.push([-180, 89.9]);
+  return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[r]}}]};
 }
-function polarCapColor(k){ return k==="satellite" ? "#e8edf2" : "#dfe6ec"; }   // ice/snow tone that blends with each base
+function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#e7ebef"; }   // sea/land tone painted under each base
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2458,22 +2459,23 @@ async function addCartoVector(before){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-overview","g-base","g-poles","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-sphere","g-overview","g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
+  // SOLID SPHERE, at the very bottom: paints the whole globe surface a map tone so a missing tile (poles, or
+  // a street tile still loading) shows this, never black/space. Static polygon -> always there, no loading.
+  mlMap.addSource("g-sphere",{type:"geojson",data:globeSphereGeo()});
+  mlMap.addLayer({id:"g-sphere",type:"fill",source:"g-sphere",paint:{"fill-color":polarCapColor(k),"fill-antialias":false}}, before);
   // ALWAYS-RESIDENT OVERVIEW: a SEPARATE source of the SAME imagery, capped at native z6 and rendered only
   // below z6. Because this source is never asked for street-level tiles, its small z0-6 set (a few MB) is
   // never evicted by deep-zoom city browsing — so the whole-globe view is ALWAYS loaded and zooming OUT is
   // instant, with no chunks. It's the real crisp tiles at their native zoom (not a stretched low-res base),
-  // and it's hidden at z>=6 so it never blurs the detailed view. Sits UNDER g-base.
+  // and it's hidden at z>=6 so it never blurs the detailed view. Sits UNDER g-base, over the sphere.
   mlMap.addSource("g-overview",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(6,b.max)});
   mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
   mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
-  mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":180}}, before);   // short cross-fade so tiles blend in on zoom instead of popping as chunks
-  // Fill the tile-less polar caps so they aren't black holes when you zoom out (sits just above the base).
-  mlMap.addSource("g-poles",{type:"geojson",data:polarCapGeo()});
-  mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapColor(k),"fill-antialias":false}}, before);
+  mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);   // fade 0: cached/prefetched tiles paint instantly over the sphere (no gray fade window)
   // NOTE: the globe copies the flat map EXACTLY (RULE 2) — the same CARTO raster base + label tiles, no
   // vector-style swap. The vector style drifted from the flat raster (different labels/sea names/relief),
   // which is the divergence that was showing. Same tiles in, same map out; only the projection differs.
