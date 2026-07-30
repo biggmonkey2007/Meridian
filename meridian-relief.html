@@ -2432,7 +2432,7 @@ function globeSphereGeo(){
   r.push([-180, 89.9]);
   return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[r]}}]};
 }
-function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#e7ebef"; }   // sea/land tone painted under each base
+function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#eaecec"; }   // land/base tone painted under each base (Positron-like light)
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2451,7 +2451,8 @@ async function addCartoVector(before){
   if(!src) return false;
   if(!mlMap.getSource("carto")) mlMap.addSource("carto", src);
   (style.layers||[]).forEach(l=>{
-    if(mlMap.getLayer(l.id)) return;
+    if(l.type==="background") return;              // skip the style's full-canvas background — our dark space
+    if(mlMap.getLayer(l.id)) return;               // bg + the g-sphere fill (land tone) handle the surface
     try{ mlMap.addLayer(l, before); _gCartoIds.push(l.id); }catch(e){}
   });
   return _gCartoIds.length > 0;
@@ -2463,31 +2464,45 @@ function setGlobeBasemap(k){
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
-  // SOLID SPHERE, at the very bottom: paints the whole globe surface a map tone so a missing tile (poles, or
+  // SOLID SPHERE, at the very bottom: paints the whole globe surface a land tone so a missing tile (poles, or
   // a street tile still loading) shows this, never black/space. Static polygon -> always there, no loading.
   mlMap.addSource("g-sphere",{type:"geojson",data:globeSphereGeo()});
   mlMap.addLayer({id:"g-sphere",type:"fill",source:"g-sphere",paint:{"fill-color":polarCapColor(k),"fill-antialias":false}}, before);
-  // ALWAYS-RESIDENT OVERVIEW: a SEPARATE source of the SAME imagery, capped at native z6 and rendered only
-  // below z6. Because this source is never asked for street-level tiles, its small z0-6 set (a few MB) is
-  // never evicted by deep-zoom city browsing — so the whole-globe view is ALWAYS loaded and zooming OUT is
-  // instant, with no chunks. It's the real crisp tiles at their native zoom (not a stretched low-res base),
-  // and it's hidden at z>=6 so it never blurs the detailed view. Sits UNDER g-base, over the sphere.
-  mlMap.addSource("g-overview",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(6,b.max)});
-  mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
-  mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
-  mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);   // fade 0: cached/prefetched tiles paint instantly over the sphere (no gray fade window)
-  // NOTE: the globe copies the flat map EXACTLY (RULE 2) — the same CARTO raster base + label tiles, no
-  // vector-style swap. The vector style drifted from the flat raster (different labels/sea names/relief),
-  // which is the divergence that was showing. Same tiles in, same map out; only the projection differs.
-  if(layers.shade && k!=="satellite"){
-    mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-    mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.3}}, before);
-  }
-  if(layers.labels && k!=="osmintl"){
-    // The EXACT SAME label tiles as the flat map's mkLabels() (RULE 2): CARTO light_only_labels, or Esri
-    // reference over satellite. No more Esri/ vector labels that made the globe read differently.
-    mlMap.addSource("g-labels",{type:"raster",tiles:(k==="satellite"?[ESRI_REF]:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"]),tileSize:256,maxzoom:(k==="satellite"?18:19)});
-    mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",paint:{"raster-fade-duration":0}}, before);
+  if(k==="clean"){
+    // VECTOR base — the Google-Maps approach. Positron is GPU-rendered geometry, not tile images, so it
+    // scales INFINITELY SMOOTH from z3 up with no raster "chunks" to swap, and vector tiles are tiny so
+    // panning fills near-instantly. Same Positron look as the raster base we were using. (Its full-canvas
+    // background layer is skipped — our dark bg + the sphere fill handle space and the poles.)
+    addCartoVector(before).then(()=>{
+      // At WORLD SCALE (z<3) MapLibre's globe mis-renders some vector fills (a dark wedge), so cover the
+      // far-out overview with the clean RASTER Positron — always-resident (instant zoom-out) and artifact-
+      // free. Vector takes over from z3 up. Both are Positron, so the handoff is seamless.
+      const bef = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
+      if(!mlMap.getSource("g-overview")){
+        mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:6});
+        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, bef);
+      }
+      if(layers.labels && !mlMap.getSource("g-labels")){
+        mlMap.addSource("g-labels",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:19});
+        mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",maxzoom:3,paint:{"raster-fade-duration":0}}, bef);
+      }
+    }).catch(()=>{});
+  } else {
+    const b=mlBaseSpec(k);
+    // RASTER bases (satellite/topo/osmintl): always-resident overview (instant zoom-out) + detailed base on
+    // top, gaps caught by the sphere fill and smoothed by the prefetch ring.
+    mlMap.addSource("g-overview",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(6,b.max)});
+    mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
+    mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
+    mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
+    if(layers.shade && k!=="satellite"){
+      mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
+      mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.3}}, before);
+    }
+    if(layers.labels && k!=="osmintl"){
+      mlMap.addSource("g-labels",{type:"raster",tiles:(k==="satellite"?[ESRI_REF]:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"]),tileSize:256,maxzoom:(k==="satellite"?18:19)});
+      mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",paint:{"raster-fade-duration":0}}, before);
+    }
   }
   if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.3); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
 }
