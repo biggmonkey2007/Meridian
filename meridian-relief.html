@@ -2458,10 +2458,17 @@ async function addCartoVector(before){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-base","g-poles","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-overview","g-base","g-poles","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
+  // ALWAYS-RESIDENT OVERVIEW: a SEPARATE source of the SAME imagery, capped at native z6 and rendered only
+  // below z6. Because this source is never asked for street-level tiles, its small z0-6 set (a few MB) is
+  // never evicted by deep-zoom city browsing — so the whole-globe view is ALWAYS loaded and zooming OUT is
+  // instant, with no chunks. It's the real crisp tiles at their native zoom (not a stretched low-res base),
+  // and it's hidden at z>=6 so it never blurs the detailed view. Sits UNDER g-base.
+  mlMap.addSource("g-overview",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(6,b.max)});
+  mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
   mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
   mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":180}}, before);   // short cross-fade so tiles blend in on zoom instead of popping as chunks
   // Fill the tile-less polar caps so they aren't black holes when you zoom out (sits just above the base).
