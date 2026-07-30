@@ -2474,17 +2474,26 @@ function setGlobeBasemap(k){
     // panning fills near-instantly. Same Positron look as the raster base we were using. (Its full-canvas
     // background layer is skipped — our dark bg + the sphere fill handle space and the poles.)
     addCartoVector(before).then(()=>{
-      // At WORLD SCALE (z<3) MapLibre's globe mis-renders some vector fills (a dark wedge), so cover the
-      // far-out overview with the clean RASTER Positron — always-resident (instant zoom-out) and artifact-
-      // free. Vector takes over from z3 up. Both are Positron, so the handoff is seamless.
-      const bef = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
+      // Insert the base overlays UNDER the vector's own label layers, so the ENGLISH vector labels always
+      // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
+      const firstSym = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
+      const belowLabels = firstSym || (mlMap.getLayer("g-borders") ? "g-borders" : undefined);
+      // At WORLD SCALE (z<3) MapLibre's globe mis-renders some vector FILLS (a dark wedge), so cover them with
+      // the always-resident clean RASTER (instant zoom-out, artifact-free); vector fills take over from z3 up.
       if(!mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:6});
-        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, bef);
+        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
+      // TERRAIN: hillshade over the base, under the labels — keeps "Clean relief" its relief.
+      if(layers.shade && !mlMap.getSource("g-shade")){
+        mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.25}}, belowLabels);
+      }
+      // z<3 the vector shows only continents, so add ESRI's ENGLISH reference labels for a dense, English
+      // overview (country/city names) — matching the vector English used from z3 up (no language switch).
       if(layers.labels && !mlMap.getSource("g-labels")){
-        mlMap.addSource("g-labels",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:19});
-        mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",maxzoom:3,paint:{"raster-fade-duration":0}}, bef);
+        mlMap.addSource("g-labels",{type:"raster",tiles:[ESRI_ENLBL],tileSize:256,maxzoom:16});
+        mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
     }).catch(()=>{});
   } else {
