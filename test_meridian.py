@@ -84,6 +84,14 @@ CATEGORY_CASES = [
 GEO_CASES = [
     ("Bellingham scores twice to lift England past Haaland's Norway", "", "England",
      "SHIPPED BUG: gazetteer read the surname as Bellingham, Washington"),
+    # A country taking a DOMESTIC action (orders/expels/bans/sanctions) is news at its OWN seat; a country
+    # named only as background must not steal the dot.
+    ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",
+     "RT France was shut down in 2023, a year after the start of the Russian Intervention in Ukraine, but Ms. Fedorova remained.",
+     "France", "SHIPPED BUG: France ORDERED the expulsion; the dot belongs in France"),
+    ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",
+     "RT France was shut down in 2023, a year after the start of the Russian Intervention in Ukraine, but Ms. Fedorova remained.",
+     "!Ukraine", "SHIPPED BUG: a background 'Intervention in Ukraine' dotted Kyiv"),
     # A national official SPEAKING/TESTIFYING about a foreign country is news in THEIR country, not the
     # topic country. These dotted Tehran because "Iran" was the only place named.
     ("Trump to attend dignified transfer of fallen soldiers. And, Hegseth testifies on Iran",

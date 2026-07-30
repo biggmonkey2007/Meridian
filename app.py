@@ -4576,6 +4576,33 @@ _DELIBERATE_VERBS = {"considers", "considering", "consider", "weighs", "weighing
                      "readying", "prepares", "preparing", "ponders", "pondering", "weighs", "wants"}
 
 
+# A COUNTRY taking a DOMESTIC / administrative action happens AT ITS OWN SEAT — the action is the country's
+# own governmental act, not something at a foreign place. Deliberately excludes strike/attack/invade verbs
+# (those happen at the TARGET): "Russia strikes Ukraine" stays Ukraine, but "France ORDERS the expulsion…",
+# "US SANCTIONS…", "Germany SUMMONS the ambassador" are the acting country's own news.
+_ACTOR_SEAT_VERBS = {
+    "orders", "order", "ordered", "expels", "expel", "expelled", "bans", "ban", "banned",
+    "sanctions", "sanction", "sanctioned", "summons", "summon", "summoned", "recalls", "recall", "recalled",
+    "imposes", "impose", "imposed", "announces", "announce", "announced", "declares", "declare", "declared",
+    "approves", "approve", "approved", "passes", "pass", "passed", "unveils", "unveil", "unveiled",
+    "introduces", "introduce", "introduced", "suspends", "suspend", "suspended", "deports", "deport", "deported",
+    "indicts", "indict", "indicted", "outlaws", "outlaw", "outlawed", "designates", "designate", "designated"}
+
+
+def _actor_seat_country(hits, words):
+    """A COUNTRY that is the SUBJECT at the very start of the headline, taking a domestic/administrative
+    action (orders/expels/bans/sanctions/summons/announces…), is acting AT ITS OWN SEAT. Returns that
+    country so one named only as BACKGROUND later ("…the start of the Russian Intervention in Ukraine")
+    can't steal the dot. Narrow by design: the subject must be at the start and the verb must be domestic."""
+    for h in hits:
+        if h[1] not in ("country", "demonym") or h[0] > 2:      # must be the subject, at the very start
+            continue
+        for k in range(h[0] + 1, min(h[0] + 4, len(words))):
+            if words[k] in _ACTOR_SEAT_VERBS:
+                return h[5]                                      # the acting country
+    return None
+
+
 def _deliberation_country(words):
     """A leader/official who is the SUBJECT at the start and DELIBERATES or makes a STATEMENT about a
     foreign country -> THEIR seat. "Trump considers attack on Iran", "Rubio says ... war in Ukraine",
@@ -5323,6 +5350,15 @@ def _geolocate(title, sourcecountry, desc="", url=""):
                 return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
         best = _pick_place(hits, words)
+        # A COUNTRY that is the SUBJECT taking a domestic action at its own seat ("France ORDERS the
+        # expulsion…") beats a country named only as background later ("…Intervention in Ukraine") — even
+        # when that later one reads as "located" via an "in". Only fires when the chosen place is itself a
+        # bare country/demonym, so a real city/facility scene is never overruled.
+        if best[1] in ("country", "demonym") and not _is_facility(best):
+            asc = _actor_seat_country(hits, words)
+            if asc and asc in COUNTRY_COORDS and asc != best[5]:
+                la, ln = COUNTRY_COORDS[asc]
+                return la, ln, _co_short(asc), asc
         # The headline gave only a broad area, but the wire dateline names the actual town. Trust the
         # dateline only when it agrees with the story (same country, or a country the story names) —
         # otherwise a Reuters story about Russia filed from LONDON would get dotted on London.
