@@ -2421,6 +2421,17 @@ function globeBgExpr(k){
   // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
   return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
 }
+// Web-Mercator tiles only exist to ±85.05° latitude, so the globe's polar CAPS have no tiles and show the
+// dark space backdrop — the "black chunks at the poles". Fill them with a solid ice tone (a static polygon,
+// so it's always there instantly, never loads). Two caps: north (85→90) and south (-85→-90).
+function polarCapGeo(){
+  const cap=(a,b)=>{ const r=[]; for(let x=-180;x<=180;x+=10) r.push([x,a]); for(let x=180;x>=-180;x-=10) r.push([x,b]); r.push([-180,a]); return [r]; };
+  return {type:"FeatureCollection",features:[
+    {type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:cap(85,89.99)}},
+    {type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:cap(-85,-89.99)}}
+  ]};
+}
+function polarCapColor(k){ return k==="satellite" ? "#e8edf2" : "#dfe6ec"; }   // ice/snow tone that blends with each base
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2447,12 +2458,15 @@ async function addCartoVector(before){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-base","g-poles","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
   mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
   mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":180}}, before);   // short cross-fade so tiles blend in on zoom instead of popping as chunks
+  // Fill the tile-less polar caps so they aren't black holes when you zoom out (sits just above the base).
+  mlMap.addSource("g-poles",{type:"geojson",data:polarCapGeo()});
+  mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapColor(k),"fill-antialias":false}}, before);
   // NOTE: the globe copies the flat map EXACTLY (RULE 2) — the same CARTO raster base + label tiles, no
   // vector-style swap. The vector style drifted from the flat raster (different labels/sea names/relief),
   // which is the divergence that was showing. Same tiles in, same map out; only the projection differs.
