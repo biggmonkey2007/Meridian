@@ -1272,17 +1272,24 @@ function forceEnglish(style){
   });
   return style;
 }
-// DECLUTTER the zoomed-out globe: show COUNTRIES (and continents) when zoomed out, and hold cities/towns/
-// villages back until you actually zoom into a region — otherwise every capital "pokes out" over the globe.
-// Mirrors how the old raster map (and Google's globe) read at world scale: mostly country names.
+// Match the OLD raster map's label hierarchy exactly: the biggest COUNTRIES read at world scale, smaller ones
+// next, then regions, then cities -> towns -> villages appear progressively as you zoom in — each its own
+// size and colour (which the Positron style already defines). We only (a) stagger WHEN each tier appears so
+// the zoomed-out globe stays clean, and (b) swap the distinctive Montserrat for a neutral Open Sans to match
+// the flat map. Names are already ONE English name each (forceEnglish -> name_en).
+const _PLACE_MINZOOM = {
+  place_continent:0, place_country_1:1.6, place_country_2:3.2, place_state:5,
+  place_capital_dot_z7:6, place_city_dot_r2:5, place_city_dot_r4:6, place_city_dot_r7:7, place_city_dot_z7:7.5,
+  place_city_r5:7.5, place_city_r6:8.5, place_town:9, place_villages:11, place_suburbs:12.5, place_hamlet:13
+};
 function tunePlaces(style){
   (style.layers||[]).forEach(l=>{
-    if(l.type!=="symbol" || l["source-layer"]!=="place") return;
-    const id = l.id||"";
-    if(/continent/.test(id))      l.minzoom = 0;
-    else if(/country/.test(id))   l.minzoom = Math.min(l.minzoom==null?99:l.minzoom, 1.5);   // countries at zoom-out
-    else if(/state/.test(id))     l.minzoom = Math.max(l.minzoom||0, 4.5);                    // regions a touch later
-    else                          l.minzoom = Math.max(l.minzoom||0, 5.6);                    // cities/towns/villages/capitals: only once zoomed in
+    if(l.type!=="symbol") return;
+    if(l["source-layer"]==="place" && l.id in _PLACE_MINZOOM) l.minzoom = _PLACE_MINZOOM[l.id];
+    if(l.layout && l.layout["text-font"]){                            // neutral Open Sans, keeping bold/regular intent
+      const bold = JSON.stringify(l.layout["text-font"]).search(/Bold|Medium|Semibold/i) >= 0;
+      l.layout["text-font"] = bold ? ["Open Sans Bold"] : ["Open Sans Regular"];
+    }
   });
   return style;
 }
@@ -2501,7 +2508,7 @@ function setGlobeBasemap(k){
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
         mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.35}}, belowLabels);
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.45}}, belowLabels);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (tuned via tunePlaces to
       // show at world scale) render on top of the raster overview, so z<3 reads clean and English.
