@@ -2650,23 +2650,35 @@ function updateGlobeData(){
   }
 }
 function applyGlobeStyle(){ setGlobeBasemap(currentBase); }
-async function enterGlobe(){
-  if(!hasWebGL()){ toast("The globe needs WebGL — open Meridian in the desktop app, where it works."); return false; }
-  if(!(await ensureGlobeLib())){ toast("Couldn’t load the globe library (check your connection)."); return false; }
+// ONE MapLibre vector map, TWO projections. "globe" = 3D globe, "flat" = mercator. The old Leaflet raster
+// (#map) is retired — both views are this same vector engine, so the flat map inherits the globe's English
+// Positron labels, terrain, borders and news dots exactly (only the projection differs).
+async function showMap(proj){          // proj: "globe" | "flat"
+  const mlProj = (proj==="globe") ? "globe" : "mercator";
+  if(!hasWebGL()){ toast("The map needs WebGL — open Meridian in the desktop app, where it works."); return false; }
+  if(!(await ensureGlobeLib())){ toast("Couldn’t load the map library (check your connection)."); return false; }
   const g = globeEl(); g.style.display="block";
   const m = document.getElementById("map"); if(m) m.style.display="none";
+  // Apply the projection + the surrounding tone. In flat/mercator there is no "space": any gap (edges above
+  // ±85°, a still-loading tile) should read as the map's own light relief, never the globe's dark backdrop.
+  const applyProj = ()=>{
+    try{ mlMap.setProjection({type:mlProj}); }catch(e){ try{ mlMap.setProjection(mlProj); }catch(_){} }
+    try{ if(mlProj==="globe"){ mlMap.dragRotate.enable(); } else { mlMap.dragRotate.disable(); mlMap.setBearing(0); mlMap.setPitch(0); } }catch(e){}
+    const flatBg = (currentBase==="satellite") ? "#0a1622" : "#e9edf1";
+    try{ mlMap.setPaintProperty("bg","background-color", mlProj==="globe" ? globeBgExpr(currentBase) : flatBg); }catch(e){}
+    g.style.background = (mlProj==="globe") ? "" : flatBg;     // "" restores the CSS dark-space gradient for the globe
+  };
   if(!mlMap){
-    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom:1.5, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:true, renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
+    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom: mlProj==="globe"?1.5:2.4, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:mlProj==="globe", renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/121); mlMap.scrollZoom.setZoomRate(1/61); }catch(e){}   // ~10% gentler zoom
     mlMap.on("error", ()=>{});
-    mlMap.on("load", ()=>{ mlLoaded=true; try{ mlMap.setProjection({type:"globe"}); }catch(e){ try{ mlMap.setProjection("globe"); }catch(_){} } buildGlobeLayers(); warmWorldBaseline(); warmGlobeView();
-      // if the feed already loaded before the globe finished (common on a warm cache), push the dots in now
-      // and again on the next idle frame — otherwise the globe can come up with an empty event layer.
+    mlMap.on("load", ()=>{ mlLoaded=true; applyProj(); buildGlobeLayers(); warmWorldBaseline(); warmGlobeView();
+      // if the feed already loaded before the map finished (common on a warm cache), push the dots in now
+      // and again on the next idle frame — otherwise the map can come up with an empty event layer.
       updateGlobeData(); mlMap.once("idle", updateGlobeData); });
     // Warm tiles DURING the rotate/pan (throttled), not just after it settles — otherwise panning the
-    // globe outruns the tile fetch and you see empty chunks until you stop. Mirrors the flat map, which
-    // already pre-warms on "move".
+    // map outruns the tile fetch and you see empty chunks until you stop.
     mlMap.on("move moveend", scheduleGlobeWarm);
     mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
@@ -2676,22 +2688,19 @@ async function enterGlobe(){
     mlMap.on("mousemove",(e)=>{ if(!mlMap.getLayer("g-events")) return; const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); mlMap.getCanvas().style.cursor=(fs&&fs.length)?"pointer":""; });
   } else {
     setTimeout(()=>{ try{ mlMap.resize(); }catch(e){} }, 30);
-    if(mlLoaded){ updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); startGlobePulse(); }
+    if(mlLoaded){ applyProj(); updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); startGlobePulse(); }
   }
   return true;
 }
-function exitGlobe(){
-  stopGlobePulse();
-  const g=document.getElementById("globe"); if(g) g.style.display="none";
-  const m=document.getElementById("map"); if(m) m.style.display="";
-  if(map) setTimeout(()=>{ map.invalidateSize(); }, 60);
-}
-async function setMode(){
+// Legacy name kept for callers/tests: the globe is just showMap("globe").
+async function enterGlobe(){ return showMap("globe"); }
+async function setMode(target){
   const btn=document.getElementById("btn-globe");
-  if(!globeMode){
-    if(await enterGlobe()){ globeMode=true; mode="globe"; if(btn) btn.classList.add("active"); }
-  } else {
-    exitGlobe(); globeMode=false; mode="map"; if(btn) btn.classList.remove("active");
+  const goGlobe = target ? (target==="globe") : (mode!=="globe");
+  if(await showMap(goGlobe ? "globe" : "flat")){
+    globeMode = true;                 // MapLibre is the active engine in BOTH views now (projection is what differs)
+    mode = goGlobe ? "globe" : "map";
+    if(btn) btn.classList.toggle("active", goGlobe);
   }
 }
 
