@@ -1272,48 +1272,17 @@ function forceEnglish(style){
   });
   return style;
 }
-// Style the vector labels to READ like the old raster (flat) map: a clear tier hierarchy where the biggest
-// COUNTRIES show at world scale, then smaller countries, regions, and cities -> towns -> villages appear as
-// you zoom in — each its own size, WEIGHT and (darker, higher-contrast) COLOUR, one English name each. Carto's
-// VECTOR Positron is a lighter/thinner design than their raster, so we darken it back to the flat map's read.
-// [minzoom, text-color, bold?]
-const _PLACE = {
-  place_continent:      [0,   "#8b95a0", true],
-  place_country_1:      [1.6, "#5c6873", true],   // big countries, at the globe view
-  place_country_2:      [3.2, "#6c7883", true],   // smaller countries a bit later
-  place_state:          [5,   "#95a1ab", false],  // regions
-  place_capital_dot_z7: [4.2, "#333f49", true],   // CAPITALS: darkest + bold, appear early like the flat map
-  place_city_dot_r2:    [4.6, "#414d58", true],   // major cities
-  place_city_dot_r4:    [6,   "#4d5964", false],
-  place_city_dot_r7:    [7,   "#5a6570", false],
-  place_city_dot_z7:    [7.5, "#5a6570", false],
-  place_city_r5:        [7.5, "#414d58", true],
-  place_city_r6:        [8.5, "#4d5964", true],
-  place_town:           [9,   "#697079", false],
-  place_villages:       [11,  "#7a828b", false],
-  place_suburbs:        [12.5,"#8a929b", false],
-  place_hamlet:         [13,  "#8a929b", false]
-};
-function tunePlaces(style){
-  (style.layers||[]).forEach(l=>{
-    if(l.type!=="symbol") return;
-    const cfg = (l["source-layer"]==="place") ? _PLACE[l.id] : null;
-    if(cfg){
-      l.minzoom = cfg[0];
-      l.paint = Object.assign({}, l.paint, {"text-color":cfg[1], "text-halo-color":"#ffffff", "text-halo-width":1.1, "text-halo-blur":0.4});
-      if(l.layout){ l.layout["text-font"] = cfg[2] ? ["Open Sans Bold"] : ["Open Sans Regular"]; }
-    } else if(l.layout && l.layout["text-font"]){                     // any other labels: same neutral Open Sans
-      const bold = JSON.stringify(l.layout["text-font"]).search(/Bold|Medium|Semibold/i) >= 0;
-      l.layout["text-font"] = bold ? ["Open Sans Bold"] : ["Open Sans Regular"];
-    }
-  });
-  return style;
-}
+// The vector Positron style IS the old raster map's design — CARTO ships both to match: Montserrat labels,
+// soft blue-grey tiers (#697b89 for cities/towns/villages, light greys interpolating for countries/states),
+// and native sizes + appear-zooms. So we DON'T restyle the labels at all; the ONLY change is swapping each
+// label to its single English name (forceEnglish). An earlier pass overrode colour/weight/font here (forcing
+// Open Sans Bold + dark greys) — that is exactly what made cities read bold-black instead of Positron's soft
+// grey. Removing it hands the map back Positron's real look, which is what "copy the old map" means.
 async function englishCartoStyle(){
   if(_enStyle) return JSON.parse(JSON.stringify(_enStyle));
   const r = await fetch(CARTO_VECTOR_STYLE);
   if(!r.ok) throw new Error("style "+r.status);
-  _enStyle = tunePlaces(forceEnglish(await r.json()));
+  _enStyle = forceEnglish(await r.json());
   return JSON.parse(JSON.stringify(_enStyle));
 }
 const ESRI_REF   = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -2526,8 +2495,8 @@ function setGlobeBasemap(k){
         mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
         mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.45}}, belowLabels);
       }
-      // No extra raster labels: the vector's OWN English country/continent labels (tuned via tunePlaces to
-      // show at world scale) render on top of the raster overview, so z<3 reads clean and English.
+      // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
+      // render on top of the raster overview, so z<3 reads clean and English.
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
