@@ -1172,6 +1172,27 @@ def main():
             fails.append(("flags", title, want, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:34]:36} (want {str(want)[:24]:26}) {title[:28]}")
 
+    # FLAG COVERAGE: every country the gazetteer can emit MUST resolve to an ISO2 code, or its flag is blank
+    # in the UI (this is how Serbia lost its flag). Enforce it so no country ever silently loses its flag.
+    print("\n=== FLAG COVERAGE (every gazetteer country resolves to a flag) ===")
+    import re as _re, json as _json
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _gaz = _json.load(open(os.path.join(_here, "cities_gaz.json"), encoding="utf-8"))
+    _gc = set()
+    for _k, _v in _gaz.items():
+        for _rec in _v:
+            if len(_rec) >= 3 and _rec[2]:
+                _gc.add(_rec[2])
+    _html = open(os.path.join(_here, "meridian-relief.html"), encoding="utf-8").read()
+    _iso2 = _json.loads(_re.search(r"const ISO2 = (\{.*?\});", _html).group(1))
+    _missing = sorted(_gc - set(_iso2.keys()))
+    ran[0] += 1
+    if _missing:
+        fails.append(("flag-coverage", "ISO2 gaps", "0 missing",
+                      f"{len(_missing)} missing e.g. {_missing[:6]}",
+                      "every country a story can be geolocated to must map to an ISO2 code so its flag renders"))
+    print(f"  {'ok ' if not _missing else 'FAIL'} {len(_gc)} gazetteer countries, {len(_missing)} without a flag")
+
     total = (len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -1180,7 +1201,8 @@ def main():
              + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
-             + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1)
+             + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
+             + 1)   # + flag-coverage one-off
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
