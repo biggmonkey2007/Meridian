@@ -3604,11 +3604,11 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
 # Words GeoNames lists as MID-SIZE towns (so they slip past the "weak" guards) but which in a headline
 # are a generic noun. "University" is essentially NEVER the town University, Florida — even "at the
 # University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
-_NEVER_CITY_WORDS = {"university", "surprise", "middle east"}
+_NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen"}   # "Schengen" in the news is the accord, not the Luxembourg village
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
-_NOT_CITY_WORDS = {"sparks", "brent"}
+_NOT_CITY_WORDS = {"sparks", "brent", "shaping"}   # "shaping tomorrow's grid" is a verb, not Shaping, China
 # Place names that are ALSO everyday English words — a dot ONLY when Capitalised in the source. "polish"
 # (shine), "china" (porcelain), "turkey" (the bird / cold turkey), "guinea" (guinea pig), "chad" (hanging
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
@@ -3763,6 +3763,11 @@ _FACILITIES = {
     # seats of power are PLACES. "Trump welcomes the Iraqi PM to the WHITE HOUSE" was a dot on IRAQ.
     "white house": (38.898, -77.037, "United States of America"),
     "the kremlin": (55.752, 37.617, "Russia"),
+    # UK — Sizewell nuclear complex sits on the Suffolk coast; "Suffolk" alone otherwise dots Suffolk, Virginia
+    "sizewell": (52.215, 1.620, "United Kingdom"), "sizewell nuclear plant": (52.215, 1.620, "United Kingdom"),
+    "sizewell c": (52.215, 1.620, "United Kingdom"), "sizewell b": (52.215, 1.620, "United Kingdom"),
+    # Lebanon — Beaufort Castle (Arnoun, southern Lebanon); the bare name "Beaufort" otherwise dots Malaysia
+    "beaufort castle": (33.204, 35.539, "Lebanon"),
     "downing street": (51.503, -0.128, "United Kingdom"),
     "elysee palace": (48.870, 2.317, "France"), "capitol hill": (38.890, -77.009, "United States of America"),
     "un headquarters": (40.750, -73.968, "United States of America"),
@@ -4914,6 +4919,11 @@ def _scan_places(text, spans, mentions):
                 # like Kyrylivka in "a hotel in the town of Kirilovka on the Azov Sea".
                 if not located_here and i >= 2 and words[i - 1] == "of" and words[i - 2] in _PLACE_OF_NOUNS:
                     located_here = True
+                # An ALL-CAPS token of 3+ letters is an ACRONYM (HIV, USAID, GDP, NASA, OPEC), not a city —
+                # unless the sentence explicitly locates something there. SHIPPED: "HIV prevention drug" dotted
+                # the village of Hiv, Iran. Real city names are Title-case in headlines, never SCREAMING-caps.
+                if size == 1 and len(gram) >= 3 and orig[i].isupper() and not located_here:
+                    continue
                 # TINY towns (pop < 15k — the small-town coverage we added) only dot when the sentence
                 # EXPLICITLY locates something there ("in X", "town of X"). Otherwise a same-named common
                 # word, company or person ("Meta", "Leader", "Middle East") would drop a false dot. Real

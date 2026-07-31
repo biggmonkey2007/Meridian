@@ -84,6 +84,26 @@ CATEGORY_CASES = [
 GEO_CASES = [
     ("Bellingham scores twice to lift England past Haaland's Norway", "", "England",
      "SHIPPED BUG: gazetteer read the surname as Bellingham, Washington"),
+    # BATCH of wrong-continent dots: common words / acronyms read as towns, and ambiguous names that picked
+    # the wrong country. Curated the real scene (Sizewell, Beaufort Castle); guarded acronyms + common words.
+    ("Wildfire near Sizewell nuclear plant causes 'total devastation' to Suffolk landscape",
+     "Wildfire on Suffolk's Dunwich Heath has burned over 150 hectares including the Minsmere nature reserve.",
+     "United Kingdom", "SHIPPED: 'Suffolk' dotted Suffolk, Virginia; the scene is Sizewell on the English coast"),
+    ("Lebanese president says Israeli blasts at Beaufort Castle threaten framework agreement",
+     "Lebanese President Joseph Aoun condemned Israeli attacks in southern Lebanon, citing blasts at Beaufort Castle.",
+     "Lebanon", "SHIPPED: 'Beaufort' dotted Beaufort, Malaysia; Beaufort Castle is in southern Lebanon"),
+    ("How extreme weather is shaping tomorrow's electric grid",
+     "Severe heat waves across 17 US states strain the national electric grid, with Texas a key testing ground.",
+     "United States", "SHIPPED: the gerund 'shaping' dotted the town of Shaping, China"),
+    ("HIV prevention drug could reduce cases globally but USAID cuts prevent access, say experts",
+     "A new HIV prevention drug could cut new cases in South Africa, Zimbabwe and Kenya, but US aid cuts hinder access.",
+     "!Iran", "SHIPPED: the acronym 'HIV' dotted the village of Hiv, Iran"),
+    ("EU dismisses speculation over Schengen action against Spain as Ceuta crisis unfolds",
+     "Spain's mass irregular border crossings into the enclave of Ceuta have sparked EU caution over Schengen action.",
+     "Spain", "SHIPPED: 'Schengen' dotted the Luxembourg village; the story is Ceuta, Spain"),
+    ("Over $1.1 trillion added to the US stock market today.",
+     "Over $1.1 trillion was added to the US stock market as indices rallied.",
+     "United States", "SHIPPED: the word 'Over' dotted the village of Over, UK"),
     # A country taking a DOMESTIC action (orders/expels/bans/sanctions) is news at its OWN seat; a country
     # named only as background must not steal the dot.
     ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",

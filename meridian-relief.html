@@ -2554,19 +2554,15 @@ function setGlobeBasemap(k){
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
-        // Hillshade CAPPED at maxzoom 5: the whole world is then only ~1.4k tiles (z0-5), and z0-4 (~341) is
-        // pre-warmed on startup (warmHillshadeWorld). MapLibre upscales these coarse tiles when you zoom in, so
-        // relief is effectively ALWAYS loaded — it appears instantly on pan/zoom instead of streaming in as
-        // chunks. Slightly softer relief up close is the trade, but there are no terrain chunks anywhere.
+        // maxzoom 13 keeps relief SHARP up close; the prewarmed coarse world (z0-4) stays resident so it
+        // refines in rather than blank-chunking. Opacity fades 0.6 (regional, mountains read) -> 0.1 by z13 so
+        // a flat town isn't fogged. 120ms cross-fade smooths zoom-level swaps.
         mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        // maxzoom 13 keeps the relief SHARP when you zoom into a mountain range (a low cap made it a blurry
-        // smudge). No flat "chunks" though: the coarse world hillshade (z0-4) is prewarmed and resident, so
-        // MapLibre always shows crisp-enough relief immediately and just refines it as detail tiles arrive —
-        // never a blank tile. The 120ms cross-fade smooths the zoom-level swap so it doesn't flick.
-        // Relief opacity FADES OUT as you zoom into street level: full 0.6 at regional zoom (mountains read
-        // clearly), but by z13 it drops to ~0.1 so a flat town (e.g. Telšiai) isn't covered in grey hillshade
-        // "fog". Hillshade is meaningful for ranges, just noise over a city.
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowLabels);
+        // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
+        // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
+        // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
+        const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
@@ -2647,14 +2643,17 @@ function addGlobeOverlays(){
   if(!mlMap) return;
   try{ if(!mlMap.hasImage("port-anchor")) mlMap.addImage("port-anchor", makeAnchorIcon()); }catch(e){}
   try{ if(!mlMap.hasImage("strait-narrows")) mlMap.addImage("strait-narrows", makeStraitIcon()); }catch(e){}
+  // Insert these UNDER the news dots so a port/strait symbol never sits on top of an event dot (the dots are
+  // the interactive layer and must read on top). g-pulse is the lowest dot layer.
+  const underDots = mlMap.getLayer("g-pulse") ? "g-pulse" : (mlMap.getLayer("g-events") ? "g-events" : undefined);
   if(!mlMap.getSource("g-straits")){
     mlMap.addSource("g-straits",{type:"geojson",data:straitsGeoGL()});
-    mlMap.addLayer({id:"g-straits-pt",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","icon-image":"strait-narrows","icon-size":0.72,"icon-allow-overlap":true}});
-    mlMap.addLayer({id:"g-straits-lbl",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":11,"text-offset":[0,0.95],"text-anchor":"top","text-allow-overlap":false},paint:{"text-color":"#0d6b86","text-halo-color":"#ffffff","text-halo-width":1.7}});
+    mlMap.addLayer({id:"g-straits-pt",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","icon-image":"strait-narrows","icon-size":0.72,"icon-allow-overlap":true}}, underDots);
+    mlMap.addLayer({id:"g-straits-lbl",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":11,"text-offset":[0,0.95],"text-anchor":"top","text-allow-overlap":false},paint:{"text-color":"#0d6b86","text-halo-color":"#ffffff","text-halo-width":1.7}}, underDots);
   }
   if(!mlMap.getSource("g-ports")){
     mlMap.addSource("g-ports",{type:"geojson",data:portsGeoGL()});
-    mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":false},paint:{}});
+    mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":false},paint:{}}, underDots);
     // ports are symbol-only on the globe too (matches the flat map) — no name label so it can't overlap city labels
   }
 }
