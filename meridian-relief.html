@@ -1291,14 +1291,17 @@ function forceEnglish(style){
 //     empty/uneven. Showing more candidates lets MapLibre's collision fill each country evenly.
 //  3) State/county/oblast borders a touch stronger — Positron's pink (#ead5d7) is almost invisible.
 function tuneVectorStyle(style){
-  const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883", place_state:"#7a8794" };
+  // Only the COUNTRY tier is nudged darker (it's the anchor label). Regions/states are left EXACTLY native
+  // Positron (soft #97a4ae, its own halo) so the many voivodeship/oblast labels read as faint background —
+  // "copy the other map's regions". Cities/towns/villages are native too.
+  const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883" };
   const CITY_MZ   = { place_city_dot_r7:5, place_city_dot_r4:4, place_city_r5:7, place_city_r6:7, place_town:7, place_villages:9.5 };
   (style.layers||[]).forEach(l=>{
     if(l.type==="symbol" && LABEL_COL[l.id]){
       l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
     }
     if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
-    if(l.id==="place_state"){ l.minzoom = 4.5; l.filter = ["all",["==","class","state"],["<=","rank",6]]; }   // include more regions (e.g. Polish voivodeships)
+    if(l.id==="place_state"){ l.filter = ["all",["==","class","state"],["<=","rank",6]]; }   // keep the EVEN coverage (Polish voivodeships etc.), but native minzoom + native soft colour
     if(l.id==="boundary_state" || l.id==="boundary_county"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // ~8% stronger than the near-invisible pink
     }
@@ -1568,15 +1571,23 @@ function warmGlobeView(){
   });
   _runWarm();
 }
-// Prewarm the ENTIRE low-zoom world hillshade (z0..4 = ~341 tiles) once. With the g-shade source capped at
-// maxzoom 5, these coarse tiles are what MapLibre actually draws (upscaled) almost everywhere, so priming
-// them into the browser cache means terrain renders the instant it's requested — no flat "chunk" streaming
-// in as you pan/zoom. ~5MB one-time, low-priority, and cached across runs.
+// Prewarm the ENTIRE low-zoom world hillshade (z0..4 = ~341 tiles) once, so the coarse terrain MapLibre
+// upscales is always cache-resident (no flat chunks). CRITICAL: trickle it during IDLE time only — dumping
+// all 341 requests at once spiked the main thread during the user's first zoom. requestIdleCallback pumps a
+// few at a time and pauses whenever the user is interacting, so it fills the cache invisibly in the gaps.
 let _hsWarmed = false;
 function warmHillshadeWorld(){
   if(_hsWarmed) return; _hsWarmed = true;
-  for(let z=0; z<=4; z++){ const span=1<<z; for(let x=0;x<span;x++) for(let y=0;y<span;y++) _enqWarm(_tplUrl(HILLSHADE, x, y, z)); }
-  _runWarm();
+  const tiles=[];
+  for(let z=0; z<=4; z++){ const span=1<<z; for(let x=0;x<span;x++) for(let y=0;y<span;y++) tiles.push(_tplUrl(HILLSHADE, x, y, z)); }
+  const idle = window.requestIdleCallback || function(f){ return setTimeout(function(){ f({timeRemaining:function(){return 8;}}); }, 300); };
+  let i=0;
+  (function pump(){
+    let n=0;
+    while(i<tiles.length && n<6){ _enqWarm(tiles[i++]); n++; }   // trickle ~6 per idle slice
+    _runWarm();
+    if(i<tiles.length) idle(pump);
+  })();
 }
 function schedulePrefetch(){
   clearTimeout(_pfT);
