@@ -2337,10 +2337,17 @@ function drawDots(){
 // (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
 function spreadLngLat(clng, clat, idx, k){
   if(k < 2) return [clng, clat];
-  // A FIXED geographic fan (offsets in degrees), so the pile is tight when zoomed out and genuinely
-  // SPREADS APART the more you zoom in (the map just reprojects the fixed points) — that's how you get to
-  // click the one you want. It never shifts when you pan/rotate, because the coordinates are fixed.
-  const D = 0.014, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // ~137.5° even spacing
+  // Fan a co-located pile so you can click each dot WITHOUT zooming right onto the city. We aim for a roughly
+  // CONSTANT on-screen gap between neighbours — converting a pixel radius to degrees at the CURRENT zoom — so
+  // the pile is already separated at regional zoom, not only city zoom. The spread is then CLAMPED in degrees
+  // so that when you're zoomed way out the pile pulls back in and stays local (tight) instead of flying across
+  // the map. Recomputed on zoom via updateGlobeData(moveend), so the on-screen gap holds as you zoom.
+  const z = (mlMap && mlLoaded) ? mlMap.getZoom() : 5;
+  const PX = 18;                                    // target on-screen gap (px) between neighbouring dots
+  const degPerPx = 360 / (512 * Math.pow(2, z));    // equator degrees per screen pixel at this zoom
+  let unit = Math.min(PX * degPerPx, 0.2);          // clamp: caps the spread when zoomed out so dots stay near the city
+  unit = Math.max(unit, 0.0009);                    // and never fully collapse when zoomed way in
+  const rad = unit * Math.sqrt(idx), ang = idx * 2.399963;   // golden-angle spiral (~137.5°) — even fan
   const dLng = (Math.cos(ang) * rad) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
   return [clng + dLng, clat + Math.sin(ang) * rad];
 }
@@ -2523,7 +2530,10 @@ function setGlobeBasemap(k){
         // relief is effectively ALWAYS loaded — it appears instantly on pan/zoom instead of streaming in as
         // chunks. Slightly softer relief up close is the trade, but there are no terrain chunks anywhere.
         mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:5});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.6,"raster-fade-duration":0}}, belowLabels);   // stronger relief so the map isn't bland — mountains read clearly
+        // Short cross-fade (not 0): when zooming, MapLibre swaps the hillshade's zoom level, and a hard cut
+        // (fade 0) makes the terrain visibly "flick" between resolutions. The tiles are prewarmed so there's no
+        // load delay — the fade just smooths the swap so zooming reads flush. 120ms ≈ imperceptible delay.
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.6,"raster-fade-duration":120}}, belowLabels);   // stronger relief so the map isn't bland — mountains read clearly
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
