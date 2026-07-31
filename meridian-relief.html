@@ -954,7 +954,7 @@ video{color-scheme:dark}
 <!-- bottom-left legend -->
 <div class="controls">
   <div class="legend" id="legend">
-    <h5><span>Categories</span><span class="leg-h-right"><span class="clear" id="leg-clear">reset</span><span class="leg-caret" id="leg-toggle" title="Collapse">▾</span></span></h5>
+    <h5><span>Categories</span><span class="leg-h-right"><span class="leg-caret" id="leg-toggle" title="Collapse">▾</span></span></h5>
     <div id="legend-items"></div>
     <div class="leg-sep"></div>
     <div id="layers-block"><h5 style="margin:7px 0 6px">Map layers</h5>
@@ -1170,7 +1170,7 @@ function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’
 let mode = "map";
 let windowH = 24;
 let filterCats = new Set(CAT_ORDER);
-const layers = { labels:true, shade:true, straits:true, ports:false };
+const layers = { labels:true, shade:true, straits:true, ports:true };
 let currentBase = "clean";
 
 let map = null, mapReady = false, countriesGeo = null, countryByName = {};
@@ -1282,14 +1282,25 @@ function forceEnglish(style){
 // label to its single English name (forceEnglish). An earlier pass overrode colour/weight/font here (forcing
 // Open Sans Bold + dark greys) — that is exactly what made cities read bold-black instead of Positron's soft
 // grey. Removing it hands the map back Positron's real look, which is what "copy the old map" means.
-// The ONLY deliberate deviation from stock Positron: nudge the admin tiers (countries + regions/states) a
-// little darker so they stand out from the very light base — Positron's own greys are faint. Cities/towns/
-// villages are left exactly native (soft #697b89). A touch wider halo keeps them legible over the hillshade.
-function emphasizeAdminLabels(style){
-  const COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883", place_state:"#7a8794" };
+// Deliberate deviations from stock Positron, tuned to how WE use the map:
+//  1) Admin label tiers (countries + regions/states) a little darker — Positron's greys are faint on our
+//     very light base. Cities/towns/villages stay exactly native (soft #697b89).
+//  2) Pull cities + regions in ~1 zoom EARLIER and widen the region filter, so coverage is EVEN across
+//     countries. Stock Positron gates these on a per-feature `rank` that's denser for some countries than
+//     others (e.g. all of Germany's states show while Poland's don't), which is what makes the map feel
+//     empty/uneven. Showing more candidates lets MapLibre's collision fill each country evenly.
+//  3) State/county/oblast borders a touch stronger — Positron's pink (#ead5d7) is almost invisible.
+function tuneVectorStyle(style){
+  const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883", place_state:"#7a8794" };
+  const CITY_MZ   = { place_city_dot_r7:5, place_city_dot_r4:4, place_city_r5:7, place_city_r6:7, place_town:7, place_villages:9.5 };
   (style.layers||[]).forEach(l=>{
-    if(l.type==="symbol" && COL[l.id]){
-      l.paint = Object.assign({}, l.paint, {"text-color":COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
+    if(l.type==="symbol" && LABEL_COL[l.id]){
+      l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
+    }
+    if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
+    if(l.id==="place_state"){ l.minzoom = 4.5; l.filter = ["all",["==","class","state"],["<=","rank",6]]; }   // include more regions (e.g. Polish voivodeships)
+    if(l.id==="boundary_state" || l.id==="boundary_county"){
+      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // ~8% stronger than the near-invisible pink
     }
   });
   return style;
@@ -1298,7 +1309,7 @@ async function englishCartoStyle(){
   if(_enStyle) return JSON.parse(JSON.stringify(_enStyle));
   const r = await fetch(CARTO_VECTOR_STYLE);
   if(!r.ok) throw new Error("style "+r.status);
-  _enStyle = emphasizeAdminLabels(forceEnglish(await r.json()));
+  _enStyle = tuneVectorStyle(forceEnglish(await r.json()));
   return JSON.parse(JSON.stringify(_enStyle));
 }
 const ESRI_REF   = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -2524,10 +2535,11 @@ function setGlobeBasemap(k){
         // pre-warmed on startup (warmHillshadeWorld). MapLibre upscales these coarse tiles when you zoom in, so
         // relief is effectively ALWAYS loaded — it appears instantly on pan/zoom instead of streaming in as
         // chunks. Slightly softer relief up close is the trade, but there are no terrain chunks anywhere.
-        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:5});
-        // Short cross-fade (not 0): when zooming, MapLibre swaps the hillshade's zoom level, and a hard cut
-        // (fade 0) makes the terrain visibly "flick" between resolutions. The tiles are prewarmed so there's no
-        // load delay — the fade just smooths the swap so zooming reads flush. 120ms ≈ imperceptible delay.
+        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+        // maxzoom 13 keeps the relief SHARP when you zoom into a mountain range (a low cap made it a blurry
+        // smudge). No flat "chunks" though: the coarse world hillshade (z0-4) is prewarmed and resident, so
+        // MapLibre always shows crisp-enough relief immediately and just refines it as detail tiles arrive —
+        // never a blank tile. The 120ms cross-fade smooths the zoom-level swap so it doesn't flick.
         mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.6,"raster-fade-duration":120}}, belowLabels);   // stronger relief so the map isn't bland — mountains read clearly
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
@@ -2734,7 +2746,8 @@ function renderLayers(){
     .map(o=> '<option value="'+o[0]+'"'+(o[0]===currentBase?" selected":"")+'>'+o[1]+'</option>').join("");
   const togs = [["labels","Place labels"],["shade","Terrain shading"],["straits","Strategic straits"],["ports","Major ports"]]
     .map(t=> '<div class="lyr '+(layers[t[0]]?"on":"")+'" data-lyr="'+t[0]+'"><span class="lyr-name">'+t[1]+'</span><span class="tog"></span></div>').join("");
-  host.innerHTML = '<div class="basemap-row"><label class="bm-label" for="bm-select">Basemap</label><select id="bm-select">'+opts+'</select></div>' + togs;
+  // toggles first, then the basemap ("map type") dropdown at the very bottom
+  host.innerHTML = togs + '<div class="basemap-row" style="margin-top:8px"><label class="bm-label" for="bm-select">Basemap</label><select id="bm-select">'+opts+'</select></div>';
   const sel = document.getElementById("bm-select");
   if(sel) sel.onchange = ()=> setBasemap(sel.value);
   host.querySelectorAll("[data-lyr]").forEach(n=> n.onclick = ()=> toggleLayer(n.dataset.lyr));
@@ -4405,15 +4418,19 @@ function renderLegend(){
 function updateLegendCounts(){
   const cut=Date.now()-windowH*3600000;
   const inWin=EVENTS.filter(e=>e.reportedAt>=cut);
-  CAT_ORDER.forEach(c=>{ const n=document.getElementById("lc-"+c); if(n) n.textContent=inWin.filter(e=>e.cat===c).length; });
+  const cnt={}; CAT_ORDER.forEach(c=>{ cnt[c]=inWin.filter(e=>e.cat===c).length; });
+  CAT_ORDER.forEach(c=>{ const n=document.getElementById("lc-"+c); if(n) n.textContent=cnt[c]; });
   legItems.querySelectorAll("[data-cat]").forEach(n=>n.classList.toggle("off",!filterCats.has(n.dataset.cat)));
+  // order the legend greatest-count -> least (stable within ties by original CAT_ORDER)
+  const rows=[...legItems.querySelectorAll("[data-cat]")];
+  rows.sort((a,b)=> (cnt[b.dataset.cat]-cnt[a.dataset.cat]) || (CAT_ORDER.indexOf(a.dataset.cat)-CAT_ORDER.indexOf(b.dataset.cat)));
+  rows.forEach(n=> legItems.appendChild(n));   // re-append in sorted order
 }
 function toggleCat(c){
   if(filterCats.has(c)) filterCats.delete(c); else filterCats.add(c);
   if(filterCats.size===0) filterCats=new Set(CAT_ORDER); // never empty
   drawDots();
 }
-document.getElementById("leg-clear").onclick=()=>{ filterCats=new Set(CAT_ORDER); drawDots(); };
 
 /* ----------------------------- CONTROLS ----------------------------- */
 document.getElementById("z-in").onclick=()=>zoomBy(1.6);
