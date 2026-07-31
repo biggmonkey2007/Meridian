@@ -1282,11 +1282,23 @@ function forceEnglish(style){
 // label to its single English name (forceEnglish). An earlier pass overrode colour/weight/font here (forcing
 // Open Sans Bold + dark greys) — that is exactly what made cities read bold-black instead of Positron's soft
 // grey. Removing it hands the map back Positron's real look, which is what "copy the old map" means.
+// The ONLY deliberate deviation from stock Positron: nudge the admin tiers (countries + regions/states) a
+// little darker so they stand out from the very light base — Positron's own greys are faint. Cities/towns/
+// villages are left exactly native (soft #697b89). A touch wider halo keeps them legible over the hillshade.
+function emphasizeAdminLabels(style){
+  const COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883", place_state:"#7a8794" };
+  (style.layers||[]).forEach(l=>{
+    if(l.type==="symbol" && COL[l.id]){
+      l.paint = Object.assign({}, l.paint, {"text-color":COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
+    }
+  });
+  return style;
+}
 async function englishCartoStyle(){
   if(_enStyle) return JSON.parse(JSON.stringify(_enStyle));
   const r = await fetch(CARTO_VECTOR_STYLE);
   if(!r.ok) throw new Error("style "+r.status);
-  _enStyle = forceEnglish(await r.json());
+  _enStyle = emphasizeAdminLabels(forceEnglish(await r.json()));
   return JSON.parse(JSON.stringify(_enStyle));
 }
 const ESRI_REF   = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
@@ -1543,6 +1555,16 @@ function warmGlobeView(){
       _WARM_TPL.forEach(t=> _enqWarm(_tplUrl(t, xx, y, zz)));
     }
   });
+  _runWarm();
+}
+// Prewarm the ENTIRE low-zoom world hillshade (z0..4 = ~341 tiles) once. With the g-shade source capped at
+// maxzoom 5, these coarse tiles are what MapLibre actually draws (upscaled) almost everywhere, so priming
+// them into the browser cache means terrain renders the instant it's requested — no flat "chunk" streaming
+// in as you pan/zoom. ~5MB one-time, low-priority, and cached across runs.
+let _hsWarmed = false;
+function warmHillshadeWorld(){
+  if(_hsWarmed) return; _hsWarmed = true;
+  for(let z=0; z<=4; z++){ const span=1<<z; for(let x=0;x<span;x++) for(let y=0;y<span;y++) _enqWarm(_tplUrl(HILLSHADE, x, y, z)); }
   _runWarm();
 }
 function schedulePrefetch(){
@@ -2496,8 +2518,12 @@ function setGlobeBasemap(k){
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
-        mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.45}}, belowLabels);
+        // Hillshade CAPPED at maxzoom 5: the whole world is then only ~1.4k tiles (z0-5), and z0-4 (~341) is
+        // pre-warmed on startup (warmHillshadeWorld). MapLibre upscales these coarse tiles when you zoom in, so
+        // relief is effectively ALWAYS loaded — it appears instantly on pan/zoom instead of streaming in as
+        // chunks. Slightly softer relief up close is the trade, but there are no terrain chunks anywhere.
+        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:5});
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.6,"raster-fade-duration":0}}, belowLabels);   // stronger relief so the map isn't bland — mountains read clearly
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
@@ -2646,7 +2672,7 @@ async function showMap(proj){          // proj: "globe" | "flat"
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/121); mlMap.scrollZoom.setZoomRate(1/61); }catch(e){}   // ~10% gentler zoom
     mlMap.on("error", ()=>{});
-    mlMap.on("load", ()=>{ mlLoaded=true; applyProj(); buildGlobeLayers(); warmWorldBaseline(); warmGlobeView();
+    mlMap.on("load", ()=>{ mlLoaded=true; applyProj(); buildGlobeLayers(); warmWorldBaseline(); warmGlobeView(); setTimeout(warmHillshadeWorld, 1500);   // prewarm the whole coarse hillshade a beat after first paint (don't fight the initial view)
       // if the feed already loaded before the map finished (common on a warm cache), push the dots in now
       // and again on the next idle frame — otherwise the map can come up with an empty event layer.
       updateGlobeData(); mlMap.once("idle", updateGlobeData); });
