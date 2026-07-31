@@ -3768,6 +3768,10 @@ _FACILITIES = {
     "sizewell c": (52.215, 1.620, "United Kingdom"), "sizewell b": (52.215, 1.620, "United Kingdom"),
     # Lebanon — Beaufort Castle (Arnoun, southern Lebanon); the bare name "Beaufort" otherwise dots Malaysia
     "beaufort castle": (33.204, 35.539, "Lebanon"),
+    # US — MCAS Miramar is in San Diego; the bare name "Miramar" otherwise dots Miramar, Florida (near Miami)
+    "miramar air base": (32.868, -117.142, "United States of America"),
+    "mcas miramar": (32.868, -117.142, "United States of America"),
+    "miramar air station": (32.868, -117.142, "United States of America"),
     "downing street": (51.503, -0.128, "United Kingdom"),
     "elysee palace": (48.870, 2.317, "France"), "capitol hill": (38.890, -77.009, "United States of America"),
     "un headquarters": (40.750, -73.968, "United States of America"),

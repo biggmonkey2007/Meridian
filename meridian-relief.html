@@ -1319,7 +1319,7 @@ function tuneVectorStyle(style){
       // Smaller (~20%) so long region names don't hog the screen; FULL opacity + a touch darker so they read
       // clearly; and the "Voivodeship/Oblast/Region/..." suffix stripped off.
       l.layout = Object.assign({}, l.layout, {"text-size":{"stops":[[5,9.5],[7,11]]}, "text-field":_regionLabel});
-      l.paint  = Object.assign({}, l.paint,  {"text-color":"#83909d","text-opacity":1});
+      l.paint  = Object.assign({}, l.paint,  {"text-color":"#77848f","text-opacity":1});   // a touch darker again = more present (opacity already maxed)
     }
     // NATIONAL CAPITALS must always show (Riga/Tallinn were being collision-dropped by the dense region
     // labels). Restrict this layer to country capitals (capital==2), let them appear early (z3.5) and never
@@ -1333,13 +1333,17 @@ function tuneVectorStyle(style){
     if(l.id==="boundary_state" || l.id==="boundary_county"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // region borders stay a touch stronger than Positron's near-invisible pink
     }
-    // COUNTRY borders "more true": Positron's mauve reads off — use a neutral taupe-grey line that looks like
-    // a real border, and drop the opacity ~5%.
+    // COUNTRY borders: the recoloured taupe line looked ugly up close — go back to Positron's OWN border 1:1
+    // (native colour untouched) and just drop the opacity so it reads as a soft, clean line.
     if(l.id==="boundary_country_inner"){
-      l.paint = Object.assign({}, l.paint, {"line-color":{"stops":[[3,"#c2b6b6"],[6,"#ada1a1"]]}, "line-opacity":0.95});
+      l.paint = Object.assign({}, l.paint, {"line-opacity":0.85});
     }
     if(l.id==="boundary_country_outline"){
-      l.paint = Object.assign({}, l.paint, {"line-opacity":0.47});
+      l.paint = Object.assign({}, l.paint, {"line-opacity":0.42});
+    }
+    // Body-of-water names (seas/oceans) read too faint — darken ~15% so "Baltic Sea" etc. are legible.
+    if(l.id==="watername_ocean" || l.id==="watername_sea"){
+      l.paint = Object.assign({}, l.paint, {"text-color":"#909ba3"});
     }
   });
   return style;
@@ -2590,6 +2594,9 @@ function setGlobeBasemap(k){
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
+      // Keep the port/strait SYMBOLS beneath the vector labels, so a city/capital NAME always renders on top
+      // of a port anchor instead of the anchor covering the name (coastal capitals — Oslo, Riga, Helsinki).
+      if(firstSym){ ["g-straits-lbl","g-straits-pt","g-ports-pt"].forEach(id=>{ if(mlMap.getLayer(id)){ try{ mlMap.moveLayer(id, firstSym); }catch(e){} } }); }
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
@@ -2608,7 +2615,7 @@ function setGlobeBasemap(k){
       mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",paint:{"raster-fade-duration":0}}, before);
     }
   }
-  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.28); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
+  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.16); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
 }
 function segToLines(seg, out){
   // seg is array of [lat,lng]; break further where a point sits on the artificial near-pole closing edge (|lat|>=83)
@@ -2667,12 +2674,15 @@ function addGlobeOverlays(){
   if(!mlMap) return;
   try{ if(!mlMap.hasImage("port-anchor")) mlMap.addImage("port-anchor", makeAnchorIcon()); }catch(e){}
   try{ if(!mlMap.hasImage("strait-narrows")) mlMap.addImage("strait-narrows", makeStraitIcon()); }catch(e){}
-  // Insert these UNDER the news dots so a port/strait symbol never sits on top of an event dot (the dots are
-  // the interactive layer and must read on top). g-pulse is the lowest dot layer.
-  const underDots = mlMap.getLayer("g-pulse") ? "g-pulse" : (mlMap.getLayer("g-events") ? "g-events" : undefined);
+  // Insert these UNDER the vector place LABELS (so a city/capital name renders on top of a port anchor, not
+  // the anchor over the name) — and that also keeps them under the news dots. If the vector labels haven't
+  // loaded yet, fall back to just-under-the-dots; setGlobeBasemap re-orders them below the labels once the
+  // vector arrives. g-pulse is the lowest dot layer.
+  const firstLbl = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
+  const underDots = firstLbl || (mlMap.getLayer("g-pulse") ? "g-pulse" : (mlMap.getLayer("g-events") ? "g-events" : undefined));
   if(!mlMap.getSource("g-straits")){
     mlMap.addSource("g-straits",{type:"geojson",data:straitsGeoGL()});
-    mlMap.addLayer({id:"g-straits-pt",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","icon-image":"strait-narrows","icon-size":0.72,"icon-allow-overlap":true}}, underDots);
+    mlMap.addLayer({id:"g-straits-pt",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","icon-image":"strait-narrows","icon-size":0.72,"icon-allow-overlap":false}}, underDots);   // yield to labels — don't overlap city names when zoomed in
     mlMap.addLayer({id:"g-straits-lbl",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":11,"text-offset":[0,0.95],"text-anchor":"top","text-allow-overlap":false},paint:{"text-color":"#0d6b86","text-halo-color":"#ffffff","text-halo-width":1.7}}, underDots);
   }
   if(!mlMap.getSource("g-ports")){
@@ -2689,7 +2699,7 @@ function updateGlobeOverlayVis(){
 function buildGlobeLayers(){
   if(!mlMap.getSource("g-borders")){
     mlMap.addSource("g-borders",{type:"geojson",data:splitBordersGeo()});
-    mlMap.addLayer({id:"g-borders",type:"line",source:"g-borders",paint:{"line-color":globeBorderCol(),"line-width":0.7,"line-opacity":0.28}});
+    mlMap.addLayer({id:"g-borders",type:"line",source:"g-borders",paint:{"line-color":globeBorderCol(),"line-width":0.7,"line-opacity":0.16}});
   }
   if(!mlMap.getSource("g-hl-fill")){
     mlMap.addSource("g-hl-fill",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
@@ -2750,7 +2760,9 @@ async function showMap(proj){          // proj: "globe" | "flat"
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ selectEvent(ev); return; } } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
     });
-    mlMap.on("mousemove",(e)=>{ if(!mlMap.getLayer("g-events")) return; const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); mlMap.getCanvas().style.cursor=(fs&&fs.length)?"pointer":""; });
+    mlMap.on("mousemove",(e)=>{ if(!mlMap.getLayer("g-events")) return; const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); const over=(fs&&fs.length); mlMap.getCanvas().style.cursor=over?"pointer":"";
+      // Hover = intent to click: warm the dot the cursor settles on so its photo + story are ready instantly.
+      if(over){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ clearTimeout(_hoverWarmT); _hoverWarmT=setTimeout(()=>{ try{ warmPhoto(ev); warmStory(ev); }catch(_){} }, 90); } } });
   } else {
     setTimeout(()=>{ try{ mlMap.resize(); }catch(e){} }, 30);
     if(mlLoaded){ applyProj(); updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); startGlobePulse(); }
@@ -4290,7 +4302,14 @@ function applyWorldEvents(items){
   try{ built.slice().sort((a,b)=> b.reportedAt-a.reportedAt).slice(0,6).forEach((e,i)=> setTimeout(()=>{ try{ warmStory(e); }catch(_){} }, 250*i)); }catch(e){}
   // PRELOAD EVERY DOT'S PICTURE (lighter than a full warmStory) so ANY dot opens with its photo already
   // there — the article image is prefetched, and for the rest we resolve+prefetch the story photo now.
-  try{ built.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 55*i)); }catch(e){}
+  // ON-SCREEN dots first (they're the likely click), fast; the rest fill in behind them. So by the time you
+  // reach for a visible dot its picture is already prefetched.
+  try{
+    const _inView = e => { try{ if(mlMap && mlLoaded){ const b=mlMap.getBounds(); return e.lng>=b.getWest() && e.lng<=b.getEast() && e.lat>=b.getSouth() && e.lat<=b.getNorth(); } }catch(_){} return false; };
+    const near = built.filter(_inView), far = built.filter(e=>!_inView(e));
+    near.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 18*i));
+    far.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, near.length*18 + 45*i));
+  }catch(e){ built.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 55*i)); }
   return built.length;
 }
 /* ---- merge pinned ("starred") countries' news into the map ---- */
