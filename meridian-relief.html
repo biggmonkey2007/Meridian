@@ -2337,17 +2337,12 @@ function drawDots(){
 // (you can click the one you want), and it never drifts when you pan. Shared by the flat map and globe.
 function spreadLngLat(clng, clat, idx, k){
   if(k < 2) return [clng, clat];
-  // Fan a co-located pile so you can click each dot WITHOUT zooming right onto the city. We aim for a roughly
-  // CONSTANT on-screen gap between neighbours — converting a pixel radius to degrees at the CURRENT zoom — so
-  // the pile is already separated at regional zoom, not only city zoom. The spread is then CLAMPED in degrees
-  // so that when you're zoomed way out the pile pulls back in and stays local (tight) instead of flying across
-  // the map. Recomputed on zoom via updateGlobeData(moveend), so the on-screen gap holds as you zoom.
-  const z = (mlMap && mlLoaded) ? mlMap.getZoom() : 5;
-  const PX = 18;                                    // target on-screen gap (px) between neighbouring dots
-  const degPerPx = 360 / (512 * Math.pow(2, z));    // equator degrees per screen pixel at this zoom
-  let unit = Math.min(PX * degPerPx, 0.2);          // clamp: caps the spread when zoomed out so dots stay near the city
-  unit = Math.max(unit, 0.0009);                    // and never fully collapse when zoomed way in
-  const rad = unit * Math.sqrt(idx), ang = idx * 2.399963;   // golden-angle spiral (~137.5°) — even fan
+  // A FIXED geographic fan (offsets in DEGREES, independent of zoom): the pile is tight when zoomed out and
+  // genuinely SPREADS APART the more you zoom in (the map just reprojects the fixed points) — so it gets
+  // EASIER to click as you zoom, never tighter. Because it doesn't depend on zoom it never re-snaps on
+  // zoom-end (that snap read as the dots "shrinking"). D sets how spread the fan is: 0.035° is a middle
+  // ground — clearly separated by the time you're at a city/regional zoom, without flying apart.
+  const D = 0.035, rad = D * Math.sqrt(idx), ang = idx * 2.399963;   // golden-angle spiral (~137.5°) — even fan
   const dLng = (Math.cos(ang) * rad) / Math.max(0.2, Math.cos(clat * Math.PI / 180));
   return [clng + dLng, clat + Math.sin(ang) * rad];
 }
