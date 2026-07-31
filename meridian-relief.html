@@ -1302,6 +1302,13 @@ function tuneVectorStyle(style){
   // "copy the other map's regions". Cities/towns/villages are native too.
   const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883" };
   const CITY_MZ   = { place_city_dot_r7:5, place_city_dot_r4:4, place_city_r5:7, place_city_r6:7, place_town:7, place_villages:9.5 };
+  // Region labels: strip the administrative TYPE suffix ("Masovian Voivodeship" -> "Masovian", "Pskov Oblast"
+  // -> "Pskov", "Grodno Region" -> "Grodno"). MapLibre has no regex, so for each known suffix we slice the
+  // name off at its position (longest/most-specific first so "Autonomous Region" wins over "Region").
+  // Search a LOWER-CASED copy (the data mixes "Voivodeship"/"Oblast" with Belarus's lowercase "region"), but
+  // slice the ORIGINAL name at the found index (same length, so the index matches).
+  const _SUF = [" autonomous okrug"," autonomous region"," federal district"," metropolitan city"," voivodeship"," governorate"," prefecture"," province"," district"," republic"," region"," oblast"," county"," okrug"," krai"];
+  const _regionLabel = (function(){ const c=["case"]; _SUF.forEach(su=>{ c.push([">=",["index-of",su,["var","lc"]],0]); c.push(["slice",["var","nm"],0,["index-of",su,["var","lc"]]]); }); c.push(["var","nm"]); return ["let","nm",EN_TEXT,["let","lc",["downcase",["var","nm"]],c]]; })();
   (style.layers||[]).forEach(l=>{
     if(l.type==="symbol" && LABEL_COL[l.id]){
       l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
@@ -1309,13 +1316,30 @@ function tuneVectorStyle(style){
     if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
     if(l.id==="place_state"){
       l.filter = ["all",["==","class","state"],["<=","rank",6]];   // keep EVEN coverage (Polish voivodeships etc.)
-      // Long region names were hogging the screen: shrink them ~20%. A touch darker than faint native so they
-      // stay noticeable, at 95% opacity — "visible but not taking too much screen".
-      l.layout = Object.assign({}, l.layout, {"text-size":{"stops":[[5,9.5],[7,11]]}});
-      l.paint  = Object.assign({}, l.paint,  {"text-color":"#83909d","text-opacity":0.95});
+      // Smaller (~20%) so long region names don't hog the screen; FULL opacity + a touch darker so they read
+      // clearly; and the "Voivodeship/Oblast/Region/..." suffix stripped off.
+      l.layout = Object.assign({}, l.layout, {"text-size":{"stops":[[5,9.5],[7,11]]}, "text-field":_regionLabel});
+      l.paint  = Object.assign({}, l.paint,  {"text-color":"#83909d","text-opacity":1});
+    }
+    // NATIONAL CAPITALS must always show (Riga/Tallinn were being collision-dropped by the dense region
+    // labels). Restrict this layer to country capitals (capital==2), let them appear early (z3.5) and never
+    // yield — they're few and spread out, so overlap is a non-issue. Regional capitals still render normally
+    // through the city layers, so there's no capital-dot clutter.
+    if(l.id==="place_capital_dot_z7"){
+      l.filter = ["==","capital",2];
+      l.minzoom = 3.5;
+      l.layout = Object.assign({}, l.layout, {"text-allow-overlap":true, "icon-allow-overlap":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // ~8% stronger than the near-invisible pink
+      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // region borders stay a touch stronger than Positron's near-invisible pink
+    }
+    // COUNTRY borders "more true": Positron's mauve reads off — use a neutral taupe-grey line that looks like
+    // a real border, and drop the opacity ~5%.
+    if(l.id==="boundary_country_inner"){
+      l.paint = Object.assign({}, l.paint, {"line-color":{"stops":[[3,"#c2b6b6"],[6,"#ada1a1"]]}, "line-opacity":0.95});
+    }
+    if(l.id==="boundary_country_outline"){
+      l.paint = Object.assign({}, l.paint, {"line-opacity":0.47});
     }
   });
   return style;
@@ -2584,7 +2608,7 @@ function setGlobeBasemap(k){
       mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",paint:{"raster-fade-duration":0}}, before);
     }
   }
-  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.3); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
+  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.28); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
 }
 function segToLines(seg, out){
   // seg is array of [lat,lng]; break further where a point sits on the artificial near-pole closing edge (|lat|>=83)
@@ -2665,7 +2689,7 @@ function updateGlobeOverlayVis(){
 function buildGlobeLayers(){
   if(!mlMap.getSource("g-borders")){
     mlMap.addSource("g-borders",{type:"geojson",data:splitBordersGeo()});
-    mlMap.addLayer({id:"g-borders",type:"line",source:"g-borders",paint:{"line-color":globeBorderCol(),"line-width":0.7,"line-opacity":0.3}});
+    mlMap.addLayer({id:"g-borders",type:"line",source:"g-borders",paint:{"line-color":globeBorderCol(),"line-width":0.7,"line-opacity":0.28}});
   }
   if(!mlMap.getSource("g-hl-fill")){
     mlMap.addSource("g-hl-fill",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
