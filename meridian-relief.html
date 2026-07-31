@@ -2594,9 +2594,6 @@ function setGlobeBasemap(k){
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
-      // Keep the port/strait SYMBOLS beneath the vector labels, so a city/capital NAME always renders on top
-      // of a port anchor instead of the anchor covering the name (coastal capitals — Oslo, Riga, Helsinki).
-      if(firstSym){ ["g-straits-lbl","g-straits-pt","g-ports-pt"].forEach(id=>{ if(mlMap.getLayer(id)){ try{ mlMap.moveLayer(id, firstSym); }catch(e){} } }); }
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
@@ -2674,12 +2671,10 @@ function addGlobeOverlays(){
   if(!mlMap) return;
   try{ if(!mlMap.hasImage("port-anchor")) mlMap.addImage("port-anchor", makeAnchorIcon()); }catch(e){}
   try{ if(!mlMap.hasImage("strait-narrows")) mlMap.addImage("strait-narrows", makeStraitIcon()); }catch(e){}
-  // Insert these UNDER the vector place LABELS (so a city/capital name renders on top of a port anchor, not
-  // the anchor over the name) — and that also keeps them under the news dots. If the vector labels haven't
-  // loaded yet, fall back to just-under-the-dots; setGlobeBasemap re-orders them below the labels once the
-  // vector arrives. g-pulse is the lowest dot layer.
-  const firstLbl = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
-  const underDots = firstLbl || (mlMap.getLayer("g-pulse") ? "g-pulse" : (mlMap.getLayer("g-events") ? "g-events" : undefined));
+  // Insert UNDER the news dots (dots stay clickable on top). The port anchor is nudged DOWN (icon-offset)
+  // and set to always show, so at a coastal capital it sits just BELOW the name — visible, not hidden and
+  // not overlapping the letters. g-pulse is the lowest dot layer.
+  const underDots = mlMap.getLayer("g-pulse") ? "g-pulse" : (mlMap.getLayer("g-events") ? "g-events" : undefined);
   if(!mlMap.getSource("g-straits")){
     mlMap.addSource("g-straits",{type:"geojson",data:straitsGeoGL()});
     mlMap.addLayer({id:"g-straits-pt",type:"symbol",source:"g-straits",minzoom:4,layout:{visibility:layers.straits?"visible":"none","icon-image":"strait-narrows","icon-size":0.72,"icon-allow-overlap":false}}, underDots);   // yield to labels — don't overlap city names when zoomed in
@@ -2687,7 +2682,7 @@ function addGlobeOverlays(){
   }
   if(!mlMap.getSource("g-ports")){
     mlMap.addSource("g-ports",{type:"geojson",data:portsGeoGL()});
-    mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":false},paint:{}}, underDots);
+    mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":true,"icon-offset":[0,22]},paint:{}}, underDots);   // always show + nudged down so a port at a capital sits BELOW the name (Riga/Tallinn), not hidden or overlapping
     // ports are symbol-only on the globe too (matches the flat map) — no name label so it can't overlap city labels
   }
 }
