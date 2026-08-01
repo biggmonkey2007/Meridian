@@ -462,6 +462,23 @@ def _css_url(raw):
     return u.strip("'\" \t")
 
 
+def _post_media(p):
+    """The source post's OWN media — the whole album + any playable clip — as media-strip items. Stored on
+    the event at BUILD TIME so it survives even after the post scrolls out of Telegram's ~20-post preview
+    window (event_media re-matches the LIVE buffer, so an aged-out post's pictures would otherwise vanish)."""
+    ch = p.get("title") or p.get("channel") or "Telegram"
+    base = {"channel": ch, "link": p.get("link") or "", "time": p.get("time") or ""}
+    items = []
+    if p.get("video"):                                   # a playable clip Telegram will actually serve
+        items.append(dict(base, video=p["video"], photo="", thumb=p.get("thumb") or "", dur=p.get("dur") or ""))
+    seen = set()
+    for ph in (p.get("photos") or ([p["photo"]] if p.get("photo") else [])):
+        if ph and ph.startswith("http") and ph not in seen:
+            seen.add(ph)
+            items.append(dict(base, photo=ph, video="", thumb=ph))
+    return items[:6]
+
+
 # officials worth grouping interview clips under (first match wins)
 _OFFICIALS = [
     "Trump", "Vance", "Rubio", "Hegseth", "Biden", "Putin", "Lavrov", "Medvedev",
@@ -717,6 +734,7 @@ def _tg_arts(h):
                 "sourcecountry": "",
                 "geo_text": (p.get("text") or ""),   # geolocate on the FULL post, so "southern Lebanon" beats the "Israeli" demonym
                 "_src": p.get("title") or p.get("channel") or "Telegram",
+                "_media": _post_media(p),            # the post's OWN album/clip, kept so it can't age out of the strip
                 "_tg": True,
             })
     return out
@@ -1656,6 +1674,7 @@ class Api:
                 "sum": _clip(_strip_promo(a.get("desc") or ""), 460),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
+                "srcmedia": (a.get("_media") or []) if _is_tg else [],   # source post's own media, always available
                 "tg": _is_tg,
             })
             seen_urls.add(url)

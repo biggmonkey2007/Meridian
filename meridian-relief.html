@@ -3918,10 +3918,18 @@ function noteMedia(d, n){
   if(n > base){ clearReadKey(k); drawDots(); }       // genuinely NEW footage -> re-light the dot
 }
 async function loadEventMedia(d){
-  const api=aiBridge(); const box=document.getElementById("re-media-"+d.id);
-  if(!box || !api || !api.event_media) return;
+  const box=document.getElementById("re-media-"+d.id);
+  if(!box) return;
+  const api=aiBridge();
+  let items=[];
+  if(api && api.event_media){ try{ const r=await api.event_media(d.title, 6); items=(r&&r.items)||[]; }catch(e){} }
+  // The source post's OWN media is stored on the event (d.srcmedia), so it still shows after the post has
+  // scrolled out of Telegram's ~20-post preview — which is all event_media can re-match against. Prepend,
+  // deduped by file, so a story never loses the pictures its own source posted.
+  const _src=(d.srcmedia||[]);
+  if(_src.length){ const _have=new Set(items.map(x=>x.video||x.photo)); if(d.image) _have.add(d.image);   // the hero already shows the lead photo — don't repeat it in the strip
+    items = _src.filter(x=>x&&(x.video||x.photo)&&!_have.has(x.video||x.photo)).concat(items); }
   try{
-    const r=await api.event_media(d.title, 6); const items=(r&&r.items)||[];
     noteMedia(d, items.length);
     if(activeEvent!==d.id || !items.length){ if(box) box.innerHTML=""; return; }
     // The article shipped no photo, but the wire has a real one OF THIS EVENT (matched on
@@ -4309,6 +4317,7 @@ function applyWorldEvents(items){
       body:"", facts:[], context:"", views:[], outlook:"",
       involved:(Array.isArray(it.involved)&&it.involved.length?it.involved:[String(it.country||"")]), statements:[], media:[],
       live:true, url:it.url||"", image:it.image||"", domain:it.domain||"", tg:!!it.tg, channel:it.channel||"",
+      srcmedia:(Array.isArray(it.srcmedia)?it.srcmedia:[]),   // the source post's own album/clip, carried through so the media strip always has it
       source:String(it.source||"")
     });
   });
@@ -4355,6 +4364,7 @@ function _mkStarEvent(it, idx){
     body:"", facts:[], context:"", views:[], outlook:"",
     involved:(Array.isArray(it.involved)&&it.involved.length?it.involved:[String(it.country||"")]), statements:[], media:[],
     live:true, url:it.url||"", image:it.image||"", domain:it.domain||"", tg:false, channel:"",
+    srcmedia:(Array.isArray(it.srcmedia)?it.srcmedia:[]),
     source:String(it.source||""), starred:true
   };
 }
