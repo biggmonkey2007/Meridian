@@ -95,6 +95,13 @@ GEO_CASES = [
     ("Satellite images reveal the clearest picture yet of damage to the Saudi Aramco oil refinery in Jazan",
      "Satellite images show the worst damage yet to a Saudi oil refinery hit by drone and missile attacks. The refinery in Jazan was targeted by the Houthis.",
      "Saudi Arabia", "SHIPPED: 'Jazan' dotted a tiny Iranian village (pop 1,818); the Saudi city is in GeoNames only as 'Jizan'"),
+    ("Statue of Yoni Netanyahu unveiled at Uganda's Entebbe Airport, 50 years after raid",
+     "A statue of Yonatan Netanyahu, the Israeli brother of PM Benjamin Netanyahu, has been unveiled at the old Entebbe Airport terminal in Uganda.",
+     "Uganda", "SHIPPED: dotted ISRAEL — 'Uganda's' pushed the 'at' out of the located window, and the "
+     "Netanyahu statement-country hijacked the genuine Entebbe city scene"),
+    ("Israeli officer moderately hurt in overnight clash with Hezbollah gunmen",
+     "An Israeli officer was hurt in a clash with Hezbollah gunmen overnight. The clash happened in the Ali Taher Ridge area.",
+     "Lebanon", "SHIPPED: dotted ISRAEL (the actor); the only place named is the Ali Taher ridge in southern Lebanon, absent from the city gazetteer"),
     ("How extreme weather is shaping tomorrow's electric grid",
      "Severe heat waves across 17 US states strain the national electric grid, with Texas a key testing ground.",
      "United States", "SHIPPED: the gerund 'shaping' dotted the town of Shaping, China"),

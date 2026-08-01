@@ -3841,6 +3841,10 @@ _FACILITIES = {
     "sizewell c": (52.215, 1.620, "United Kingdom"), "sizewell b": (52.215, 1.620, "United Kingdom"),
     # Lebanon — Beaufort Castle (Arnoun, southern Lebanon); the bare name "Beaufort" otherwise dots Malaysia
     "beaufort castle": (33.204, 35.539, "Lebanon"),
+    # Lebanon — Ali al-Taher ridge/heights by Nabatieh, a recurring flashpoint in Israel-Hezbollah clashes;
+    # the bare name is in no city gazetteer, so a post naming only "Ali Taher Ridge" fell back to the actor
+    "ali taher": (33.352, 35.520, "Lebanon"), "ali al taher": (33.352, 35.520, "Lebanon"),
+    "ali taher ridge": (33.352, 35.520, "Lebanon"), "ali taher heights": (33.352, 35.520, "Lebanon"),
     # US — MCAS Miramar is in San Diego; the bare name "Miramar" otherwise dots Miramar, Florida (near Miami)
     "miramar air base": (32.868, -117.142, "United States of America"),
     "mcas miramar": (32.868, -117.142, "United States of America"),
@@ -5553,9 +5557,13 @@ def _geolocate(title, sourcecountry, desc="", url=""):
             if ac and ac in COUNTRY_COORDS:
                 la, ln = COUNTRY_COORDS[ac]
                 return la, ln, _co_short(ac), ac
-        if not located and not _is_facility(best):
+        if not located and not _is_facility(best) and best[1] in ("country", "demonym"):
             # A ministry/government ACTING is news at its own seat — the foreign place it names is
             # the SUBJECT, not the scene. Nothing here is "located", so no real scene is at stake.
+            # GUARD (best is country/demonym): a genuine CITY scene must never be overruled by the
+            # actor's country. SHIPPED: "Statue of Yoni Netanyahu unveiled at Uganda's Entebbe Airport"
+            # dotted ISRAEL — the possessive "Uganda's" pushed the "at" out of the located window, and
+            # _statement_country (Netanyahu -> Israel) then hijacked the real Entebbe scene.
             co = _national_body_actor(words)
             if co:
                 if co in _CAPITAL_SEAT:
