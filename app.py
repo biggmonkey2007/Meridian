@@ -2451,7 +2451,13 @@ def _clip_matches(event_title, clip_text):
     place_toks = _proper_words(ev_place) | _sigwords(ev_place)
     if not ((shared_names | shared_words) - place_toks):
         return False
-    if ev and cl and ev[3] and cl[3] == ev[3]:
+    # SAME COUNTRY IS NOT ENOUGH ON ITS OWN. Two unrelated US stories that both merely name "Trump" (or any
+    # ubiquitous figure) are NOT the same event — a shared name needs a shared TOPIC to prove it. SHIPPED:
+    # a "Trump slams California's minimum wage" dot pulled in Trump clips about Hamas and about a Minnesota
+    # cyberattack, purely on the shared name + same country. Require a SECOND distinctive token: another
+    # name, or a content word the two stories share (beyond the event's own place).
+    strong = len(shared_names) >= 2 or bool((shared_words - place_toks) - shared_names)
+    if ev and cl and ev[3] and cl[3] == ev[3] and strong:
         return True
     return len(shared_names) >= 2 and len(shared_words) >= 2
 
