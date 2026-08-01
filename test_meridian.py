@@ -92,6 +92,9 @@ GEO_CASES = [
     ("Lebanese president says Israeli blasts at Beaufort Castle threaten framework agreement",
      "Lebanese President Joseph Aoun condemned Israeli attacks in southern Lebanon, citing blasts at Beaufort Castle.",
      "Lebanon", "SHIPPED: 'Beaufort' dotted Beaufort, Malaysia; Beaufort Castle is in southern Lebanon"),
+    ("Satellite images reveal the clearest picture yet of damage to the Saudi Aramco oil refinery in Jazan",
+     "Satellite images show the worst damage yet to a Saudi oil refinery hit by drone and missile attacks. The refinery in Jazan was targeted by the Houthis.",
+     "Saudi Arabia", "SHIPPED: 'Jazan' dotted a tiny Iranian village (pop 1,818); the Saudi city is in GeoNames only as 'Jizan'"),
     ("How extreme weather is shaping tomorrow's electric grid",
      "Severe heat waves across 17 US states strain the national electric grid, with Texas a key testing ground.",
      "United States", "SHIPPED: the gerund 'shaping' dotted the town of Shaping, China"),
@@ -1225,7 +1228,23 @@ def main():
                       "every country a story can be geolocated to must map to an ISO2 code so its flag renders"))
     print(f"  {'ok ' if not _missing else 'FAIL'} {len(_gc)} gazetteer countries, {len(_missing)} without a flag")
 
-    total = (len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+    # PHOTO FALLBACK: a photoless story's hero must never be a country flag/locator map. story_photo()'s
+    # country step now shows the country's MAIN CITY instead, so _LARGEST_CITY must be built and map big
+    # news countries to a real city (not the country), and _good_img must still reject a flag URL.
+    print("\n=== PHOTO FALLBACK (country hero is a city photo, never a flag) ===")
+    _lc = getattr(app, "_LARGEST_CITY", {})
+    _flagurl = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Flag_of_Kuwait.svg/1280px-Flag_of_Kuwait.svg.png"
+    _pf_ok = (bool(_lc) and _lc.get("Ukraine") == "kyiv" and _lc.get("Kuwait") == "kuwait city"
+              and _lc.get("Iran") == "tehran" and not app._good_img(_flagurl))
+    ran[0] += 1
+    if not _pf_ok:
+        fails.append(("photo-fallback", "country hero", "city photo, flag rejected",
+                      f"Ukraine->{_lc.get('Ukraine')} Kuwait->{_lc.get('Kuwait')} Iran->{_lc.get('Iran')} flag_good={app._good_img(_flagurl)}",
+                      "the no-photo hero must be the country's main city, never its flag"))
+    print(f"  {'ok ' if _pf_ok else 'FAIL'} main city Ukraine->{_lc.get('Ukraine')}, Kuwait->{_lc.get('Kuwait')}, "
+          f"Iran->{_lc.get('Iran')}; flag rejected: {not app._good_img(_flagurl)}")
+
+    total = (1 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1

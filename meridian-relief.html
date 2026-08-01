@@ -3394,14 +3394,15 @@ async function loadHeroFile(d){
           const cr=hero.querySelector(".hero-credit");
           if(cr) cr.textContent=r.title||"";        // a quiet credit, not a badge
         };
-        img.onerror=()=>{ heroMapCrop(d); };
+        img.onerror=()=>{};   // photo failed to load -> leave the branded gradient card (no map/flag)
         img.referrerPolicy="no-referrer";
         img.src=r.url;
         return;
       }
     }catch(e){}
   }
-  heroMapCrop(d);   // nothing anywhere -> show WHERE IT IS
+  // Nothing anywhere: the branded category gradient stands. We deliberately do NOT draw a map crop here
+  // (or ever fall back to a flag) — the user wants a real photo or a clean card, never a flag or a map.
 }
 
 /* THE LAST RESORT, and honestly the nicest one: a real map of the spot, marked. It cannot fail (the

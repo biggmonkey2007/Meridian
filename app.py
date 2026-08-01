@@ -1181,7 +1181,11 @@ class Api:
         cache = os.path.join(CACHE_DIR, "placepic_" + key + ".json")
         if _fresh(cache, 30 * 86400):
             try:
-                return json.load(open(cache, encoding="utf-8"))
+                cached = json.load(open(cache, encoding="utf-8"))
+                # SELF-HEAL: an old cache may hold a flag/locator-map URL saved before _good_img learned to
+                # reject them. Re-validate on read so those stale flags drop out without wiping the cache.
+                if (not cached.get("url")) or _good_img(cached["url"]):
+                    return cached
             except Exception:
                 pass
 
@@ -1261,9 +1265,15 @@ class Api:
                 return None
 
             def _country():
+                # A photo of the country's MAIN CITY (Kyiv, Jeddah, Tehran) — NEVER the country itself,
+                # whose Wikipedia lead image is a flag or a locator map. If that city has no photo, give
+                # up (return None) rather than fall back to a flag/map.
                 if not country:
                     return None
-                p = self.place_photo(short or country, "")
+                city = _LARGEST_CITY.get(country) or _LARGEST_CITY.get(short)
+                if not city:
+                    return None
+                p = self.place_photo(city.title(), "")   # country="" so it can't widen back to the flag
                 return dict(p, kind="country") if p.get("url") else None
 
             # A named FACILITY (a refinery, an airbase, a strait) IS the story — it beats even the
@@ -3931,6 +3941,10 @@ _FAMOUS_PLACES = {
     "kandahar": (31.628, 65.738, "Afghanistan"),
     "darfur": (13.000, 25.000, "Sudan"),
     "tigray": (14.000, 38.500, "Ethiopia"),
+    # SHIPPED: "Saudi Aramco refinery in JAZAN" dotted a tiny Iranian village 'Jazan' (pop 1,818) because
+    # the major Saudi city is in GeoNames only under the 'Jizan' spelling. Jazan/Jizan is one place: the
+    # Red-Sea port and Aramco refinery in SW Saudi Arabia.
+    "jazan": (16.889, 42.551, "Saudi Arabia"), "jizan": (16.889, 42.551, "Saudi Arabia"),
 }
 # Ships burn at sea, not on land. "Burning Russian tankers in the SEA OF AZOV" was dotting the CITY of
 # Azov because the sea wasn't in the gazetteer at all. Water bodies are named in news constantly
@@ -4066,6 +4080,33 @@ def _load_city_gazetteer():
     except Exception:
         pass
 _load_city_gazetteer()
+
+
+# The largest REAL city per country — the "no photo" fallback shows a picture of the country's main city
+# (Kyiv, Jeddah, Tehran), never its flag or a locator map. Built from the gazetteer, excluding the curated
+# overlays (facilities/regions/famous/war-towns carry round synthetic priors), so it's the biggest actual
+# GeoNames city. One cheap pass at import.
+_LARGEST_CITY = {}
+# Where the largest city is a photoless industrial suburb (Kuwait's Al Ahmadi) or Wikipedia disambiguates
+# the bare name (Libya's "Tripoli"), pin a major, well-photographed city instead. Extend as spotted.
+_MAIN_CITY_OVERRIDE = {"Kuwait": "kuwait city", "Libya": "benghazi"}
+
+
+def _build_largest_city():
+    synth = {900_000, 3_000_000, _REGION_PRIOR, _FACILITY_PRIOR}
+    best = {}
+    for name, cands in CITY_CANDS.items():
+        for (clat, clng, c, prior) in cands:
+            if prior in synth:
+                continue
+            if c not in best or prior > best[c][1]:
+                best[c] = (name, prior)
+    for c, (name, _p) in best.items():
+        _LARGEST_CITY[c] = name
+    _LARGEST_CITY.update(_MAIN_CITY_OVERRIDE)
+
+
+_build_largest_city()
 
 
 # The article's own section is the single most reliable country hint there is: a Guardian story filed
