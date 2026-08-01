@@ -559,6 +559,13 @@ def _strip_promo(t):
     return re.sub(r"\s{2,}", " ", t).strip(" \t\r\n-–—|:")
 
 
+# Prepositions / articles / coordinating conjunctions that essentially NEVER validly end a sentence (each
+# demands an object, or is an article) — so a period after one is a stray dot and a trailing one is a
+# truncation. Deliberately EXCLUDES words that can legitimately close a sentence ("game over", "moving on",
+# "what it's about", "brought under"). Used by _tg_headline.
+_DANGLE_WORDS = "in|on|at|of|to|the|a|an|and|or|nor|with|from|by|into|onto|upon|per|via|amid|toward|towards"
+
+
 def _tg_headline(text):
     """A map-ready headline: first solid line, urgency tags/emoji stripped, cut at a SENTENCE end (never
     mid-word — "...or Russian attack, The Ti" shipped), and always Capitalised, because Telegram threads
@@ -586,6 +593,11 @@ def _tg_headline(text):
     line = re.sub(r"^[\W_]+", "", line)
     line = re.sub(r"\s+https?://\S+$", "", line).strip()   # trailing bare URL
     line = _strip_promo(line)                              # mid-string links, "Follow @x", stray handles
+    # A period straight after a preposition/article/conjunction is NEVER a real sentence end — it's a
+    # translation/OCR artifact ("...Kudrinskaya Street in. Moscow") that fooled the first-sentence cut into
+    # a dangling "...Street in." (ends on punctuation, yet reads mid-thought). Drop the stray dot so the
+    # sentence reads on ("...Street in Moscow, near the US embassy").
+    line = re.sub(r"\b(" + _DANGLE_WORDS + r")\.(?=\s|$)", r"\1", line, flags=re.I)
     # Keep only the FIRST sentence: a Telegram post's later sentences are context the poster tacked on —
     # they must neither become the headline nor let a passing clause hijack a clip (this also extracts a
     # clip's SUBJECT). Cut RIGHT AFTER the first sentence's end punctuation, ALLOWING a closing quote/paren
@@ -611,6 +623,9 @@ def _tg_headline(text):
         else:
             sp = seg.rfind(" ", 0, 172)
             line = (seg[:sp] if sp >= 90 else seg[:172]).rstrip(" ,;:–—-.") + "."
+    # Never leave a headline ending on a dangling function word ("...held talks in.", "...struck by") —
+    # a source that truncated mid-phrase. Drop the trailing word (and any comma/period it carried).
+    line = re.sub(r"[\s,;:]+(?:" + _DANGLE_WORDS + r")\s*[.!?]*$", "", line, flags=re.I).strip()
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()

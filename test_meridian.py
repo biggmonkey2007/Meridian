@@ -489,6 +489,12 @@ HEADLINE_CASES = [
      "Alaska between Russia and the US.",
      "has_content", "SHIPPED BUG: the headline was 'Russian Foreign Minister Sergey Lavrov:' — a "
      "LEAD-IN with no news in it. These channels put the speaker on line 1 and what he SAID on line 2"),
+    ('Russian channels are reporting an explosion at the "Balzi Rossi" restaurant on Kudrinskaya Street '
+     'in. Moscow, near the US embassy.',
+     "no_dangle", "SHIPPED BUG: a stray period after 'in' (a translation artifact) cut the headline to a "
+     "dangling '...Street in.' — ends on punctuation yet reads mid-thought. Drop the dot so it reads on"),
+    ("Ukrainian forces launched a large-scale overnight assault on the port city and struck several targets in.",
+     "no_dangle", "a source truncated mid-phrase ('...targets in.'); drop the dangling preposition"),
 ]
 
 # the wire dateline is the canonical event location. (headline, summary, expected, why)
@@ -1145,6 +1151,9 @@ def main():
             got = bool(last) and re.search(r"\b" + re.escape(last) + r"\b", raw) is not None
         elif check == "has_content":            # a lead-in ("<name>:") is not a headline
             got = not h.rstrip().endswith(":") and len(h.split()) >= 6
+        elif check == "no_dangle":              # never end on a dangling preposition/article/conjunction
+            got = re.search(r"[\s,;:]\b(?:in|on|at|of|to|the|a|an|and|or|nor|with|from|by|into|onto|"
+                            r"upon|per|via|amid)\b\.?$", h.strip(), re.I) is None
         else:                                   # "capitalised"
             got = bool(h) and h[0].isupper()
         ran[0] += 1
