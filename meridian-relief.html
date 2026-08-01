@@ -319,8 +319,8 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .body p:last-child{margin-bottom:0}
 /* "In brief" — Axios "Smart Brevity": a prose lede carries it, then a bullet or two for the hard
    specifics; a "Why it matters" bullet folds into the same list only when the stakes aren't obvious.
-   Accent is the app's deep blue (#22303c / #12467f), not red. */
-.brief{margin:2px 0 2px}
+   No section label — the brief starts straight into the paragraph, set off by a thin rule. */
+.brief{margin:0;padding-top:14px;border-top:1px solid var(--line)}
 .brief-lede{font-size:14px;line-height:1.6;color:#2b333c;margin:0 0 11px}
 .brief-lede:last-child{margin-bottom:0}
 .brief-points{list-style:none;margin:0;padding:0}
@@ -328,11 +328,10 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .brief-points li + li{margin-top:8px}
 .brief-points li::before{content:"";position:absolute;left:1px;top:7px;width:6px;height:6px;border-radius:50%;background:#22303c}
 .brief-points li b{color:var(--ink);font-weight:700}
-/* the "so what" bullet — deep-blue label + dot, still just a bullet in the flow (no separate box).
-   NB: classes are bp-* on purpose — plain .wm/.wm-lbl are the map's strait/port markers (display:flex,
-   nowrap), which would turn this bullet into a non-wrapping two-column row. */
-.brief-points li.bp-why::before{background:#12467f}
-.brief-points li.bp-why .bp-why-lbl{color:#12467f;font-weight:800;margin-right:3px}
+/* the "so what" bullet — just a bullet in the flow (no separate box), its "Why it matters:" label bold
+   like the other labels (ink, not coloured). NB: classes are bp-* on purpose — plain .wm/.wm-lbl are
+   the map's strait/port markers (display:flex, nowrap), which would break the bullet's wrapping. */
+.brief-points li.bp-why .bp-why-lbl{font-weight:800;margin-right:3px}
 .facts{margin:6px 0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .facts li{position:relative;padding-left:17px;font-size:12.5px;line-height:1.45;color:var(--ink)}
 .facts li::before{content:"";position:absolute;left:3px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
@@ -3847,7 +3846,7 @@ async function renderRealEvent(d){
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
-    <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body">${renderBrief(d.summary)}</div>`:""}</div>
+    <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
   `;
@@ -3890,10 +3889,9 @@ async function renderRealEvent(d){
   // at once. brief(sum) hides the dek and shows the summary; brief("") clears it and the attributed dek+link
   // stays.
   const bodyEl=document.getElementById("re-body-"+d.id);
-  const BRIEF=`<div class="sec-label">In brief · Meridian</div>`;
   const showBrief=(sum, dek)=>{
     if(sum){ d.summary=sum; if(lead) lead.style.display="none";
-             if(bodyEl) bodyEl.innerHTML=`${BRIEF}<div class="body">${renderBrief(sum)}</div>`; }
+             if(bodyEl) bodyEl.innerHTML=`<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
            if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
   };
