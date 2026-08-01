@@ -217,20 +217,45 @@ def _local_llm():
         return None
 
 
-def _summarize(title, text):
-    """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
-    copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
-    LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
+def _llm_available():
+    """Is there ANY free LLM to call — a Groq/OpenAI key, or a local Ollama? Gates every optional AI
+    feature (summaries, the geolocation fallback) so they stay purely additive: no LLM -> no cost, no
+    behaviour change."""
+    return bool(_summary_cfg()[0]) or bool(_local_llm())
+
+
+def _llm_complete(system, user, max_tokens=300, temperature=0.3):
+    """ONE chat completion over the SAME free path summaries use — Groq (a 'gsk_' key), else OpenAI, else a
+    local Ollama. Returns the assistant text (stripped) or "" on any error. Never raises. Shared so the
+    summary writer and the geolocation fallback go through one place (one UA quirk, one timeout policy)."""
     key, url, model = _summary_cfg()
     timeout = 25
-    text = (text or "").strip()
-    if not (title or text):
-        return ""
-    if not key:                              # no paid key -> try the free, unlimited local model (Ollama)
+    if not key:                              # no paid key -> the free, unlimited local model (Ollama)
         loc = _local_llm()
         if not loc:
             return ""
         url, model, key, timeout = loc[0], loc[1], "local", 45   # local server ignores the auth token
+    try:
+        body = json.dumps({"model": model, "temperature": temperature, "max_tokens": max_tokens,
+                           "messages": [{"role": "system", "content": system},
+                                        {"role": "user", "content": user}]}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json", "Authorization": "Bearer " + key,
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
+        j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
+        return ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def _summarize(title, text):
+    """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
+    copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
+    LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
+    text = (text or "").strip()
+    if not (title or text) or not _llm_available():
+        return ""
     text = text[:4500]
     cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
@@ -265,30 +290,19 @@ def _summarize(title, text):
               "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
               "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    try:
-        body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 360,
-                           "messages": [{"role": "system", "content": system},
-                                        {"role": "user", "content": prompt}]}).encode("utf-8")
-        req = urllib.request.Request(url, data=body, headers={
-            "Content-Type": "application/json", "Authorization": "Bearer " + key,
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
-        j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
-        s = ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
-        # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs,
-        # trim each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
-        s = s.replace("\r", "")
-        s = re.sub(r"[ \t]+", " ", s)
-        s = "\n".join(ln.strip() for ln in s.split("\n"))
-        s = re.sub(r"\n{3,}", "\n\n", s).strip()
-        if s:
-            try:
-                json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
-            except Exception:
-                pass
-        return s
-    except Exception:
-        return ""
+    s = _llm_complete(system, prompt, max_tokens=360, temperature=0.3)
+    # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
+    # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
+    s = s.replace("\r", "")
+    s = re.sub(r"[ \t]+", " ", s)
+    s = "\n".join(ln.strip() for ln in s.split("\n"))
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    if s:
+        try:
+            json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
+        except Exception:
+            pass
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -1661,7 +1675,7 @@ class Api:
             # refinery) outrank the headline's own subject (a strike in the Sea of Azov). The headline is what
             # the card shows, so it's what the dot must match; body clarifications ("…in southern Lebanon")
             # are still read from the desc when the headline itself names no scene.
-            loc = _geolocate(title, a.get("sourcecountry") or "", a.get("geo_text") or a.get("desc") or "", url)
+            loc = _locate(title, a.get("sourcecountry") or "", a.get("geo_text") or a.get("desc") or "", url)
             if not loc:
                 continue
             lat, lng, place, country = loc
@@ -1792,8 +1806,8 @@ class Api:
                 hrs = _seendate_hours(a.get("seendate") or "")
                 if hrs > h:
                     continue
-                loc = _geolocate(title, a.get("sourcecountry") or country,
-                                 a.get("geo_text") or a.get("desc") or "", url)
+                loc = _locate(title, a.get("sourcecountry") or country,
+                              a.get("geo_text") or a.get("desc") or "", url)
                 if not loc:
                     continue
                 lat, lng, place, ev_country = loc
@@ -5632,6 +5646,89 @@ def _geolocate(title, sourcecountry, desc="", url=""):
         lat, lng = COUNTRY_COORDS[sc]
         return lat, lng, _co_short(sc), sc
     return None
+
+
+_GEOAI_VER = "1"   # bump to invalidate cached AI geolocations when the prompt/format changes
+
+
+@functools.lru_cache(maxsize=4096)
+def _geolocate_ai(title, text):
+    """FREE AI fallback for the HARD locations the rule gazetteer can't pin. Reads the WHOLE story and
+    names the ONE place where the event physically happened, as a plain 'City, Country' (or 'Country', or
+    ''). The name is GROUNDED through the same gazetteer for coordinates by the caller — the model proposes
+    a place name but NEVER returns lat/long (those it hallucinates). Cached 30 days per story on disk (a
+    network call), and memoised per process. Returns "" when no free LLM is configured or on any error."""
+    title = (title or "").strip()
+    text = (text or "").strip()[:4000]
+    if not (title or text) or not _llm_available():
+        return ""
+    cache = os.path.join(CACHE_DIR, "geoai_" + hashlib.sha1(
+        (_GEOAI_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            return json.load(open(cache, encoding="utf-8")).get("p", "")
+        except Exception:
+            pass
+    system = ("You are a precise news geolocator. You read a story and name the ONE real place where the "
+              "described EVENT physically happened — never where someone merely reacted to it, never a "
+              "person's nationality, never an organisation's headquarters.")
+    user = ("Where did the EVENT in this story physically take place? Reply with ONLY the place, nothing "
+            "else:\n"
+            "- 'City, Country' when a specific city, town or site is identifiable (e.g. 'Entebbe, Uganda').\n"
+            "- Just the country when only the country is knowable (e.g. 'Uganda').\n"
+            "- If the story is an action taken BY a country or leader with no scene of its own (a "
+            "statement, threat, ruling or decision), give that ACTOR's OWN country — not any country it "
+            "merely talks about or threatens.\n"
+            "- 'NONE' if there is genuinely no location.\n"
+            "No explanation, no coordinates, no quotes — just the place name.\n\n"
+            "HEADLINE: " + title + "\n\nSTORY:\n" + text)
+    out = _llm_complete(system, user, max_tokens=24, temperature=0.0)
+    out = ((out or "").splitlines() or [""])[0]
+    out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
+    if out.upper() == "NONE" or not (3 <= len(out) <= 60):
+        out = ""
+    try:
+        json.dump({"p": out}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
+
+
+def _geo_is_weak(r):
+    """A rule result worth an AI second opinion: None, or a bare COUNTRY CENTROID — the dot sits on the
+    country's own capital coords, meaning the rules pinned no specific city/scene (the fallback ladder, or
+    an actor's seat). A real city/facility/water scene is NOT weak and is never second-guessed."""
+    if not r:
+        return True
+    lat, lng, country = r[0], r[1], r[3]
+    cc = COUNTRY_COORDS.get(country)
+    return bool(cc) and abs(lat - cc[0]) < 1e-3 and abs(lng - cc[1]) < 1e-3
+
+
+def _locate(title, sourcecountry, desc, url=""):
+    """The location for a dot. RULES first (free, deterministic, tested); only when they can't pin a
+    specific place does the FREE AI read the whole story and name it — grounded back through the SAME
+    gazetteer for coordinates, and anchored to a country the story actually names (so the model can't
+    invent one). Purely additive: with no LLM this is exactly _geolocate."""
+    r = _geolocate(title, sourcecountry, desc, url)
+    if not _geo_is_weak(r) or not _llm_available():
+        return r
+    place = _geolocate_ai(title, ((title or "") + ". " + (desc or "")).strip())
+    if not place:
+        return r
+    g = _geolocate(place, "", place, "")          # ground the AI's NAME through the gazetteer
+    if not g:
+        return r
+    # ANCHOR: the AI's country must be one the story actually mentions — never let it invent a country the
+    # text never names. (When it agrees with the rules' own country, that's trivially anchored.)
+    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
+    if g[3] != (r[3] if r else None) and g[3] not in ment:
+        return r
+    if not _geo_is_weak(g):
+        return g                                  # AI pinned a specific place the rules missed
+    if r is None or g[3] != r[3]:                 # AI named a country the rules missed or got wrong
+        return g
+    return r
 
 
 # A PRIVATE INDIVIDUAL. A demonym in front of one of these is that person's nationality, not a

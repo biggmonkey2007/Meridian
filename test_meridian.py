@@ -1263,7 +1263,27 @@ def main():
     print(f"  {'ok ' if _pf_ok else 'FAIL'} main city Ukraine->{_lc.get('Ukraine')}, Kuwait->{_lc.get('Kuwait')}, "
           f"Iran->{_lc.get('Iran')}; flag rejected: {not app._good_img(_flagurl)}")
 
-    total = (1 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+    # AI GEO FALLBACK — OFFLINE INVARIANTS. The AI second opinion must be purely additive: it fires ONLY on
+    # a weak rule result (None or a bare country centroid), never on a solid city/scene. These checks touch
+    # no network (a non-weak result short-circuits before any LLM call), so they stay deterministic.
+    print("\n=== AI GEO FALLBACK (offline invariants) ===")
+    _entebbe = (0.056, 32.479, "Entebbe, Uganda", "Uganda")          # a real city scene
+    _ug_centroid = app.COUNTRY_COORDS["Uganda"]
+    _country_dot = (_ug_centroid[0], _ug_centroid[1], "Uganda", "Uganda")
+    _ag_ok = (app._geo_is_weak(None) is True
+              and app._geo_is_weak(_entebbe) is False               # specific city -> not weak
+              and app._geo_is_weak(_country_dot) is True            # bare country centroid -> weak
+              # a solid rule scene is returned UNCHANGED (no AI consulted -> no network)
+              and app._locate("Statue unveiled at Uganda's Entebbe Airport", "", "in Entebbe, Uganda", "")[:4]
+                  == app._geolocate("Statue unveiled at Uganda's Entebbe Airport", "", "in Entebbe, Uganda", ""))
+    ran[0] += 1
+    if not _ag_ok:
+        fails.append(("ai-geo", "invariants", "weak-only + additive", str(_ag_ok),
+                      "the AI fallback must fire only on a weak (None/country-centroid) result, never override a real scene"))
+    print(f"  {'ok ' if _ag_ok else 'FAIL'} weak(None)={app._geo_is_weak(None)} weak(city)={app._geo_is_weak(_entebbe)} "
+          f"weak(country)={app._geo_is_weak(_country_dot)}; solid scene unchanged")
+
+    total = (2 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1
