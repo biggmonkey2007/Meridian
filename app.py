@@ -163,7 +163,7 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "4"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "5"   # bump when the summary prompt/format changes, so cached summaries regenerate
 
 
 def _summary_cfg():
@@ -256,8 +256,10 @@ def _summarize(title, text):
               "is self-evident, leave it out entirely.\n\n"
               "Formatting:\n"
               "- Put the lede FIRST as a normal paragraph — no dash, no label.\n"
-              "- Each bullet on its own line, starting with '- '. You MAY open a bullet with a short "
-              "**bold label:** when it sharpens the point, but don't force one.\n"
+              "- Each bullet on its own line, starting with '- '. You MAY open a bullet with a tiny bold "
+              "label of ONE or TWO words followed by a colon (like **Scale:** or **What's next:**), then "
+              "the sentence. NEVER bold more than two words, and NEVER bold a whole phrase or sentence — if "
+              "you can't say the label in two words, just write the bullet with no label.\n"
               "- Output nothing else — no headings, no title, no closing line.\n\n"
               "Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
               "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "

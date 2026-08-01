@@ -1190,7 +1190,9 @@ function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’
 // still renders sensibly, so nothing breaks while cached summaries roll over to the new format.
 function renderBrief(sum){
   sum=String(sum||"").trim(); if(!sum) return "";
-  const inl = t => esc(t).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"$1");
+  // Bold ONLY a short label (a word or two) — never a whole clause. A model that bolds a long phrase
+  // ("**Drones are hitting targets near Moscow's airports**") gets un-bolded to plain text.
+  const inl = t => esc(t).replace(/\*\*([^*]+)\*\*/g,(m,g)=>g.length<=22?"<b>"+g+"</b>":g).replace(/\*([^*]+)\*/g,"$1");
   const lines = sum.split(/\n+/).map(l=>l.trim()).filter(Boolean);
   const WHY=/^\s*(?:[-*•‣·]\s*)?\**\s*why\s+it\s+matters\b\s*[:\-–—]?\s*\**\s*(.*)$/i;
   const BUL=/^\s*(?:[-*•‣·]|\d+[.)])\s+(.*)$/;
