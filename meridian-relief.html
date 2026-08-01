@@ -1302,6 +1302,11 @@ function tuneVectorStyle(style){
   // "copy the other map's regions". Cities/towns/villages are native too.
   const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883" };
   const CITY_MZ   = { place_city_dot_r7:5, place_city_dot_r4:4, place_city_r5:7, place_city_r6:7, place_town:7, place_villages:9.5 };
+  // City & CAPITAL names were reading bigger than COUNTRY names — shrink them ~15% so the country is the
+  // dominant tier. Scale handles both a plain size and a {stops:[[z,size],...]} ramp.
+  const _CITY_SZ = ["place_capital_dot_z7","place_city_dot_r2","place_city_dot_r4","place_city_dot_r7","place_city_dot_z7","place_city_r5","place_city_r6"];
+  const _shrink  = sz => (typeof sz==="number") ? Math.round(sz*8.5)/10
+                       : (sz && Array.isArray(sz.stops)) ? {stops: sz.stops.map(p=>[p[0], Math.round(p[1]*8.5)/10])} : sz;
   // Region labels: strip the administrative TYPE suffix ("Masovian Voivodeship" -> "Masovian", "Pskov Oblast"
   // -> "Pskov", "Grodno Region" -> "Grodno"). MapLibre has no regex, so for each known suffix we slice the
   // name off at its position (longest/most-specific first so "Autonomous Region" wins over "Region").
@@ -1314,6 +1319,7 @@ function tuneVectorStyle(style){
       l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
     }
     if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
+    if(_CITY_SZ.indexOf(l.id)>=0 && l.layout && l.layout["text-size"]!==undefined){ l.layout = Object.assign({}, l.layout, {"text-size": _shrink(l.layout["text-size"])}); }
     if(l.id==="place_state"){
       l.filter = ["all",["==","class","state"],["<=","rank",6]];   // keep EVEN coverage (Polish voivodeships etc.)
       // Smaller (~20%) so long region names don't hog the screen; FULL opacity + a touch darker so they read

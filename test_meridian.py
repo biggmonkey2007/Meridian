@@ -107,6 +107,9 @@ GEO_CASES = [
     ("Rescue crews are responding to an F-35 crash at Miramar Air Base near San Diego",
      "A US F-35 fighter jet crashed and exploded at Miramar Air Base near San Diego.",
      "Miramar Air Base", "SHIPPED: 'Miramar' dotted Miramar, Florida (Miami); MCAS Miramar is in San Diego"),
+    ("Western regime change wars led to Spain's migrant crisis",
+     "A massive influx of migrants entered the Spanish city of Ceuta from Morocco. A Russian diplomat said regime change wars in Iraq and Libya destabilized the region.",
+     "Spain", "SHIPPED: dotted IRAQ (a background country the piece blames); the scene is Ceuta, Spain"),
     # A country taking a DOMESTIC action (orders/expels/bans/sanctions) is news at its OWN seat; a country
     # named only as background must not steal the dot.
     ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",

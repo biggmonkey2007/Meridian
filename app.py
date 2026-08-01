@@ -1176,6 +1176,8 @@ class Api:
                 continue
             src = ((j.get("originalimage") or {}).get("source")
                    or (j.get("thumbnail") or {}).get("source") or "")
+            if src and not _good_img(src):
+                src = ""                       # a country's Wikipedia lead image is usually its flag/locator map — skip it
             if src:
                 out = {"url": re.sub(r"/\d+px-([^/]*)$", r"/1280px-\1", src),
                        "title": j.get("title") or q}
@@ -3120,6 +3122,11 @@ def _good_img(u):
         # logos / brand marks / flags
         "/logo", "-logo", "logo.", "logo_", "_logo", "site-logo", "header-logo", "brand-", "/brand",
         "sprite", "favicon", "blank.", "watermark", "/flag", "-flag.", "flag-",
+        # country FLAGS, coats of arms, and LOCATOR MAPS (Wikipedia's lead image for a country is usually one
+        # of these) — a flag/map is never the "picture" of a news story. Real photos are jpg/png/webp, so an
+        # .svg is always a flag/logo/map. Never show one; fall back to the coloured category card instead.
+        "flag_of", "flag of", "flag%20of", "/flag_", "coat_of_arms", "coat-of-arms", "coat%20of%20arms",
+        ".svg", "orthographic", "locator", "location_map", "location-map", "_map.", "on_the_globe", "(projection", "%28orthographic",
         # house 'brand card' filenames (extend as spotted — keep to the CARD, not the whole domain, so real
         # photos from the same outlet still show)
         "tass_logo", "og-tass", "tass-card", "tass-cover", "tass-og", "rt-logo", "sputnik-logo", "ria-logo",
@@ -4091,7 +4098,7 @@ _GEO_PREP = {"in", "at", "near", "across", "outside", "throughout", "around", "a
 # "the <these> OF X" declares X a place — enough locational context to accept a small (weak) town.
 _PLACE_OF_NOUNS = {"town", "village", "city", "port", "district", "province", "region", "outskirts",
                    "suburb", "suburbs", "municipality", "borough", "county", "settlement", "hamlet",
-                   "commune", "capital", "prefecture", "township"}
+                   "commune", "capital", "prefecture", "township", "enclave", "exclave"}
 # Capitalised words that legitimately sit in front of a place name ("East Aleppo", "South Sudan")
 _DIRECTIONS = {"north", "south", "east", "west", "northern", "southern", "eastern", "western",
                "central", "greater", "upper", "lower", "new", "old", "port", "san", "saint", "st",
@@ -5359,7 +5366,12 @@ def _geolocate(title, sourcecountry, desc="", url=""):
         dh, dw = _scan_places(desc[:400], _person_spans(desc[:400]), mentions)
         dscenes = _genuine_scenes(dh, dw) if dh else []
         if dscenes:
-            b = _pick_place(dscenes, dw)
+            # A POSSESSIVE country in the title is the story's SUBJECT: "Spain's migrant crisis" -> the scene is
+            # IN Spain (Ceuta), not the "regime change wars in IRAQ" it blames. A country used as the ACTOR of a
+            # verb ("Russia strikes Ukraine") is NOT possessive, so it never hijacks the real (Ukrainian) scene.
+            _poss = {h[5] for h in hits if h[1] == "country" and h[0] + 1 < len(words) and words[h[0] + 1] == "s"}
+            _pref = [d for d in dscenes if d[5] in _poss] if _poss else []
+            b = _pick_place(_pref or dscenes, dw)
             if b is not None:
                 return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
