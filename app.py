@@ -163,7 +163,7 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "2"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "3"   # bump when the summary prompt/format changes, so cached summaries regenerate
 
 
 def _summary_cfg():
@@ -238,21 +238,30 @@ def _summarize(title, text):
             return json.load(open(cache, encoding="utf-8")).get("s", "")
         except Exception:
             pass
-    system = ("You are a wire-service news editor. You write tight, original, copyright-free briefs and you "
-              "NEVER copy the source's wording — every sentence is rephrased from scratch.")
-    prompt = ("Rewrite the story below as ONE sharp, self-contained news brief of 3-4 complete sentences for a "
-              "world-news map — the reader sees only your brief, so it must stand on its own.\n"
-              "- Lead with the core development, then the key supporting facts.\n"
-              "- Keep the specifics: names, numbers, places, dates. No fluff, no filler.\n"
-              "- Write in complete sentences (no fragments); do not restate the headline word-for-word.\n"
-              "- Facts only — no opinion, no speculation, no editorializing, no 'the article says'/'reportedly'.\n"
-              "- Never comment on what the source leaves out (no 'the timing is unspecified', 'details are "
-              "unclear', 'it is not stated'); simply omit anything not given.\n"
-              "- Write ENTIRELY in your own words to stay copyright-free: do not copy any run of four or more "
-              "consecutive words from the source, and never quote it.\n\n"
+    system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write tight, original, "
+              "copyright-free briefs that a busy 8th-grader can read at a glance. You NEVER copy the source's "
+              "wording — every line is rephrased from scratch.")
+    prompt = ("Rewrite the story below as a punchy, original news brief for a world-news map, in the style of "
+              "Axios 'Smart Brevity'. The reader sees ONLY your brief, so it must stand on its own.\n"
+              "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon.\n\n"
+              "Output EXACTLY this structure — nothing before or after:\n\n"
+              "<one lede sentence: the single most important thing that just happened>\n\n"
+              "- **<2-4 word label>:** <one short sentence of key detail>\n"
+              "- **<2-4 word label>:** <one short sentence of key detail>\n"
+              "- **<2-4 word label>:** <one short sentence of key detail>\n\n"
+              "Why it matters: <one short sentence on the stakes or what comes next>\n\n"
+              "Rules:\n"
+              "- The lede is ONE sentence on its own line — no bullet, no label. Do not just repeat the headline.\n"
+              "- Then 2 to 4 bullets. Each begins with '- ', then a short **bold label**, a colon, then ONE "
+              "sentence. Keep the hard specifics: names, numbers, places, dates.\n"
+              "- Finish with exactly one line that starts 'Why it matters:'.\n"
+              "- Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
+              "out what the source leaves out (simply omit anything not given).\n"
+              "- Stay copyright-free: rephrase everything from scratch; never copy four or more consecutive "
+              "words from the source, and never quote it.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     try:
-        body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 260,
+        body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 360,
                            "messages": [{"role": "system", "content": system},
                                         {"role": "user", "content": prompt}]}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
@@ -261,7 +270,12 @@ def _summarize(title, text):
             "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
         s = ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
-        s = re.sub(r"\s+", " ", s).strip()
+        # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs,
+        # trim each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
+        s = s.replace("\r", "")
+        s = re.sub(r"[ \t]+", " ", s)
+        s = "\n".join(ln.strip() for ln in s.split("\n"))
+        s = re.sub(r"\n{3,}", "\n\n", s).strip()
         if s:
             try:
                 json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
@@ -5352,6 +5366,18 @@ def _sea_country(b, mentions):
     return b[5]
 
 
+_SEA_COORD_RE = re.compile(r"\b([A-Za-z]+)\s+and\s+([A-Za-z]+)\s+seas\b", re.I)
+
+
+def _expand_water_coord(text):
+    """News collapses two adjacent seas into a plural coordination — "the Black and Azov seas", "the
+    Baltic and North seas". Neither half then matches a SINGULAR gazetteer key ("black sea"/"azov sea"),
+    so the only surviving token, "Azov", hits the TOWN and the dot leaves the water (or falls back to the
+    speaker's capital). Expand the coordination back into two singular sea names so each one matches. A
+    pairing that isn't a real sea simply matches nothing downstream, so this is safe to apply broadly."""
+    return _SEA_COORD_RE.sub(lambda m: m.group(1) + " Sea and " + m.group(2) + " Sea", text or "")
+
+
 @functools.lru_cache(maxsize=4096)
 def _geolocate(title, sourcecountry, desc="", url=""):
     """Best location for an event. Context (other countries named + the article's own section) decides
@@ -5361,10 +5387,19 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     Memoized: an article's inputs don't change between the 15-min rebuilds, so re-geolocation is free
     after the first pass. The result is a plain tuple/None (deterministic — depends only on the static
     gazetteer), so caching is safe. Restart clears it, which is exactly what we want after a logic fix."""
-    title = title or ""
+    title = _expand_water_coord(title or "")      # "Black and Azov seas" -> "Black Sea and Azov Sea"
+    desc = _expand_water_coord(desc or "")
     mentions = _context_mentions(title + " " + (desc or ""), url)
     dl = _dateline_place(desc, mentions)
     hits, words = _scan_places(title, _person_spans(title), mentions)
+    # When a story names BOTH the Black Sea and the enclosed Sea of Azov, the Azov is the specific scene —
+    # the ship/tanker strikes happen in that shallow, enclosed basin, while "Black Sea" is the broader
+    # theatre. Drop the Black Sea so the dot lands on the more specific water ("Black and Azov seas" ->
+    # Sea of Azov). Only fires when both are present, so a lone "Black Sea" story is untouched.
+    if hits:
+        _wn = {h[7] for h in hits}
+        if (_wn & {"sea of azov", "azov sea"}) and "black sea" in _wn:
+            hits = [h for h in hits if h[7] != "black sea"]
     # A person's NATIONALITY is not the event location. Drop "Venezuelan man"/"Colombian migrants"
     # from the TITLE candidates. If a real place remains ("Colombian man in MAINE"), keep it. If the
     # title then names NO place, prefer the summary's actual scene ("...in Georgia"), and only then

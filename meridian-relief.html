@@ -317,6 +317,16 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .body{font-size:13.5px;line-height:1.62;color:#2b333c;margin:8px 0 2px}
 .body p{margin:0 0 9px}
 .body p:last-child{margin-bottom:0}
+/* "In brief" — Axios "Smart Brevity": a punchy lede, scannable bullets, a "why it matters" kicker */
+.brief{margin:2px 0 2px}
+.brief-lede{font-family:var(--serif);font-size:15.5px;line-height:1.42;color:var(--ink);font-weight:600;margin:0 0 12px}
+.brief-points{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:9px}
+.brief-points li{position:relative;padding-left:17px;font-size:13.5px;line-height:1.5;color:#2b333c}
+.brief-points li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--signal)}
+.brief-points li b{color:var(--ink);font-weight:700}
+.brief-why{margin:13px 0 2px;padding:9px 12px;font-size:13px;line-height:1.5;color:#2b333c;background:var(--panel-2);border-left:3px solid var(--signal);border-radius:0 8px 8px 0}
+.brief-why .bw-lbl{font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.03em;font-size:11px;margin-right:5px}
+.brief-why .bw-lbl::after{content:" →";color:var(--signal);font-weight:700}
 .facts{margin:6px 0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .facts li{position:relative;padding-left:17px;font-size:12.5px;line-height:1.45;color:var(--ink)}
 .facts li::before{content:"";position:absolute;left:3px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
@@ -1167,6 +1177,37 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
 function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
+// Render OUR "In brief" summary in the Axios "Smart Brevity" shape the summarizer now emits:
+//   line 1 = a punchy lede, then "- **Label:** detail" bullets, then a "Why it matters:" kicker.
+// Parses defensively — an OLD flat one-paragraph summary (no bullets) still renders as a clean lede, so
+// nothing breaks while cached summaries roll over to the new format.
+function renderBrief(sum){
+  sum=String(sum||"").trim(); if(!sum) return "";
+  const inl = t => esc(t).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"$1");
+  const lines = sum.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const lede=[]; const bullets=[]; let why="";
+  for(const ln of lines){
+    const mWhy = ln.match(/^\**\s*why\s+it\s+matters\b\s*[:\-–—]?\s*\**\s*(.*)$/i);
+    if(mWhy){ if(mWhy[1].trim()) why=mWhy[1].trim(); continue; }
+    const mB = ln.match(/^\s*(?:[-*•‣·]|\d+[.)])\s+(.*)$/);
+    if(mB){ if(mB[1].trim()) bullets.push(mB[1].trim()); continue; }
+    if(!bullets.length) lede.push(ln); else if(!why) why=ln;   // stray line after bullets → treat as kicker
+  }
+  if(!bullets.length && !why){                                 // legacy flat summary: one clean paragraph
+    return `<div class="brief"><p class="brief-lede">${inl(lede.join(" ")||sum)}</p></div>`;
+  }
+  let h='<div class="brief">';
+  if(lede.length) h+=`<p class="brief-lede">${inl(lede.join(" "))}</p>`;
+  if(bullets.length){
+    h+='<ul class="brief-points">'+bullets.map(b=>{
+      let x=inl(b);
+      if(!/^<b>/.test(x)) x=x.replace(/^([^:<]{1,34}):\s+/,"<b>$1:</b> ");   // bold a bare "Label:" lead-in
+      return `<li>${x}</li>`;
+    }).join("")+'</ul>';
+  }
+  if(why) h+=`<p class="brief-why"><span class="bw-lbl">Why it matters</span> ${inl(why)}</p>`;
+  return h+'</div>';
+}
 
 /* ============================================================
    MERIDIAN — map engine (Leaflet flat map + globe.gl 3D globe).
@@ -3610,7 +3651,7 @@ function _ttsSegments(d){
   const lead=document.getElementById("re-lead-"+d.id);
   if(lead && lead.textContent && !/Fetching/.test(lead.textContent)) paras.push(lead.textContent);
   const body=document.getElementById("re-body-"+d.id);
-  if(body) body.querySelectorAll("p").forEach(p=>{ if(p.textContent.trim()) paras.push(p.textContent); });
+  if(body) body.querySelectorAll("p, li").forEach(p=>{ if(p.textContent.trim()) paras.push(p.textContent); });
 
   let budget=2400;
   paras.forEach((raw,pi)=>{
@@ -3798,7 +3839,7 @@ async function renderRealEvent(d){
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
-    <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body"><p>${esc(d.summary)}</p></div>`:""}</div>
+    <div id="re-body-${d.id}">${d.summary?`<div class="sec-label">In brief · Meridian</div><div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
   `;
@@ -3844,7 +3885,7 @@ async function renderRealEvent(d){
   const BRIEF=`<div class="sec-label">In brief · Meridian</div>`;
   const showBrief=(sum, dek)=>{
     if(sum){ d.summary=sum; if(lead) lead.style.display="none";
-             if(bodyEl) bodyEl.innerHTML=`${BRIEF}<div class="body"><p>${esc(sum)}</p></div>`; }
+             if(bodyEl) bodyEl.innerHTML=`${BRIEF}<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
            if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
   };

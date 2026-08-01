@@ -112,7 +112,10 @@ GEO_CASES = [
      "Spain", "SHIPPED: dotted IRAQ (a background country the piece blames); the scene is Ceuta, Spain"),
     ("Zelensky said Ukrainian forces struck targets in the Black and Azov seas overnight",
      "Ukrainian forces hit ships in the Black and Azov seas. Separately, drones struck an oil refinery in Ufa, Bashkortostan, some 1,400 km away.",
-     "!Ufa", "SHIPPED: a Telegram roundup's later strike (Ufa) outranked the headline's Azov-seas subject"),
+     "Azov Sea", "SHIPPED: dotted Kyiv (the speaker) then Ufa (a later roundup strike). The collapsed plural "
+     "'Black and Azov seas' matched no singular sea key; expand it, and among two named seas the enclosed Azov wins"),
+    ("Ukrainian drones struck ships in the Baltic and North seas", "",
+     "Sea", "the coordinated-plural expansion is general: two real seas, so it must land on water, not a town"),
     # A country taking a DOMESTIC action (orders/expels/bans/sanctions) is news at its OWN seat; a country
     # named only as background must not steal the dot.
     ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",
