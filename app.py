@@ -163,7 +163,7 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "3"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "4"   # bump when the summary prompt/format changes, so cached summaries regenerate
 
 
 def _summary_cfg():
@@ -238,27 +238,30 @@ def _summarize(title, text):
             return json.load(open(cache, encoding="utf-8")).get("s", "")
         except Exception:
             pass
-    system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write tight, original, "
+    system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write clean, original, "
               "copyright-free briefs that a busy 8th-grader can read at a glance. You NEVER copy the source's "
-              "wording — every line is rephrased from scratch.")
-    prompt = ("Rewrite the story below as a punchy, original news brief for a world-news map, in the style of "
-              "Axios 'Smart Brevity'. The reader sees ONLY your brief, so it must stand on its own.\n"
-              "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon.\n\n"
-              "Output EXACTLY this structure — nothing before or after:\n\n"
-              "<one lede sentence: the single most important thing that just happened>\n\n"
-              "- **<2-4 word label>:** <one short sentence of key detail>\n"
-              "- **<2-4 word label>:** <one short sentence of key detail>\n"
-              "- **<2-4 word label>:** <one short sentence of key detail>\n\n"
-              "Why it matters: <one short sentence on the stakes or what comes next>\n\n"
-              "Rules:\n"
-              "- The lede is ONE sentence on its own line — no bullet, no label. Do not just repeat the headline.\n"
-              "- Then 2 to 4 bullets. Each begins with '- ', then a short **bold label**, a colon, then ONE "
-              "sentence. Keep the hard specifics: names, numbers, places, dates.\n"
-              "- Finish with exactly one line that starts 'Why it matters:'.\n"
-              "- Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
-              "out what the source leaves out (simply omit anything not given).\n"
-              "- Stay copyright-free: rephrase everything from scratch; never copy four or more consecutive "
-              "words from the source, and never quote it.\n\n"
+              "wording — every line is rephrased from scratch, and you shape each brief to the story instead "
+              "of forcing a fixed template.")
+    prompt = ("Rewrite the story below as a clean, original news brief for a world-news map, in the spirit of "
+              "Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template.\n"
+              "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
+              "The reader sees ONLY your brief, so it must stand on its own.\n\n"
+              "Write it in this shape:\n"
+              "1. LEDE — 1 to 2 short sentences of plain prose that say what happened. This carries the brief.\n"
+              "2. BULLETS — then add 1 or 2 bullets, ONLY for the hardest specifics worth pulling out on their "
+              "own (a key number, a name, a decisive detail). If the story is simple, use one bullet or none. "
+              "NEVER pad to three just to fill space.\n"
+              "3. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
+              "bullet that starts 'Why it matters:' and gives the stakes in one sentence. If the significance "
+              "is self-evident, leave it out entirely.\n\n"
+              "Formatting:\n"
+              "- Put the lede FIRST as a normal paragraph — no dash, no label.\n"
+              "- Each bullet on its own line, starting with '- '. You MAY open a bullet with a short "
+              "**bold label:** when it sharpens the point, but don't force one.\n"
+              "- Output nothing else — no headings, no title, no closing line.\n\n"
+              "Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
+              "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
+              "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     try:
         body = json.dumps({"model": model, "temperature": 0.3, "max_tokens": 360,

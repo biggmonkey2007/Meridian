@@ -317,16 +317,22 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .body{font-size:13.5px;line-height:1.62;color:#2b333c;margin:8px 0 2px}
 .body p{margin:0 0 9px}
 .body p:last-child{margin-bottom:0}
-/* "In brief" — Axios "Smart Brevity": a punchy lede, scannable bullets, a "why it matters" kicker */
+/* "In brief" — Axios "Smart Brevity": a prose lede carries it, then a bullet or two for the hard
+   specifics; a "Why it matters" bullet folds into the same list only when the stakes aren't obvious.
+   Accent is the app's deep blue (#22303c / #12467f), not red. */
 .brief{margin:2px 0 2px}
-.brief-lede{font-family:var(--serif);font-size:15.5px;line-height:1.42;color:var(--ink);font-weight:600;margin:0 0 12px}
-.brief-points{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:9px}
-.brief-points li{position:relative;padding-left:17px;font-size:13.5px;line-height:1.5;color:#2b333c}
-.brief-points li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--signal)}
+.brief-lede{font-size:14px;line-height:1.6;color:#2b333c;margin:0 0 11px}
+.brief-lede:last-child{margin-bottom:0}
+.brief-points{list-style:none;margin:0;padding:0}
+.brief-points li{position:relative;padding-left:16px;font-size:13.5px;line-height:1.5;color:#2b333c;white-space:normal;overflow-wrap:break-word}
+.brief-points li + li{margin-top:8px}
+.brief-points li::before{content:"";position:absolute;left:1px;top:7px;width:6px;height:6px;border-radius:50%;background:#22303c}
 .brief-points li b{color:var(--ink);font-weight:700}
-.brief-why{margin:13px 0 2px;padding:9px 12px;font-size:13px;line-height:1.5;color:#2b333c;background:var(--panel-2);border-left:3px solid var(--signal);border-radius:0 8px 8px 0}
-.brief-why .bw-lbl{font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.03em;font-size:11px;margin-right:5px}
-.brief-why .bw-lbl::after{content:" →";color:var(--signal);font-weight:700}
+/* the "so what" bullet — deep-blue label + dot, still just a bullet in the flow (no separate box).
+   NB: classes are bp-* on purpose — plain .wm/.wm-lbl are the map's strait/port markers (display:flex,
+   nowrap), which would turn this bullet into a non-wrapping two-column row. */
+.brief-points li.bp-why::before{background:#12467f}
+.brief-points li.bp-why .bp-why-lbl{color:#12467f;font-weight:800;margin-right:3px}
 .facts{margin:6px 0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .facts li{position:relative;padding-left:17px;font-size:12.5px;line-height:1.45;color:var(--ink)}
 .facts li::before{content:"";position:absolute;left:3px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
@@ -1177,35 +1183,37 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
 function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
-// Render OUR "In brief" summary in the Axios "Smart Brevity" shape the summarizer now emits:
-//   line 1 = a punchy lede, then "- **Label:** detail" bullets, then a "Why it matters:" kicker.
-// Parses defensively — an OLD flat one-paragraph summary (no bullets) still renders as a clean lede, so
-// nothing breaks while cached summaries roll over to the new format.
+// Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
+//   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
+//   only when the stakes aren't obvious — a final "Why it matters:" line that we fold into the SAME
+//   bullet list (deep-blue label), never a separate boxed section.
+// Parses defensively: a pure-prose brief renders as clean paragraph(s); an OLD flat/bulleted summary
+// still renders sensibly, so nothing breaks while cached summaries roll over to the new format.
 function renderBrief(sum){
   sum=String(sum||"").trim(); if(!sum) return "";
   const inl = t => esc(t).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"$1");
   const lines = sum.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-  const lede=[]; const bullets=[]; let why="";
+  const WHY=/^\s*(?:[-*•‣·]\s*)?\**\s*why\s+it\s+matters\b\s*[:\-–—]?\s*\**\s*(.*)$/i;
+  const BUL=/^\s*(?:[-*•‣·]|\d+[.)])\s+(.*)$/;
+  const lede=[]; const items=[];        // items: {t, wm}
   for(const ln of lines){
-    const mWhy = ln.match(/^\**\s*why\s+it\s+matters\b\s*[:\-–—]?\s*\**\s*(.*)$/i);
-    if(mWhy){ if(mWhy[1].trim()) why=mWhy[1].trim(); continue; }
-    const mB = ln.match(/^\s*(?:[-*•‣·]|\d+[.)])\s+(.*)$/);
-    if(mB){ if(mB[1].trim()) bullets.push(mB[1].trim()); continue; }
-    if(!bullets.length) lede.push(ln); else if(!why) why=ln;   // stray line after bullets → treat as kicker
+    const mW=ln.match(WHY);
+    if(mW){ if(mW[1].trim()) items.push({t:mW[1].trim(), wm:true}); continue; }
+    const mB=ln.match(BUL);
+    if(mB){ if(mB[1].trim()) items.push({t:mB[1].trim(), wm:false}); continue; }
+    lede.push(ln);                       // prose — the lede (and any stray non-bullet line)
   }
-  if(!bullets.length && !why){                                 // legacy flat summary: one clean paragraph
-    return `<div class="brief"><p class="brief-lede">${inl(lede.join(" ")||sum)}</p></div>`;
+  if(!items.length){                     // pure prose (or legacy flat): clean paragraph(s)
+    return `<div class="brief">${(lede.length?lede:[sum]).map(p=>`<p class="brief-lede">${inl(p)}</p>`).join("")}</div>`;
   }
   let h='<div class="brief">';
-  if(lede.length) h+=`<p class="brief-lede">${inl(lede.join(" "))}</p>`;
-  if(bullets.length){
-    h+='<ul class="brief-points">'+bullets.map(b=>{
-      let x=inl(b);
-      if(!/^<b>/.test(x)) x=x.replace(/^([^:<]{1,34}):\s+/,"<b>$1:</b> ");   // bold a bare "Label:" lead-in
-      return `<li>${x}</li>`;
-    }).join("")+'</ul>';
-  }
-  if(why) h+=`<p class="brief-why"><span class="bw-lbl">Why it matters</span> ${inl(why)}</p>`;
+  h+=lede.map(p=>`<p class="brief-lede">${inl(p)}</p>`).join("");
+  h+='<ul class="brief-points">'+items.map(it=>{
+    let x=inl(it.t);
+    if(it.wm){ x=`<b class="bp-why-lbl">Why it matters:</b> ${x}`; }
+    else if(!/^<b>/.test(x)) x=x.replace(/^([^:<]{1,34}):\s+/,"<b>$1:</b> ");   // bold a bare "Label:" lead-in
+    return `<li class="${it.wm?'bp-why':''}">${x}</li>`;
+  }).join("")+'</ul>';
   return h+'</div>';
 }
 
