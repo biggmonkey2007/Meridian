@@ -732,7 +732,7 @@ def _tg_arts(h):
                 "socialimage": _img,
                 "desc": _clip(p.get("text") or "", 400),
                 "sourcecountry": "",
-                "geo_text": (p.get("text") or ""),   # geolocate on the FULL post, so "southern Lebanon" beats the "Israeli" demonym
+                "geo_text": (p.get("text") or ""),   # the full post — read as the story's BODY (desc) when the headline names no scene ("…in southern Lebanon")
                 "_src": p.get("title") or p.get("channel") or "Telegram",
                 "_media": _post_media(p),            # the post's OWN album/clip, kept so it can't age out of the strip
                 "_tg": True,
@@ -1612,7 +1612,12 @@ class Api:
                 hrs = _seendate_hours(a.get("seendate") or "")
             if hrs > h:                    # dots strictly expire after the 24h window
                 continue
-            loc = _geolocate(a.get("geo_text") or title, a.get("sourcecountry") or "", a.get("desc") or "", url)
+            # Geolocate on the HEADLINE, with the full post as the summary. A Telegram roundup names several
+            # strikes; using the whole post as the "title" let a later, higher-profile place (a Bashkortostan
+            # refinery) outrank the headline's own subject (a strike in the Sea of Azov). The headline is what
+            # the card shows, so it's what the dot must match; body clarifications ("…in southern Lebanon")
+            # are still read from the desc when the headline itself names no scene.
+            loc = _geolocate(title, a.get("sourcecountry") or "", a.get("geo_text") or a.get("desc") or "", url)
             if not loc:
                 continue
             lat, lng, place, country = loc
@@ -1743,8 +1748,8 @@ class Api:
                 hrs = _seendate_hours(a.get("seendate") or "")
                 if hrs > h:
                     continue
-                loc = _geolocate(a.get("geo_text") or title, a.get("sourcecountry") or country,
-                                 a.get("desc") or "", url)
+                loc = _geolocate(title, a.get("sourcecountry") or country,
+                                 a.get("geo_text") or a.get("desc") or "", url)
                 if not loc:
                     continue
                 lat, lng, place, ev_country = loc

@@ -110,6 +110,9 @@ GEO_CASES = [
     ("Western regime change wars led to Spain's migrant crisis",
      "A massive influx of migrants entered the Spanish city of Ceuta from Morocco. A Russian diplomat said regime change wars in Iraq and Libya destabilized the region.",
      "Spain", "SHIPPED: dotted IRAQ (a background country the piece blames); the scene is Ceuta, Spain"),
+    ("Zelensky said Ukrainian forces struck targets in the Black and Azov seas overnight",
+     "Ukrainian forces hit ships in the Black and Azov seas. Separately, drones struck an oil refinery in Ufa, Bashkortostan, some 1,400 km away.",
+     "!Ufa", "SHIPPED: a Telegram roundup's later strike (Ufa) outranked the headline's Azov-seas subject"),
     # A country taking a DOMESTIC action (orders/expels/bans/sanctions) is news at its OWN seat; a country
     # named only as background must not steal the dot.
     ("France orders the expulsion of Russian journalist Xenia Fedorova, former director of RT France",
