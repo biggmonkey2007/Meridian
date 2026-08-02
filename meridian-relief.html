@@ -137,7 +137,13 @@ header{
 .hero{position:relative;aspect-ratio:16/9;border-radius:13px;overflow:hidden;margin-bottom:13px;box-shadow:0 2px 10px rgba(20,30,45,.14);background:#0e1621}
 .hero svg{display:block;position:absolute;inset:0;width:100%;height:100%}
 /* when a photo IS taller than the frame, drop the surplus from the FEET, not the faces */
-.hero-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 28%;opacity:0;transition:opacity .45s ease}
+/* FIT THE WHOLE SUBJECT: contain (never crop a face / a chart), with a blurred fill of the same image
+   behind it so a portrait doesn't leave empty bars. A landscape photo covers the 16:9 frame and hides
+   the fill entirely; only a tall/odd image shows the soft backdrop. */
+.hero-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 50%;opacity:0;transition:opacity .45s ease}
+.hero-bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(24px) brightness(.5) saturate(1.25);transform:scale(1.2);opacity:0;transition:opacity .45s ease}
+.hero.has-photo .hero-bg{opacity:1}
+.hero.has-map .hero-bg{display:none}
 .hero.has-photo .hero-photo{opacity:1}
 .hero-grad{position:absolute;inset:0;background:linear-gradient(to top,rgba(8,14,22,.74) 0%,rgba(8,14,22,.22) 42%,rgba(8,14,22,0) 72%);opacity:0;transition:opacity .45s ease}
 .hero.has-photo .hero-grad{opacity:1}
@@ -332,6 +338,14 @@ img.flag-img{object-fit:cover;background:#eef1f5}
    like the other labels (ink, not coloured). NB: classes are bp-* on purpose — plain .wm/.wm-lbl are
    the map's strait/port markers (display:flex, nowrap), which would break the bullet's wrapping. */
 .brief-points li.bp-why .bp-why-lbl{font-weight:800;margin-right:3px}
+/* "Covered by N sources" — every outlet that reported the same merged event, first reporter marked */
+.src-list2{display:flex;flex-direction:column;gap:1px;margin-top:2px}
+.src-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:12.5px;transition:background .12s}
+a.src-row:hover{background:var(--panel-2)}
+.src-row .src-nm{font-weight:700}
+.src-row .src-when{color:var(--ink-3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.src-row .src-first{color:var(--ink-2);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.src-row .src-arr{margin-left:auto;color:var(--ink-3);font-size:13px}
 .facts{margin:6px 0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .facts li{position:relative;padding-left:17px;font-size:12.5px;line-height:1.45;color:var(--ink)}
 .facts li::before{content:"";position:absolute;left:3px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
@@ -3356,7 +3370,10 @@ health:'<path d="M316 112 C268 80 256 56 280 42 C297 32 316 50 316 50 C316 50 33
 society:'<circle cx="286" cy="50" r="14" fill="#fff"/><circle cx="346" cy="50" r="14" fill="#fff"/><circle cx="316" cy="44" r="16" fill="#fff"/><path d="M262 102 a24 24 0 0 1 48 0 Z" fill="#fff"/><path d="M322 102 a24 24 0 0 1 48 0 Z" fill="#fff"/><path d="M290 98 a26 26 0 0 1 52 0 Z" fill="#fff"/>',
 sports:'<path d="M296 36 H356 V50 a30 30 0 0 1 -60 0 Z" fill="#fff"/><path d="M296 40 h-15 a15 15 0 0 0 15 15" fill="none" stroke="#fff" stroke-width="6"/><path d="M356 40 h15 a15 15 0 0 1 -15 15" fill="none" stroke="#fff" stroke-width="6"/><rect x="321" y="64" width="10" height="18" fill="#fff"/><rect x="300" y="100" width="52" height="12" rx="3" fill="#fff"/><rect x="312" y="86" width="28" height="9" fill="#fff"/>'
 };
-function heroBanner(d){ const c=CAT[d.cat]; const c1=c.hex, c2=shade(c.hex,0.6); return `<div class="hero" id="hero-${d.id}"><svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="hg-${d.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="225" fill="url(#hg-${d.id})"/><g opacity="0.17" transform="translate(0,48)">${MOTIF[d.cat]||''}</g></svg><div class="hero-mark">${CAT_ICON[d.cat]||""}</div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div><div class="hero-bar"><div class="hero-tag" title="${esc(c.label)}"><span class="hero-ico">${CAT_ICON[d.cat]||""}</span></div></div></div>`; }
+// Fill the blurred backdrop behind a contained hero photo with the same image, so a portrait/odd-ratio
+// picture shows whole (no crop) without leaving empty bars. Call wherever the hero-photo src is set.
+function heroBg(hero, src){ if(!hero||!src) return; const bg=hero.querySelector(".hero-bg"); if(bg) bg.style.backgroundImage='url("'+String(src).replace(/"/g,"")+'")'; }
+function heroBanner(d){ const c=CAT[d.cat]; const c1=c.hex, c2=shade(c.hex,0.6); return `<div class="hero" id="hero-${d.id}"><svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="hg-${d.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="225" fill="url(#hg-${d.id})"/><g opacity="0.17" transform="translate(0,48)">${MOTIF[d.cat]||''}</g></svg><div class="hero-mark">${CAT_ICON[d.cat]||""}</div><div class="hero-bg"></div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div><div class="hero-bar"><div class="hero-tag" title="${esc(c.label)}"><span class="hero-ico">${CAT_ICON[d.cat]||""}</span></div></div></div>`; }
 const CAT_ICON={
   security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6z"/><path d="M12 9v4"/><circle cx="12" cy="16" r=".6" fill="currentColor"/></svg>',
   politics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 21h18M5 21V10m4 11V10m6 11V10m4 11V10M12 3L3 8h18z"/></svg>',
@@ -3403,7 +3420,7 @@ async function loadHeroFile(d){
         };
         img.onerror=()=>{};   // photo failed to load -> leave the branded gradient card (no map/flag)
         img.referrerPolicy="no-referrer";
-        img.src=r.url;
+        heroBg(hero, r.url); img.src=r.url;
         return;
       }
     }catch(e){}
@@ -3600,7 +3617,7 @@ function heroFromWire(d, url, credit){
   };
   img.onerror=()=>{};
   img.referrerPolicy="no-referrer";
-  img.src=url;
+  heroBg(hero, url); img.src=url;
 }
 let _ttsBtn=null, _ttsStop=false, _ttsKeep=null, _ttsTick=null, _ttsEvent=null;
 let _ttsSegs=null, _ttsIdx=0, _ttsGen=0, _ttsVoiceSel=null, _ttsT0=0, _ttsTotal=0;
@@ -3828,6 +3845,21 @@ function bodyMinusHeadline(title, text){
   }
   return full;
 }
+// When several outlets covered the SAME event, the dot is merged (backend _merge_same_event) and carries
+// them all in d.sources. List them under the story — first reporter marked — so nothing is hidden and the
+// reader can jump to any outlet. Shown only when there's more than one (a lone source needs no list).
+function sourcesHtml(d){
+  const ss = (Array.isArray(d.sources) ? d.sources.slice() : []).filter(s=>s && s.name);
+  if(ss.length < 2) return "";
+  ss.sort((a,b)=> (b.hrs||0)-(a.hrs||0));                  // first to report -> first in the list
+  const rows = ss.map((s,i)=>{
+    const when = (s.hrs!=null) ? timeAgo(Date.now()-s.hrs*3600000) : "";
+    const meta = `<span class="src-nm">${esc(s.name)}</span>${when?`<span class="src-when">${esc(when)}</span>`:""}${i===0?`<span class="src-first">first</span>`:""}`;
+    return s.url ? `<a class="src-row" href="${esc(s.url)}" target="_blank" rel="noopener">${meta}<span class="src-arr">↗</span></a>`
+                 : `<div class="src-row">${meta}</div>`;
+  }).join("");
+  return `<div class="sec-label">Covered by ${ss.length} sources</div><div class="src-list2">${rows}</div>`;
+}
 async function renderRealEvent(d){
   try{ stopSpeech(); }catch(e){}      // also resets the button and kills the keepalive
   const src = d.source || d.domain || (d.src&&d.src[0]) || "the source";
@@ -3856,6 +3888,7 @@ async function renderRealEvent(d){
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
+    ${sourcesHtml(d)}
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
   `;
   openDetail();
@@ -3872,7 +3905,7 @@ async function renderRealEvent(d){
     img.onload=()=>{ hero.classList.add("has-photo"); if(isFile) hero.classList.add("has-file"); const cr=hero.querySelector(".hero-credit"); if(cr) cr.textContent=(d.image?src:(d._photoTitle||"")); };
     img.onerror=()=>{ if(isFile){ hero.classList.remove("has-photo","has-file"); } };
     img.referrerPolicy="no-referrer";
-    img.src=heroSrc;
+    heroBg(hero, heroSrc); img.src=heroSrc;
   }
   const dc=document.getElementById("dclose"); if(dc) dc.onclick=deselectAll;
   const lb=document.getElementById("re-listen-"+d.id); if(lb) lb.onclick=()=>speakEvent(d);
@@ -3938,7 +3971,7 @@ async function renderRealEvent(d){
           }).catch(()=>{});
         }
       }
-      if(hero && img && !d.image && meta && meta.image){ img.onload=()=>hero.classList.add("has-photo"); img.src=meta.image; }
+      if(hero && img && !d.image && meta && meta.image){ img.onload=()=>hero.classList.add("has-photo"); heroBg(hero, meta.image); img.src=meta.image; }
       // the article names people the headline never did (a senator quoted in paragraph two)
       if(desc || paras.length) loadEventPeople(d, (desc+" "+paras.slice(0,2).join(" ")).slice(0,400));
       updateListenTime(d);   // the body just arrived — the read is far longer than the headline
@@ -4373,6 +4406,7 @@ function applyWorldEvents(items){
       involved:(Array.isArray(it.involved)&&it.involved.length?it.involved:[String(it.country||"")]), statements:[], media:[],
       live:true, url:it.url||"", image:it.image||"", domain:it.domain||"", tg:!!it.tg, channel:it.channel||"",
       srcmedia:(Array.isArray(it.srcmedia)?it.srcmedia:[]),   // the source post's own album/clip, carried through so the media strip always has it
+      sources:(Array.isArray(it.sources)?it.sources:[]),      // every outlet that covered this same event (dedup merge)
       source:String(it.source||"")
     });
   });
@@ -4420,6 +4454,7 @@ function _mkStarEvent(it, idx){
     involved:(Array.isArray(it.involved)&&it.involved.length?it.involved:[String(it.country||"")]), statements:[], media:[],
     live:true, url:it.url||"", image:it.image||"", domain:it.domain||"", tg:false, channel:"",
     srcmedia:(Array.isArray(it.srcmedia)?it.srcmedia:[]),
+    sources:(Array.isArray(it.sources)?it.sources:[]),
     source:String(it.source||""), starred:true
   };
 }

@@ -1747,7 +1747,8 @@ class Api:
             per_country[country] = per_country.get(country, 0) + 1
         # picture-bearing + most-recent first, then cap
         events.sort(key=lambda e: (0 if e["image"] else 1, e["hrs"]))
-        events = _collapse_colocated(events)   # one dot per place — merge a co-located barrage
+        events = _merge_same_event(events)     # one dot per EVENT — cite every source that covered it
+        events = _collapse_colocated(events)   # then one dot per place — merge a co-located barrage
         events = events[:260]
         try:
             _assign_clips(events, _tg_all_posts())   # each clip belongs to ONE dot, feed-wide
@@ -3267,6 +3268,102 @@ _SEVERITY = {"security": 0, "climate": 1, "health": 2, "society": 3, "economy": 
              "tech": 5, "politics": 6, "sports": 7}
 
 
+_NUMWORD = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+            "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "dozen": 12, "thirteen": 13, "fourteen": 14,
+            "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+            "thirty": 30, "forty": 40, "fifty": 50}
+_TOLL_N = (r"(\d{1,4}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|thirteen|"
+           r"fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)")
+_TOLL_P1 = re.compile(_TOLL_N + r"(?:\s+\w+){0,3}?\s+(?:killed|dead|deaths?|died|fatalities|perished|"
+                      r"lives\s+lost)\b", re.I)
+_TOLL_P2 = re.compile(r"\b(?:kill(?:s|ed|ing)?|claim(?:s|ed)?|leav(?:es|ing)|left|dead[:,]?)\s+"
+                      r"(?:at least\s+|nearly\s+|some\s+|up to\s+)?" + _TOLL_N + r"\b", re.I)
+
+
+def _death_toll(text):
+    """The casualty figure a story leads with ('9 dead', 'kills nine', 'left nine dead') as an int, or
+    None. A shared, specific death toll is the strongest signal that two differently-worded reports cover
+    the SAME event — 'Kyiv: 9 dead', 'barrage kills nine', 'left nine civilians dead' are all one story."""
+    text = text or ""
+    for p in (_TOLL_P1, _TOLL_P2):
+        m = p.search(text)
+        if m:
+            v = m.group(1).lower()
+            n = int(v) if v.isdigit() else _NUMWORD.get(v)
+            if n and n <= 5000:
+                return n
+    return None
+
+
+def _src_of(e):
+    """One citation for the sources list — the outlet, its link, and when it reported."""
+    return {"name": e.get("source") or _domain_name(e.get("domain") or "") or "Source",
+            "url": e.get("url") or "", "hrs": e.get("hrs"), "title": e.get("title") or ""}
+
+
+def _absorb_source(primary, dup):
+    """Fold a duplicate report INTO the primary (first-to-report) dot: cite its outlet, fold its text in
+    so the AI brief reflects every source, and upgrade the primary's picture/place if it was missing one."""
+    srcs = primary.setdefault("sources", [_src_of(primary)])
+    for ds in (dup.get("sources") or [_src_of(dup)]):     # carry the dup's whole citation list (chained merges)
+        if not any(s.get("url") == ds.get("url") and s.get("name") == ds.get("name") for s in srcs):
+            srcs.append(ds)
+    extra = _strip_promo(dup.get("sum") or "")
+    if extra and extra[:40].lower() not in (primary.get("sum") or "").lower():
+        primary["sum"] = _clip(((primary.get("sum") or "") + " " + extra).strip(), 900)
+    if not primary.get("image") and dup.get("image"):
+        primary["image"] = dup["image"]
+    # the dot stays FRESH: its timestamp tracks the most recent update, even though the primary keeps the
+    # first reporter's headline. (Individual report times live in each entry of `sources`.)
+    if dup.get("hrs") is not None:
+        primary["hrs"] = min(primary.get("hrs", dup["hrs"]), dup["hrs"])
+    # a SPECIFIC place (Kyiv) beats a country-level one (Ukraine) even if the country dot reported first
+    if (dup.get("place") and dup["place"] != dup.get("country") and dup["place"] != _co_short(dup.get("country") or "")
+            and (not primary.get("place") or primary["place"] == primary.get("country")
+                 or primary["place"] == _co_short(primary.get("country") or ""))):
+        primary["lat"], primary["lng"], primary["place"] = dup.get("lat"), dup.get("lng"), dup["place"]
+
+
+def _merge_same_event(events, window_h=26):
+    """Fold multiple sources covering the SAME event into ONE dot: the FIRST to report it stays as the
+    primary and every other source is cited on it (never dropped). Same-event = same country, within the
+    window, and one of: a shared casualty toll AT the same spot (the three '9 dead in Kyiv' reports),
+    near-identical wording (a re-headlined wire copy), or the same specific place + a shared topic. The
+    survivor keeps the most specific place and a picture; `sources` lists everyone who reported it."""
+    if not _WEAK_MATCH:
+        _init_weak_match()
+    # hrs = HOURS AGO, so the FIRST source to report has the LARGEST hrs: process oldest-first so the
+    # first reporter becomes the primary and later sources fold into it.
+    events = sorted(events, key=lambda e: -e.get("hrs", 0))
+    kept, metas = [], []
+    for e in events:
+        toll = _death_toll((e.get("title") or "") + ". " + (e.get("sum") or ""))
+        key = _sigwords(e.get("title") or "") - _GENERIC_WORDS - _WEAK_MATCH
+        toks = _norm_tokens(e.get("title") or "")
+        pl, co = e.get("place") or "", e.get("country") or ""
+        la, ln = e.get("lat"), e.get("lng")
+        hit = None
+        for i, (mco, mtoll, mkey, mtoks, mpl, mla, mln) in enumerate(metas):
+            if mco != co or abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
+                continue
+            near = (la is not None and mla is not None
+                    and (la - mla) ** 2 + (ln - mln) ** 2 < 0.6)     # ~<0.77 deg, so Kyiv≈Ukraine-centroid merges
+            inter = len(key & mkey)
+            same = ((toll and mtoll and toll == mtoll and near)      # same casualty figure, same spot
+                    or _same_story(toks, mtoks)                      # a re-headlined copy of the same wire
+                    or (pl and pl == mpl and inter >= 2))            # same specific place + shared topic
+            if same:
+                hit = i
+                break
+        if hit is not None:
+            _absorb_source(kept[hit], e)
+            continue
+        e["sources"] = [_src_of(e)]
+        kept.append(e)
+        metas.append((co, toll, key, toks, pl, la, ln))
+    return kept
+
+
 def _collapse_colocated(events, window_h=6):
     """The map answers "what is happening WHERE". Several dots on the SAME specific place within a few
     hours are one unfolding situation — the Odesa barrage arrived as three terse posts the classifier
@@ -3290,9 +3387,11 @@ def _collapse_colocated(events, window_h=6):
                 if _SEVERITY.get(e["cat"], 9) < _SEVERITY.get(k["cat"], 9):
                     if not e.get("image") and k.get("image"):
                         e["image"] = k["image"]           # the survivor should still show a picture
+                    e.setdefault("sources", [_src_of(e)])
+                    _absorb_source(e, k)                  # e becomes the survivor -> inherit k's citations
                     kept[hit] = e
-                elif not k.get("image") and e.get("image"):
-                    k["image"] = e["image"]
+                else:
+                    _absorb_source(k, e)                  # k survives -> cite e on it
                 continue
         kept.append(e)
         if specific:

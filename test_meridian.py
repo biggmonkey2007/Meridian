@@ -1283,7 +1283,43 @@ def main():
     print(f"  {'ok ' if _ag_ok else 'FAIL'} weak(None)={app._geo_is_weak(None)} weak(city)={app._geo_is_weak(_entebbe)} "
           f"weak(country)={app._geo_is_weak(_country_dot)}; solid scene unchanged")
 
-    total = (2 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+    # SAME-EVENT MERGE — three outlets covering one event become ONE dot that cites them all (first
+    # reporter as the primary), while a genuinely different same-country event stays separate.
+    print("\n=== SAME-EVENT MERGE (dedupe coverage into one cited dot) ===")
+    _K = (50.45, 30.52)
+    _kyiv = [
+        {"title": "Kyiv: 9 dead and 22 hurt in missile attack", "place": "Kyiv, Ukraine",
+         "country": "Ukraine", "lat": _K[0], "lng": _K[1], "hrs": 12.6, "source": "France 24",
+         "cat": "security", "image": "x.jpg", "sum": "Nine killed in Kyiv.", "url": "u1"},
+        {"title": "Russian missile attacks on Ukraine last night left nine civilians dead, and 30+ injured",
+         "place": "Ukraine", "country": "Ukraine", "lat": _K[0], "lng": _K[1], "hrs": 9.6,
+         "source": "Rerum Novarum", "cat": "security", "image": "", "sum": "Nine civilians dead.", "url": "u2"},
+        {"title": "Overnight Russian barrage kills nine in Kyiv, as air defense struggles", "place": "Kyiv, Ukraine",
+         "country": "Ukraine", "lat": _K[0], "lng": _K[1], "hrs": 3.4, "source": "NPR", "cat": "security",
+         "image": "y.jpg", "sum": "Missiles hit five districts.", "url": "u3"},
+        {"title": "Drone strike on Odesa port damages grain terminal", "place": "Odesa, Ukraine",
+         "country": "Ukraine", "lat": 46.48, "lng": 30.72, "hrs": 6.0, "source": "Reuters",
+         "cat": "security", "image": "", "sum": "A drone hit the port.", "url": "u4"},
+    ]
+    _m = app._merge_same_event([dict(e) for e in _kyiv])
+    _byplace = {e["place"]: e for e in _m}
+    _kdot = next((e for e in _m if e["place"] == "Kyiv, Ukraine"), None)
+    _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
+              and _kdot is not None and len(_kdot.get("sources", [])) == 3
+              and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
+              and _kdot["title"].startswith("Kyiv: 9 dead")             # ...and its headline leads
+              and _kdot["hrs"] == 3.4                                    # dot stays fresh (latest update)
+              and app._death_toll("barrage kills nine in Kyiv") == 9
+              and app._death_toll("markets rose 3 percent today") is None)
+    ran[0] += 1
+    if not _me_ok:
+        fails.append(("merge", "kyiv-3-sources", "1 dot, 3 sources, France 24 first",
+                      f"dots={len(_m)} kdot_sources={len(_kdot.get('sources', [])) if _kdot else 0}",
+                      "three outlets covering '9 dead in Kyiv' must merge into one cited dot; Odesa stays separate"))
+    print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
+          f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
+
+    total = (3 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1
