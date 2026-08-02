@@ -2567,6 +2567,11 @@ function globeEventsGeo(){
   } else {
     feats = evs.map(e=>({ type:"Feature", geometry:{type:"Point",coordinates:[e.lng,e.lat]}, properties:prop(e) }));
   }
+  // Z-ORDER: dots you've already opened (read=1) sink to the BOTTOM of an overlapping cluster; the fresh,
+  // unopened ones stay on top so what you haven't seen is always the dot you see (and click) first. A
+  // MapLibre circle layer paints later features over earlier ones, and Array.sort is stable, so the
+  // within-group order (recency) is preserved.
+  feats.sort((a,b)=> b.properties.read - a.properties.read);
   return { type:"FeatureCollection", features:feats };
 }
 function catColorExpr(){ const x=["match",["get","cat"]]; CAT_ORDER.forEach(c=>{ x.push(c, CAT[c].hex); }); x.push("#888888"); return x; }
@@ -2816,7 +2821,7 @@ async function showMap(proj){          // proj: "globe" | "flat"
     mlMap.on("move moveend", scheduleGlobeWarm);
     mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
-      if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ selectEvent(ev); return; } } }
+      if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const pick=fs.find(f=>+((f.properties||{}).read)===0)||fs[0]; const ev=EVENTS.find(x=>x.id===pick.properties.id); if(ev){ selectEvent(ev); return; } } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
     });
     mlMap.on("mousemove",(e)=>{ if(!mlMap.getLayer("g-events")) return; const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); const over=(fs&&fs.length); mlMap.getCanvas().style.cursor=over?"pointer":"";
