@@ -1409,7 +1409,13 @@ function tuneVectorStyle(style){
       l.layout = Object.assign({}, l.layout, {"text-allow-overlap":true, "icon-allow-overlap":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":0.9});   // internal region borders (oblasts/states/provinces) — softened 10% so they read fainter under the country outlines
+      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":0.81});   // internal region borders (oblasts/states/provinces) — softened again (~19% under full) so they read faint under the country outlines
+    }
+    // RIVERS read near-invisible when zoomed out (native 0.5px #d1dbdf on light land). Nudge them a touch
+    // wider at low zoom and a shade darker/bluer so the Danube/Volga/Nile etc. show at a regional view;
+    // the zoomed-IN widths (z15-16) are left native so close-up looks unchanged.
+    if(l.id==="waterway"){
+      l.paint = Object.assign({}, l.paint, {"line-color":"#b7cad3", "line-width":{"stops":[[5,0.6],[7,0.8],[9,1.1],[15,2],[16,3]]}});
     }
     // COUNTRY borders: the recoloured taupe line looked ugly up close — go back to Positron's OWN border 1:1
     // (native colour untouched) and just drop the opacity so it reads as a soft, clean line.
