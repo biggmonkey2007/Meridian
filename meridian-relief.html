@@ -2639,7 +2639,7 @@ async function addCartoVector(before){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-sphere","g-overview","g-base","g-shade","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-sphere","g-overview","g-base","g-shade","g-shade-globe","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
@@ -2665,19 +2665,22 @@ function setGlobeBasemap(k){
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
-        // maxzoom 13 keeps relief SHARP up close; the prewarmed coarse world (z0-4) stays resident so it
-        // refines in rather than blank-chunking. Opacity fades 0.6 (regional, mountains read) -> 0.1 by z13 so
-        // a flat town isn't fogged. 120ms cross-fade smooths zoom-level swaps.
-        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
         // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        // Fade the hillshade OUT at globe/world zoom: at z<~3.5 a single low-zoom Esri tile stretches over
-        // a whole continent, so a tile seam over the mountainous Middle East/Himalayas showed as a blurry
-        // rectangular patch on the globe. Terrain detail isn't legible at that scale anyway — ramp it in
-        // as you zoom to the flat map (full over mountains at z6-10, then eased off at street level).
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.0, 6,0.5, 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
+        // GLOBE/WORLD relief — a UNIFORM low-res hillshade (source maxzoom 2) so every tile on the globe is
+        // the SAME zoom. The sharp layer below mixed z2/z3 tiles at globe view, and the higher-detail tile
+        // over the mountainous Middle East/Himalayas read as a blurry rectangular SEAM. Capped at z2 there is
+        // nothing to mismatch — even relief across the whole globe, no seam, and it's not flat/washed-out.
+        // Fades out by z6.5 as the sharp layer takes over, so it never blurs a zoomed-in view.
+        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:2});
+        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:7,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 5,0.42, 6.5,0.0],"raster-fade-duration":120}}, belowWater);
+        // SHARP relief up close — full maxzoom 13, OFF at world zoom (0 below z4.5 so it can't seam on the
+        // globe), ramping to full over mountains (0.6 @z10) then eased at street level (0.1 @z13). The
+        // prewarmed coarse world (z0-4) stays resident so detail refines in rather than blank-chunking.
+        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.5, 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
