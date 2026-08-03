@@ -2630,17 +2630,45 @@ function removeCartoVector(){
   _gCartoIds = [];
   try{ if(mlMap.getSource("carto")) mlMap.removeSource("carto"); }catch(e){}
 }
-async function addCartoVector(before){
+async function addCartoVector(before, opts){
+  opts = opts || {};
   const style = await englishCartoStyle();
   const src = (style.sources||{}).carto;
   if(!src) return false;
   if(!mlMap.getSource("carto")) mlMap.addSource("carto", src);
   (style.layers||[]).forEach(l=>{
     if(l.type==="background") return;              // skip the style's full-canvas background — our dark space
+    // skipFills: topo/satellite keep only the vector LINES (borders, rivers) + LABELS so the imagery base
+    // shows through — the pale land/water fills would hide the topo relief / satellite photo underneath.
+    if(opts.skipFills && (l.type==="fill" || l.type==="fill-extrusion")) return;
     if(mlMap.getLayer(l.id)) return;               // bg + the g-sphere fill (land tone) handle the surface
     try{ mlMap.addLayer(l, before); _gCartoIds.push(l.id); }catch(e){}
   });
   return _gCartoIds.length > 0;
+}
+// The vector overlay's labels/rivers/region-borders must READ on a dark satellite photo: light text with a
+// dark halo, region borders light, the redundant vector country line hidden (the white g-borders draws it).
+function tuneCartoForSatellite(){
+  _gCartoIds.forEach(id=>{
+    const l = mlMap.getLayer(id); if(!l) return;
+    try{
+      if(l.type==="symbol"){
+        mlMap.setPaintProperty(id,"text-color","#eef3f6");
+        mlMap.setPaintProperty(id,"text-halo-color","rgba(6,12,18,0.9)");
+        mlMap.setPaintProperty(id,"text-halo-width",1.4);
+      } else if(l.type==="line"){
+        if(id.indexOf("boundary_country")===0)      mlMap.setPaintProperty(id,"line-opacity",0);
+        else if(id.indexOf("boundary")===0){ mlMap.setPaintProperty(id,"line-color","#e3e9ed"); mlMap.setPaintProperty(id,"line-opacity",0.5); }
+        else if(id==="waterway")                    mlMap.setPaintProperty(id,"line-color","#8fbcd6");
+      }
+    }catch(e){}
+  });
+}
+// "Place labels" toggle: hide/show the vector overlay's own name layers (all modes go through here now, so
+// the toggle finally works on the clean map too, not just the old raster-label bases).
+function applyCartoLabelToggle(){
+  const vis = layers.labels ? "visible" : "none";
+  _gCartoIds.forEach(id=>{ const l = mlMap.getLayer(id); if(l && l.type==="symbol"){ try{ mlMap.setLayoutProperty(id,"visibility",vis); }catch(e){} } });
 }
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
@@ -2694,25 +2722,35 @@ function setGlobeBasemap(k){
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
+      applyCartoLabelToggle();
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
-    // RASTER bases (satellite/topo/osmintl): always-resident overview (instant zoom-out) + detailed base on
-    // top, gaps caught by the sphere fill and smoothed by the prefetch ring.
+    // RASTER IMAGERY base (topographic relief / satellite / osm): always-resident overview (instant zoom-out)
+    // + detailed base on top, gaps caught by the sphere fill and smoothed by the prefetch ring.
     mlMap.addSource("g-overview",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:Math.min(6,b.max)});
     mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
     mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
-    if(layers.shade && k!=="satellite"){
+    if(layers.shade && k==="topo"){   // extra relief over the physical map (satellite already IS the terrain)
       mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
       mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.0, 6,0.3, 13,0.3]}}, before);
     }
-    if(layers.labels && k!=="osmintl"){
-      mlMap.addSource("g-labels",{type:"raster",tiles:(k==="satellite"?[ESRI_REF]:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"]),tileSize:256,maxzoom:(k==="satellite"?18:19)});
-      mlMap.addLayer({id:"g-labels",type:"raster",source:"g-labels",paint:{"raster-fade-duration":0}}, before);
+    if(k==="osmintl"){
+      // OSM tiles carry their own baked labels/borders — nothing to overlay.
+    } else {
+      // TOPOGRAPHIC & SATELLITE now COPY the Clean-relief map: the SAME English one-name labels, tuned region
+      // borders, softened rivers and forced capitals — just over the imagery instead of pale land. skipFills
+      // drops the vector land/water fills so the topo relief / satellite photo shows through underneath.
+      addCartoVector(before, {skipFills:true}).then(()=>{
+        if(k==="satellite") tuneCartoForSatellite();
+        applyCartoLabelToggle();
+      }).catch(()=>{});
     }
   }
-  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.16); const showB=!(k==="satellite"&&layers.labels); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
+  // g-borders (the app's own country outline) shows on every mode now — the vector overlay carries no baked
+  // boundaries the way the old ESRI raster labels did. White over satellite, dark elsewhere; osm bakes its own.
+  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.16); const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
 }
 function segToLines(seg, out){
   // seg is array of [lat,lng]; break further where a point sits on the artificial near-pole closing edge (|lat|>=83)
