@@ -1660,7 +1660,7 @@ class Api:
             title = _clean_headline(a.get("title") or "")
             if not url or len(title) < 12 or url in seen_urls:
                 continue
-            if _is_fluff(title, url):
+            if _is_fluff(title, url) or _is_muted(a.get("domain"), a.get("_src"), url):
                 continue
             norm = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()[:55]
             if norm in seen_titles:
@@ -1806,7 +1806,7 @@ class Api:
                 title = _clean_headline(a.get("title") or "")
                 if not url or len(title) < 12 or url in seen_urls:
                     continue
-                if _is_fluff(title, url):
+                if _is_fluff(title, url) or _is_muted(a.get("domain"), a.get("_src"), url):
                     continue
                 norm = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()[:55]
                 if norm in seen_titles:
@@ -3302,6 +3302,45 @@ def _domain_name(domain):
         return _OUTLET_NAMES[d]
     core = d.split(".")[0] if d else ""
     return (core[:1].upper() + core[1:]) if core else (domain or "Source")
+
+
+# Outlets the user has HIDDEN from the map — no dots, no citations. Matched as a lowercase substring of an
+# article's domain or source name, so "theguardian.com" also hides www./amp. variants. Code default plus a
+# user-editable muted_sources.txt (one entry per line, # comments) in DATA_DIR — if that file exists it
+# REPLACES the default, so the user can add or clear mutes without a code change.
+_MUTED_FILE = os.path.join(DATA_DIR, "muted_sources.txt")
+_MUTED_DEFAULT = ("theguardian.com",)
+_MUTED_POOL = {"t": 0.0, "set": None}
+
+
+def _muted_sources():
+    now = time.time()
+    if _MUTED_POOL["set"] is not None and now - _MUTED_POOL["t"] < 30:
+        return _MUTED_POOL["set"]
+    out = None
+    try:
+        if os.path.exists(_MUTED_FILE):
+            out = set()
+            for line in open(_MUTED_FILE, encoding="utf-8").read().splitlines():
+                line = line.split("#", 1)[0].strip().lower()
+                if line:
+                    out.add(line)
+    except Exception:
+        out = None
+    if out is None:
+        out = {s.lower() for s in _MUTED_DEFAULT}
+    _MUTED_POOL["t"], _MUTED_POOL["set"] = now, out
+    return out
+
+
+def _is_muted(domain, source="", url=""):
+    """Is this article from a muted outlet? Checks domain, source name AND url so a Guardian story reaches
+    the map via none of the three paths (feeds, GDELT, a citation)."""
+    muted = _muted_sources()
+    if not muted:
+        return False
+    blob = ((domain or "") + " " + (source or "") + " " + (url or "")).lower()
+    return any(m in blob for m in muted)
 
 
 def _jitter(lat, lng, key):

@@ -1303,6 +1303,19 @@ def main():
     print(f"  {'ok ' if _ag_ok else 'FAIL'} weak(None)={app._geo_is_weak(None)} weak(city)={app._geo_is_weak(_entebbe)} "
           f"weak(country)={app._geo_is_weak(_country_dot)}; solid scene unchanged")
 
+    # SOURCE MUTE — a muted outlet is hidden from the map (no dots, no citations), matched on domain / name
+    # / url; other outlets are untouched. (The default mutes The Guardian per the user.)
+    print("\n=== SOURCE MUTE (a hidden outlet never reaches the map) ===")
+    _mute_ok = (app._is_muted("theguardian.com", "The Guardian", "https://www.theguardian.com/world/x")
+                and app._is_muted("", "", "https://amp.theguardian.com/x")
+                and not app._is_muted("bbc.co.uk", "BBC", "https://bbc.co.uk/x")
+                and not app._is_muted("news.antiwar.com", "Antiwar.com", ""))
+    ran[0] += 1
+    if not _mute_ok:
+        fails.append(("mute", "guardian", "guardian hidden, others kept", str(_mute_ok),
+                      "a muted source must be filtered on domain/name/url, and only that source"))
+    print(f"  {'ok ' if _mute_ok else 'FAIL'} guardian muted; bbc/antiwar kept; mutes={sorted(app._muted_sources())}")
+
     # SAME-EVENT MERGE — three outlets covering one event become ONE dot that cites them all (first
     # reporter as the primary), while a genuinely different same-country event stays separate.
     print("\n=== SAME-EVENT MERGE (dedupe coverage into one cited dot) ===")
@@ -1339,7 +1352,7 @@ def main():
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
-    total = (3 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1

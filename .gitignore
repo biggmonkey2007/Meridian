@@ -15,6 +15,7 @@ gemini*.txt
 
 # ---- local runtime data / per-user config (belongs in %LOCALAPPDATA%\Meridian, not the repo) ----
 channels.txt
+muted_sources.txt
 feed_base.txt
 cache/
 update/
