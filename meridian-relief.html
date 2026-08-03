@@ -2664,6 +2664,24 @@ function tuneCartoForSatellite(){
     }catch(e){}
   });
 }
+// The TOPOGRAPHIC base is light but BUSY (tan/green relief + hillshade), so the clean map's soft grey labels
+// — tuned for a plain pale background — blend into the terrain. Darken the faint tiers and give EVERY label a
+// strong white halo so each name sits in its own cushion and lifts off the relief.
+function tuneCartoForTopo(){
+  _gCartoIds.forEach(id=>{
+    const l = mlMap.getLayer(id); if(!l || l.type!=="symbol") return;
+    try{
+      if(mlMap.getLayoutProperty(id,"text-field")===undefined) return;   // icon-only layer — nothing to recolor
+      mlMap.setPaintProperty(id,"text-halo-color","rgba(255,255,255,0.9)");
+      mlMap.setPaintProperty(id,"text-halo-width",1.9);
+      mlMap.setPaintProperty(id,"text-halo-blur",0.2);
+      if(id==="place_state")            mlMap.setPaintProperty(id,"text-color","#515b67");   // regions were the faintest (#77848f)
+      else if(/place_country/.test(id)) mlMap.setPaintProperty(id,"text-color","#3c4550");
+      else if(/watername/.test(id))     mlMap.setPaintProperty(id,"text-color","#5a7189");
+      else                              mlMap.setPaintProperty(id,"text-color","#39424d");   // cities/towns -> strong dark slate
+    }catch(e){}
+  });
+}
 // "Place labels" toggle: hide/show the vector overlay's own name layers (all modes go through here now, so
 // the toggle finally works on the clean map too, not just the old raster-label bases).
 function applyCartoLabelToggle(){
@@ -2744,6 +2762,7 @@ function setGlobeBasemap(k){
       // drops the vector land/water fills so the topo relief / satellite photo shows through underneath.
       addCartoVector(before, {skipFills:true}).then(()=>{
         if(k==="satellite") tuneCartoForSatellite();
+        else if(k==="topo") tuneCartoForTopo();
         applyCartoLabelToggle();
       }).catch(()=>{});
     }
