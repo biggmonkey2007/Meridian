@@ -2659,8 +2659,11 @@ function setGlobeBasemap(k){
       const belowLabels = firstSym || (mlMap.getLayer("g-borders") ? "g-borders" : undefined);
       // At WORLD SCALE (z<3) MapLibre's globe mis-renders some vector FILLS (a dark wedge), so cover them with
       // the always-resident clean RASTER (instant zoom-out, artifact-free); vector fills take over from z3 up.
+      // Use the @2x (512px) tiles: at globe zoom a 256px tile is stretched over a whole continent and reads
+      // BLURRY — the persistent "why is the globe soft" complaint. The retina tile doubles the resolution so
+      // the base is crisp; the vector borders/labels and hillshade sit sharp on top.
       if(!mlMap.getSource("g-overview")){
-        mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"],tileSize:256,maxzoom:6});
+        mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
