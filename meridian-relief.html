@@ -2673,7 +2673,11 @@ function setGlobeBasemap(k){
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
+        // Fade the hillshade OUT at globe/world zoom: at z<~3.5 a single low-zoom Esri tile stretches over
+        // a whole continent, so a tile seam over the mountainous Middle East/Himalayas showed as a blurry
+        // rectangular patch on the globe. Terrain detail isn't legible at that scale anyway — ramp it in
+        // as you zoom to the flat map (full over mountains at z6-10, then eased off at street level).
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.0, 6,0.5, 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
@@ -2688,7 +2692,7 @@ function setGlobeBasemap(k){
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
     if(layers.shade && k!=="satellite"){
       mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-      mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":0.3}}, before);
+      mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.0, 6,0.3, 13,0.3]}}, before);
     }
     if(layers.labels && k!=="osmintl"){
       mlMap.addSource("g-labels",{type:"raster",tiles:(k==="satellite"?[ESRI_REF]:["https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png"]),tileSize:256,maxzoom:(k==="satellite"?18:19)});
