@@ -1695,25 +1695,30 @@ class Api:
             _sig = _sigwords(title)
             _key = _sig - _GENERIC_WORDS
             _toks = _norm_tokens(title)                                # richer set for the similarity meter
-            _dup = False
-            for _co2, _cat2, _pl2, _key2, _toks2, _hrs2 in added_sigs:
+            img = a.get("socialimage") or ""
+            _is_tg = bool(a.get("_tg"))
+            _dup_ei = None
+            for _co2, _cat2, _pl2, _key2, _toks2, _hrs2, _ei2 in added_sigs:
                 _inter = len(_key & _key2)
-                if _inter >= 4:                                        # near-identical wording
-                    _dup = True
+                # SIMILARITY METER: the same story from another source/channel — a copy may carry an extra
+                # prefix ("President Trump via Truth Social:"), be re-headlined, or land in a different
+                # category. Near-identical wording, or same-country/place with high overlap, = a duplicate.
+                if (_inter >= 4                                        # near-identical wording
+                        or (_co2 == country and _inter >= 3)          # same country, strongly alike
+                        or (_pl2 == place and _cat2 == cat and _inter >= 2)   # same place, same kind of event
+                        or ((_co2 == country or _pl2 == place) and abs(hrs - _hrs2) <= 12
+                            and _same_story(_toks, _toks2))):
+                    _dup_ei = _ei2
                     break
-                if _co2 == country and _inter >= 3:                    # same country, strongly alike
-                    _dup = True
-                    break
-                if _pl2 == place and _cat2 == cat and _inter >= 2:     # SAME PLACE, same kind of event
-                    _dup = True
-                    break
-                # SIMILARITY METER: the same story from another source/channel — one copy may carry an
-                # extra prefix ("President Trump via Truth Social:"), be re-headlined, or land in a
-                # different category. Near-total token overlap, same location, close in time = duplicate.
-                if (_co2 == country or _pl2 == place) and abs(hrs - _hrs2) <= 12 and _same_story(_toks, _toks2):
-                    _dup = True
-                    break
-            if _dup:
+            if _dup_ei is not None:
+                # A DUPLICATE — don't drop it, CREDIT its outlet on the dot it duplicates, so every source
+                # that ran the story (antiwar.com, a wire, a channel) is cited instead of the copies vanishing.
+                _cite_source(events[_dup_ei], {
+                    "source": (a.get("_src") or _domain_name(a.get("domain") or "")),
+                    "domain": ("t.me" if _is_tg else (a.get("domain") or "")), "url": url,
+                    "hrs": round(hrs, 1), "title": title, "image": img if _good_img(img) else "",
+                })
+                seen_urls.add(url)
                 continue
             # RULE 4: never drop a story. These caps DID drop real news — the per-country cap of 7
             # silently binned the 8th Russia story of the day, and a full-scale war produces far more
@@ -1723,8 +1728,6 @@ class Api:
             _cap = 5 if cat == "sports" else (70 if cat == "security" else 45)
             if per_cat.get(cat, 0) >= _cap or per_country.get(country, 0) >= 30:
                 continue
-            img = a.get("socialimage") or ""
-            _is_tg = bool(a.get("_tg"))
             events.append({
                 "title": title, "cat": cat, "sid": _share_id(url, title),
                 "lat": round(lat, 4), "lng": round(lng, 4),
@@ -1742,7 +1745,7 @@ class Api:
             })
             seen_urls.add(url)
             seen_titles.add(norm)
-            added_sigs.append((country, cat, place, _key, _toks, hrs))
+            added_sigs.append((country, cat, place, _key, _toks, hrs, len(events) - 1))
             per_cat[cat] = per_cat.get(cat, 0) + 1
             per_country[country] = per_country.get(country, 0) + 1
         # picture-bearing + most-recent first, then cap
@@ -2669,6 +2672,12 @@ _FLUFF_PAT = re.compile(
     r"(tests?|things?|ways?|reasons?|lessons?|takeaways?|stories|moments|charts|maps|questions|facts|myths)\b|"
     r"\bat\s+[1-9]\d{2}\s*:|"                       # "United States at 250:" (3-digit anniversary, NOT an age like "dies at 71:")
     r"^the (rise|fall|making|story|life|legacy|meaning|architect) (and|of)\b|"
+    # HUMAN-INTEREST FEATURE, not a located event: a personal journey/profile ("From Sudan to Spain:
+    # Between war and home", "One man's escape…", "Meet the…"). These are the 'read my story' pieces, not
+    # a dot of something that HAPPENED somewhere.
+    r"^from\s+[a-z'.\-]+\s+to\s+[a-z'.\-]+\s*:|"
+    r"\b(one (?:man|woman|family|refugee|migrant|boy|girl)'?s?\s+(?:story|journey|struggle|escape|ordeal|"
+    r"fight|life)|a day in the life|meet the |portrait of|my journey|how i (?:escaped|fled|survived|left|made))\b|"
     r"[:\-]\s*(how|why)\b|"                         # explainer shape: "Greed and loopholes: How ... works"
     r"\bwhy\b.*\bmatters?\b|"
     r"\b(goes viral|feel-good|heartwarming|everything you need)\b|"
@@ -3236,6 +3245,7 @@ _OUTLET_NAMES = {
     "scmp.com": "South China Morning Post", "france24.com": "France 24",
     "dw.com": "Deutsche Welle", "npr.org": "NPR", "politico.com": "Politico",
     "axios.com": "Axios", "cnbc.com": "CNBC", "moneycontrol.com": "Moneycontrol",
+    "antiwar.com": "Antiwar.com", "news.antiwar.com": "Antiwar.com",
     "thehindu.com": "The Hindu", "timesofindia.indiatimes.com": "The Times of India",
     "kyivindependent.com": "The Kyiv Independent", "pravda.com.ua": "Ukrainska Pravda",
     "tass.com": "TASS", "cbsnews.com": "CBS News", "nbcnews.com": "NBC News",
@@ -3328,6 +3338,21 @@ def _absorb_source(primary, dup):
         primary["lat"], primary["lng"], primary["place"] = dup.get("lat"), dup.get("lng"), dup["place"]
 
 
+def _cite_source(primary, dup):
+    """Lighter than _absorb_source: just CREDIT a duplicate's outlet on the dot it duplicates (and keep the
+    dot fresh + pictured), WITHOUT folding its text into the brief. Used by the inline dedup, whose looser
+    matches shouldn't muddle the summary — so a story covered by antiwar.com, a wire and a channel is
+    credited to all three instead of the later copies vanishing."""
+    srcs = primary.setdefault("sources", [_src_of(primary)])
+    ds = _src_of(dup)
+    if ds["url"] and not any(s.get("url") == ds["url"] for s in srcs):
+        srcs.append(ds)
+    if dup.get("hrs") is not None:
+        primary["hrs"] = min(primary.get("hrs", dup["hrs"]), dup["hrs"])
+    if not primary.get("image") and dup.get("image"):
+        primary["image"] = dup["image"]
+
+
 def _merge_same_event(events, window_h=18):
     """Fold multiple sources covering the SAME event into ONE dot: the FIRST to report it stays as the
     primary and every other source is cited on it (never dropped). Same-event demands STRONG evidence —
@@ -3362,7 +3387,7 @@ def _merge_same_event(events, window_h=18):
         if hit is not None:
             _absorb_source(kept[hit], e)
             continue
-        e["sources"] = [_src_of(e)]
+        e.setdefault("sources", [_src_of(e)])   # keep any citations the inline dedup already added
         kept.append(e)
         metas.append((co, toll, key, toks, pl, la, ln))
     return kept
@@ -3442,6 +3467,7 @@ def _seendate_hours(s):
 # These give REAL publisher URLs, so article_detail() resolves photos + paragraphs.
 # Each entry: (feed url, home country for headlines with no detectable place).
 WORLD_FEEDS = [
+    ("https://news.antiwar.com/feed/", "United States of America"),
     ("https://feeds.bbci.co.uk/news/world/rss.xml", "United Kingdom"),
     ("https://www.theguardian.com/world/rss", "United Kingdom"),
     ("https://www.aljazeera.com/xml/rss/all.xml", "Qatar"),
@@ -3802,7 +3828,10 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
 # Words GeoNames lists as MID-SIZE towns (so they slip past the "weak" guards) but which in a headline
 # are a generic noun. "University" is essentially NEVER the town University, Florida — even "at the
 # University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
-_NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen"}   # "Schengen" in the news is the accord, not the Luxembourg village
+_NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
+                     # "Arab" in the news is the demonym ("Arab citizens/world/League"), never Arab, Alabama;
+                     # "the village" is the generic phrase "the village of X", never The Village(s), US.
+                     "arab", "the village"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
@@ -4089,6 +4118,11 @@ _FAMOUS_PLACES = {
     # the major Saudi city is in GeoNames only under the 'Jizan' spelling. Jazan/Jizan is one place: the
     # Red-Sea port and Aramco refinery in SW Saudi Arabia.
     "jazan": (16.889, 42.551, "Saudi Arabia"), "jizan": (16.889, 42.551, "Saudi Arabia"),
+    # SHIPPED: a Turkish overflight of the Greek islet FARMAKONISI dotted "The Village, US"; the "Hays"
+    # front of the Yemen war dotted Hays, Kansas. Both are absent from the city gazetteer, so a US namesake
+    # (or the generic "The Village") won.
+    "farmakonisi": (37.287, 27.081, "Greece"),
+    "hays": (13.848, 43.483, "Yemen"), "al hays": (13.848, 43.483, "Yemen"),
 }
 # Ships burn at sea, not on land. "Burning Russian tankers in the SEA OF AZOV" was dotting the CITY of
 # Azov because the sea wasn't in the gazetteer at all. Water bodies are named in news constantly
@@ -5814,7 +5848,16 @@ def _locate(title, sourcecountry, desc, url=""):
     gazetteer for coordinates, and anchored to a country the story actually names (so the model can't
     invent one). Purely additive: with no LLM this is exactly _geolocate."""
     r = _geolocate(title, sourcecountry, desc, url)
-    if not _geo_is_weak(r) or not _llm_available():
+    if not _llm_available():
+        return r
+    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
+    # NAMESAKE MISMATCH: a SPECIFIC dot whose country the story never names, while it DOES name another
+    # country, is almost always a US-town namesake matched for a foreign story ("Arab, AL" for an Israeli
+    # story; "The Village, US" for a Greek island; "Hays, KS" for a Yemen clash). Let the AI arbitrate
+    # those too — not just weak/None results — but only when a competing country is actually named, so a
+    # plain domestic story (no foreign country in play) never triggers an extra call.
+    namesake = (bool(r) and not _geo_is_weak(r) and r[3] not in ment and any(c != r[3] for c in ment))
+    if not _geo_is_weak(r) and not namesake:
         return r
     place = _geolocate_ai(title, ((title or "") + ". " + (desc or "")).strip())
     if not place:
@@ -5824,7 +5867,6 @@ def _locate(title, sourcecountry, desc, url=""):
         return r
     # ANCHOR: the AI's country must be one the story actually mentions — never let it invent a country the
     # text never names. (When it agrees with the rules' own country, that's trivially anchored.)
-    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
     if g[3] != (r[3] if r else None) and g[3] not in ment:
         return r
     if not _geo_is_weak(g):

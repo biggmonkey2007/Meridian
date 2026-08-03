@@ -3849,9 +3849,10 @@ function bodyMinusHeadline(title, text){
 // them all in d.sources. List them under the story — first reporter marked — so nothing is hidden and the
 // reader can jump to any outlet. Shown only when there's more than one (a lone source needs no list).
 function sourcesHtml(d){
-  const ss = (Array.isArray(d.sources) ? d.sources.slice() : []).filter(s=>s && s.name);
-  if(ss.length < 2) return "";
+  let ss = (Array.isArray(d.sources) ? d.sources.slice() : []).filter(s=>s && s.name);
   ss.sort((a,b)=> (b.hrs||0)-(a.hrs||0));                  // first to report -> first in the list
+  const seen=new Set(); ss = ss.filter(s=>{ const k=String(s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });  // one row per outlet
+  if(ss.length < 2) return "";
   const rows = ss.map((s,i)=>{
     const when = (s.hrs!=null) ? timeAgo(Date.now()-s.hrs*3600000) : "";
     const meta = `<span class="src-nm">${esc(s.name)}</span>${when?`<span class="src-when">${esc(when)}</span>`:""}${i===0?`<span class="src-first">first</span>`:""}`;
