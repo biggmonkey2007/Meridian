@@ -2695,15 +2695,49 @@ _FLUFF_PAT = re.compile(
     r")")
 
 
+# A THEMATIC think-piece / analysis headline is "Country: <ideology theme>" with no number and no event
+# verb — "Germany: Islamism and right-wing extremism", "France: The rise of populism". The map is a board
+# of located EVENTS, not op-eds/explainers, so these get no dot. SYMMETRIC BY DESIGN: it keys on the
+# ANALYSIS shape (a topic label, not a thing that happened), so it drops an ideology essay whatever side it
+# argues — a "rise of the far right" piece and a "roots of woke capitalism" piece alike. It is NOT a
+# political-viewpoint filter (which would just bias the feed the other way); it removes the op-ed FORMAT.
+_THINK_HEAD = re.compile(r"^[A-Z][\w.&'-]*(?:\s+[\w.&'-]+){0,2}:\s+(.+)$")
+_THINK_THEME = re.compile(
+    r"(extremism|extremist|radicali[sz]|ideolog|islamism|islamist|nationalis|populis|fascis|jihadis|"
+    r"terroris|supremac|islamophob|xenophob|antisemit|anti-semit|far.?right|far.?left|neo.?nazi|"
+    r"the (rise|fall|threat|future|return|roots|making|legacy|meaning|danger|paradox|problem) of|"
+    r"culture war|disinformation|misinformation|propaganda|weaponi[sz])", re.I)
+_THINK_VERB = re.compile(
+    r"\b(?:kill|hurt|dead|die|injur|wound|arrest|attack|strike|struck|hit|sign|win|won|launch|seiz|storm|"
+    r"raid|ban|vote|elect|election|quit|resign|warn|say|said|claim|urge|accus|deploy|fire|shell|bomb|kidnap|"
+    r"releas|sentenc|charg|jail|protest|rally|rallies|clash|erupt|flee|fled|evacuat|rescu|destroy|damag|"
+    r"captur|surrender|defect|repel|advanc|withdraw|announc|approv|reject|nominat|appoint|meet|hold|reopen|"
+    r"shut|close|open|vow|slam|condemn|threaten|impose|order|surg|march)(?:s|es|ed|ing|d)?\b", re.I)
+
+
+def _is_thinkpiece(title):
+    """A 'Country: <ideology/theme>' analysis headline with no number and no event verb — an op-ed/explainer
+    shape, not a located event. See the _THINK_* notes: symmetric across the political spectrum by design."""
+    m = _THINK_HEAD.match(title or "")
+    if not m:
+        return False
+    rest = m.group(1)
+    if re.search(r"\d", rest) or _THINK_VERB.search(rest):
+        return False                              # a number or an action => a real event/report, keep it
+    return bool(_THINK_THEME.search(rest))
+
+
 def _is_fluff(title, url=""):
-    """True for features/op-eds/documentaries that aren't a real event worth a dot on the map.
-    Deliberately does NOT require an 'event verb' — that wrongly dropped real news ('missiles have
-    IMPACTED the port', 'president NOMINATES a PM'). Losing real news is worse than keeping a feature."""
+    """True for features/op-eds/documentaries/analysis that aren't a real event worth a dot on the map.
+    Deliberately does NOT require an 'event verb' in general — that wrongly dropped real news ('missiles
+    have IMPACTED the port', 'president NOMINATES a PM'). Losing real news is worse than keeping a feature.
+    The narrow _is_thinkpiece() exception only fires on a 'Country: ideology-theme' headline with NO event
+    verb and NO number, so it can't swallow a real event."""
     low = (url or "").lower()
     for p in _FLUFF_PATHS:
         if p in low:
             return True
-    return bool(_FLUFF_PAT.search(title or ""))
+    return bool(_FLUFF_PAT.search(title or "")) or _is_thinkpiece(title or "")
 
 
 def _classify(title, desc=""):
