@@ -1747,7 +1747,11 @@ class Api:
             per_country[country] = per_country.get(country, 0) + 1
         # picture-bearing + most-recent first, then cap
         events.sort(key=lambda e: (0 if e["image"] else 1, e["hrs"]))
-        events = _merge_same_event(events)     # one dot per EVENT — cite every source that covered it
+        try:
+            events = _merge_same_event(events)     # one dot per EVENT — cite every source that covered it
+        except Exception:
+            for _e in events:                      # a merge bug must NEVER blank the feed — degrade to un-merged
+                _e.setdefault("sources", [_src_of(_e)])
         events = _collapse_colocated(events)   # then one dot per place — merge a co-located barrage
         events = events[:260]
         try:
@@ -3324,12 +3328,14 @@ def _absorb_source(primary, dup):
         primary["lat"], primary["lng"], primary["place"] = dup.get("lat"), dup.get("lng"), dup["place"]
 
 
-def _merge_same_event(events, window_h=26):
+def _merge_same_event(events, window_h=18):
     """Fold multiple sources covering the SAME event into ONE dot: the FIRST to report it stays as the
-    primary and every other source is cited on it (never dropped). Same-event = same country, within the
-    window, and one of: a shared casualty toll AT the same spot (the three '9 dead in Kyiv' reports),
-    near-identical wording (a re-headlined wire copy), or the same specific place + a shared topic. The
-    survivor keeps the most specific place and a picture; `sources` lists everyone who reported it."""
+    primary and every other source is cited on it (never dropped). Same-event demands STRONG evidence —
+    same country, within the window, and EITHER near-identical wording (a re-headlined wire copy) OR the
+    same specific casualty figure at the same spot (the three '9 dead in Kyiv' reports). A mere shared
+    place + topic is NOT enough: on a high-volume topic like the Ukraine war, many DIFFERENT events happen
+    in Kyiv on one day and would wrongly chain together. The survivor keeps the most specific place and a
+    picture; `sources` lists everyone who reported it."""
     if not _WEAK_MATCH:
         _init_weak_match()
     # hrs = HOURS AGO, so the FIRST source to report has the LARGEST hrs: process oldest-first so the
@@ -3346,12 +3352,10 @@ def _merge_same_event(events, window_h=26):
         for i, (mco, mtoll, mkey, mtoks, mpl, mla, mln) in enumerate(metas):
             if mco != co or abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
                 continue
-            near = (la is not None and mla is not None
+            near = (None not in (la, ln, mla, mln)
                     and (la - mla) ** 2 + (ln - mln) ** 2 < 0.6)     # ~<0.77 deg, so Kyiv≈Ukraine-centroid merges
-            inter = len(key & mkey)
-            same = ((toll and mtoll and toll == mtoll and near)      # same casualty figure, same spot
-                    or _same_story(toks, mtoks)                      # a re-headlined copy of the same wire
-                    or (pl and pl == mpl and inter >= 2))            # same specific place + shared topic
+            same = (_same_story(toks, mtoks)                         # a re-headlined copy of the same wire
+                    or (toll and mtoll and toll == mtoll and near))  # the SAME casualty figure at the SAME spot
             if same:
                 hit = i
                 break
