@@ -1352,6 +1352,98 @@ def main():
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
+    # CASUALTY FINGERPRINT — two reports that match on BOTH killed AND injured are the same incident even
+    # when they sit far apart with different wording (one on 'Black Sea', one on the named town). No geo
+    # constraint, so a merge the plain same-place rule can never make. Also guards the injured extractor.
+    print("\n=== CASUALTY FINGERPRINT MERGE (killed + injured, far apart) ===")
+    _inj_ok = (app._injured_toll("The center said 40 people were injured") == 40
+               and app._injured_toll("Seven killed and 40 injured") == 40
+               and app._injured_toll("wounded nine soldiers") == 9
+               and app._injured_toll("Twenty-one people hospitalized") is None   # compound: safe, never a wrong 1
+               and app._injured_toll("no casualties") is None)
+    _bs = [
+        {"title": "Russia says civilians killed in strike on Black Sea resort", "cat": "security",
+         "sum": "At least seven people were killed and 40 injured by a Ukrainian strike.",
+         "place": "Black Sea", "country": "Russia", "lat": 43.4, "lng": 34.3, "hrs": 1.8,
+         "source": "Deutsche Welle", "url": "bs1", "image": ""},
+        {"title": "Seven people killed in drone attack on Gelendzhik", "cat": "security",
+         "sum": "Seven people were killed and 40 injured in the attack.",
+         "place": "Gelendzhik, Russia", "country": "Russia", "lat": 44.58, "lng": 38.07, "hrs": 0.6,
+         "source": "TASS", "url": "bs2", "image": "img"},
+    ]
+    _mbs = app._merge_same_event([dict(e) for e in _bs])
+    _fp_ok = _inj_ok and len(_mbs) == 1 and len(_mbs[0].get("sources", [])) == 2
+    ran[0] += 1
+    if not _fp_ok:
+        fails.append(("merge", "casualty-fingerprint", "1 dot citing 2 sources",
+                      f"inj_ok={_inj_ok} dots={len(_mbs)}",
+                      "7 killed + 40 injured in two reports 4 deg apart must merge on the two-number fingerprint"))
+    print(f"  {'ok ' if _fp_ok else 'FAIL'} {len(_bs)} reports -> {len(_mbs)} dot; injured extractor sane")
+
+    # SEMANTIC DEDUP (the AI net) — folds a same-event pair the code can't prove: no shared distinctive
+    # words, no toll on the vague copy. Purely additive (no LLM -> untouched) and conservative (different
+    # topics stay apart). The verdict is stubbed so the test is offline + deterministic.
+    print("\n=== SEMANTIC DEDUP (AI net, stubbed verdict) ===")
+    _sd = [
+        {"title": "Russia says civilians killed in strike on Black Sea resort", "cat": "security",
+         "sum": "Moscow accused Kyiv of stepping up attacks.", "place": "Black Sea", "country": "Russia",
+         "lat": 43.4, "lng": 34.3, "hrs": 1.8, "source": "DW", "url": "s1", "image": "",
+         "sources": [{"name": "DW", "url": "s1", "hrs": 1.8}]},
+        {"title": "IN BRIEF: Seven killed in drone attack on Gelendzhik", "cat": "security",
+         "sum": "40 injured.", "place": "Gelendzhik, Russia", "country": "Russia",
+         "lat": 44.58, "lng": 38.07, "hrs": 0.6, "source": "TASS", "url": "s2", "image": "img",
+         "sources": [{"name": "TASS", "url": "s2", "hrs": 0.6}]},
+        {"title": "Alibaba unveils its most powerful AI model", "cat": "tech", "sum": "Shares jumped.",
+         "place": "China", "country": "China", "lat": 35.0, "lng": 105.0, "hrs": 3.4, "source": "CNBC",
+         "url": "s3", "image": "", "sources": [{"name": "CNBC", "url": "s3", "hrs": 3.4}]},
+    ]
+    _orig_same, _orig_avail = app._ai_same_event, app._llm_available
+    try:
+        app._llm_available = lambda: True
+        app._ai_same_event = lambda a, b: ("black sea" in (a["title"] + b["title"]).lower()
+                                           and "gelendzhik" in (a["title"] + b["title"]).lower())
+        _out = app._ai_dedup([dict(e) for e in _sd])
+        _surv = next((e for e in _out if e["country"] == "Russia"), None)
+        _sem_ok = (len(_out) == 2 and _surv is not None and _surv.get("image") == "img"     # keep the pictured dot
+                   and _surv.get("place") == "Gelendzhik, Russia"                            # ...at the named town
+                   and len(_surv.get("sources", [])) == 2                                    # DW cited on it
+                   and any("Alibaba" in e["title"] for e in _out))                           # different topic kept
+        app._llm_available = lambda: False
+        _noop = len(app._ai_dedup([dict(e) for e in _sd])) == 3                              # no LLM -> untouched
+    finally:
+        app._ai_same_event, app._llm_available = _orig_same, _orig_avail
+    _sem_ok = _sem_ok and _noop
+    ran[0] += 1
+    if not _sem_ok:
+        fails.append(("dedup", "ai-semantic-net", "Black Sea folds into Gelendzhik; Alibaba stays; offline no-op",
+                      f"dots={len(_out)} noop3={_noop}",
+                      "the LLM net must fold a proven same-event pair, keep different topics apart, "
+                      "and do nothing without an LLM"))
+    print(f"  {'ok ' if _sem_ok else 'FAIL'} {len(_sd)} -> {len(_out)} dots; offline no-op={_noop}")
+
+    # WATER PLACE never collapses — a sea/ocean is a huge AREA, so two unrelated stories that both fell back
+    # to 'Black Sea' (a resort strike + a refinery note naming 'Black Sea Petroleum') must stay two dots.
+    print("\n=== WATER PLACE NOT COLLAPSED (a sea is an area, not a spot) ===")
+    _wp_ok = (app._is_water_place("Black Sea") and app._is_water_place("Sea of Azov")
+              and app._is_water_place("Persian Gulf") and app._is_water_place("Kerch Strait")
+              and not app._is_water_place("Swansea") and not app._is_water_place("Gelendzhik, Russia"))
+    _bw = [
+        {"title": "Russia says civilians killed in strike on Black Sea resort", "cat": "security",
+         "place": "Black Sea", "country": "Russia", "lat": 43.4, "lng": 34.3, "hrs": 1.8,
+         "source": "DW", "url": "w1", "image": ""},
+        {"title": "Georgia's Kulevi refinery diversifies from Russian crude, Black Sea Petroleum says",
+         "cat": "economy", "place": "Black Sea", "country": "Russia", "lat": 43.4, "lng": 34.3, "hrs": 2.0,
+         "source": "Reuters", "url": "w2", "image": ""},
+    ]
+    _wc = app._collapse_colocated([dict(e) for e in _bw])
+    _wp_ok = _wp_ok and len(_wc) == 2
+    ran[0] += 1
+    if not _wp_ok:
+        fails.append(("collapse", "water-not-collapsed", "2 dots (a sea is not one spot)",
+                      f"dots={len(_wc)}",
+                      "a resort strike and a refinery note both pinned to 'Black Sea' must NOT merge"))
+    print(f"  {'ok ' if _wp_ok else 'FAIL'} resort + refinery on Black Sea -> {len(_wc)} dots")
+
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -1361,7 +1453,8 @@ def main():
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
              + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
-             + 1)   # + flag-coverage one-off
+             + 1   # + flag-coverage one-off
+             + 3)   # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

@@ -224,11 +224,14 @@ def _llm_available():
     return bool(_summary_cfg()[0]) or bool(_local_llm())
 
 
-def _llm_complete(system, user, max_tokens=300, temperature=0.3):
+def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None):
     """ONE chat completion over the SAME free path summaries use — Groq (a 'gsk_' key), else OpenAI, else a
     local Ollama. Returns the assistant text (stripped) or "" on any error. Never raises. Shared so the
-    summary writer and the geolocation fallback go through one place (one UA quirk, one timeout policy)."""
-    key, url, model = _summary_cfg()
+    summary writer and the geolocation fallback go through one place (one UA quirk, one timeout policy).
+    `model` overrides the configured model for the HOSTED path only (a caller that wants a stronger free
+    Groq model for a harder judgment); the local Ollama keeps its own installed model."""
+    key, url, cfg_model = _summary_cfg()
+    model = model or cfg_model
     timeout = 25
     if not key:                              # no paid key -> the free, unlimited local model (Ollama)
         loc = _local_llm()
@@ -1756,6 +1759,10 @@ class Api:
             for _e in events:                      # a merge bug must NEVER blank the feed — degrade to un-merged
                 _e.setdefault("sources", [_src_of(_e)])
         events = _collapse_colocated(events)   # then one dot per place — merge a co-located barrage
+        try:
+            events = _ai_dedup(events)         # last net: fold same-event dots the code can't prove (free LLM)
+        except Exception:
+            pass
         events = events[:260]
         try:
             _assign_clips(events, _tg_all_posts())   # each clip belongs to ONE dot, feed-wide
@@ -3361,10 +3368,12 @@ _NUMWORD = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "sev
             "thirty": 30, "forty": 40, "fifty": 50}
 _TOLL_N = (r"(\d{1,4}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|thirteen|"
            r"fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)")
-_TOLL_P1 = re.compile(_TOLL_N + r"(?:\s+\w+){0,3}?\s+(?:killed|dead|deaths?|died|fatalities|perished|"
-                      r"lives\s+lost)\b", re.I)
+# (?<![\w-]) so a compound like 'twenty-one' can't match the bare 'one' inside it and report 1. The gap
+# between the number and 'killed' must NOT cross an injured-word, so 'N injured and M killed' reads M, not N.
+_TOLL_P1 = re.compile(r"(?<![\w-])" + _TOLL_N + r"(?:\s+(?!injur|wound|hurt|maim|hospital)\w+){0,3}?\s+"
+                      r"(?:killed|dead|deaths?|died|fatalities|perished|lives\s+lost)\b", re.I)
 _TOLL_P2 = re.compile(r"\b(?:kill(?:s|ed|ing)?|claim(?:s|ed)?|leav(?:es|ing)|left|dead[:,]?)\s+"
-                      r"(?:at least\s+|nearly\s+|some\s+|up to\s+)?" + _TOLL_N + r"\b", re.I)
+                      r"(?:at least\s+|nearly\s+|some\s+|up to\s+)?(?<![\w-])" + _TOLL_N + r"\b", re.I)
 
 
 def _death_toll(text):
@@ -3378,6 +3387,29 @@ def _death_toll(text):
             v = m.group(1).lower()
             n = int(v) if v.isdigit() else _NUMWORD.get(v)
             if n and n <= 5000:
+                return n
+    return None
+
+
+# symmetric to _TOLL_P1: the gap must NOT cross a killed-word, so 'Seven killed and 40 injured' reads 40.
+_INJ_P1 = re.compile(r"(?<![\w-])" + _TOLL_N + r"(?:\s+(?!kill|dead|died|death|fatal|perish)\w+){0,3}?\s+"
+                     r"(?:injured|wounded|hurt|maimed|hospitali[sz]ed)\b", re.I)
+_INJ_P2 = re.compile(r"\b(?:injur(?:e|es|ed|ing)|wound(?:s|ed|ing)?|hurt|hospitali[sz]e[sd]?)\s+"
+                     r"(?:at least\s+|nearly\s+|some\s+|up to\s+|more than\s+)?(?<![\w-])" + _TOLL_N + r"\b", re.I)
+
+
+def _injured_toll(text):
+    """Companion to _death_toll: the injured/wounded figure a story gives ('40 injured', 'wounded nine',
+    'hospitalized 21'), or None. Two reports that match on BOTH killed AND injured are almost certainly the
+    same incident even when nothing else lines up — a two-number fingerprint the merge can trust anywhere,
+    with no geographic constraint (one dot may sit on 'Black Sea', the other on the named town)."""
+    text = text or ""
+    for p in (_INJ_P1, _INJ_P2):
+        m = p.search(text)
+        if m:
+            v = m.group(1).lower()
+            n = int(v) if v.isdigit() else _NUMWORD.get(v)
+            if n and n <= 20000:
                 return n
     return None
 
@@ -3441,19 +3473,23 @@ def _merge_same_event(events, window_h=18):
     events = sorted(events, key=lambda e: -e.get("hrs", 0))
     kept, metas = [], []
     for e in events:
-        toll = _death_toll((e.get("title") or "") + ". " + (e.get("sum") or ""))
+        blob = (e.get("title") or "") + ". " + (e.get("sum") or "")
+        toll = _death_toll(blob)
+        inj = _injured_toll(blob)
         key = _sigwords(e.get("title") or "") - _GENERIC_WORDS - _WEAK_MATCH
         toks = _norm_tokens(e.get("title") or "")
         pl, co = e.get("place") or "", e.get("country") or ""
         la, ln = e.get("lat"), e.get("lng")
         hit = None
-        for i, (mco, mtoll, mkey, mtoks, mpl, mla, mln) in enumerate(metas):
+        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln) in enumerate(metas):
             if mco != co or abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
                 continue
             near = (None not in (la, ln, mla, mln)
                     and (la - mla) ** 2 + (ln - mln) ** 2 < 0.6)     # ~<0.77 deg, so Kyiv≈Ukraine-centroid merges
             same = (_same_story(toks, mtoks)                         # a re-headlined copy of the same wire
-                    or (toll and mtoll and toll == mtoll and near))  # the SAME casualty figure at the SAME spot
+                    or (toll and mtoll and toll == mtoll and near)   # the SAME casualty figure at the SAME spot
+                    or (toll and mtoll and toll == mtoll             # ...or BOTH killed AND injured match: a
+                        and inj and minj and inj == minj))           # two-number fingerprint, valid anywhere
             if same:
                 hit = i
                 break
@@ -3462,8 +3498,24 @@ def _merge_same_event(events, window_h=18):
             continue
         e.setdefault("sources", [_src_of(e)])   # keep any citations the inline dedup already added
         kept.append(e)
-        metas.append((co, toll, key, toks, pl, la, ln))
+        metas.append((co, toll, inj, key, toks, pl, la, ln))
     return kept
+
+
+_WATER_SUFFIX = re.compile(r"\b(sea|ocean|gulf|bay|strait|straits|channel|lagoon|sound|fjord|firth)\b", re.I)
+
+
+def _is_water_place(place):
+    """Is this dot's place a broad body of water (a sea/ocean/gulf/strait) rather than a point? Such a name
+    is a big AREA, so several unrelated stories can land on it and must not be treated as 'the same spot'.
+    Checks the gazetteer's own water set first, then a suffix fallback ('… Sea', '… Gulf') for any water
+    name the set missed. Word-bounded, so a city like 'Swansea' is never mistaken for the open sea."""
+    if not place:
+        return False
+    p = place.split(",")[0].strip().lower()
+    if _WATER_NAMES and p in _WATER_NAMES:
+        return True
+    return bool(_WATER_SUFFIX.search(p))
 
 
 def _collapse_colocated(events, window_h=6):
@@ -3477,7 +3529,9 @@ def _collapse_colocated(events, window_h=6):
     kept, buckets = [], {}
     for e in events:
         pl, co = e.get("place") or "", e.get("country") or ""
-        specific = bool(pl) and pl != co and pl != _co_short(co)
+        # A SEA/OCEAN is a huge area, not one spot: two unrelated stories that both fell back to 'Black Sea'
+        # (a resort strike and a refinery note about 'Black Sea Petroleum') must NOT collapse into one dot.
+        specific = bool(pl) and pl != co and pl != _co_short(co) and not _is_water_place(pl)
         if specific:
             hit = None
             for ki in buckets.get(pl, []):
@@ -3499,6 +3553,157 @@ def _collapse_colocated(events, window_h=6):
         if specific:
             buckets.setdefault(pl, []).append(len(kept) - 1)
     return kept
+
+
+_AI_DEDUP_VER = "d4"    # bump on any prompt/model change — invalidates cached verdicts
+# The same-event judgment ('is a Black Sea resort strike the same as a Gelendzhik beach drone attack?') needs
+# real reasoning: the fast 8B summary model answers NO, a 70B gets it right. Use the stronger FREE Groq model
+# for this one call when the provider is Groq; other providers keep their configured model.
+_DEDUP_MODEL = "llama-3.3-70b-versatile"
+
+
+def _ai_dedup_facet(e):
+    """The block of context handed to the LLM for one dot: its place, headline, and the OTHER headlines
+    already folded onto it. Those sibling headlines are the bridge that lets the model connect two dots the
+    bare primary titles don't — a dot titled '21 hospitalized in Gelendzhik' also carries a source headline
+    'drone attack on Russian Black Sea resort', which ties it to the DW 'Black Sea resort' dot. We
+    deliberately do NOT include the raw summary: a story's desc is often a stray, off-topic sentence (DW's
+    said 'Zelensky put his peace negotiator in charge of intelligence') that misleads a small model into a
+    false NO. Headline + place + the sibling wire headlines are the clean signal."""
+    title = (e.get("title") or "").strip()
+    place = (e.get("place") or e.get("country") or "").strip()
+    sib, seen = [], {title.lower()}
+    for s in (e.get("sources") or []):
+        st = (s.get("title") or "").strip()
+        if st and st.lower() not in seen:
+            seen.add(st.lower())
+            sib.append(st)
+        if len(sib) >= 3:
+            break
+    lines = []
+    if place:
+        lines.append("Place: " + place)
+    lines.append("Headline: " + title)
+    if sib:
+        lines.append("Also reported as: " + " | ".join(sib))
+    return "\n".join(lines)
+
+
+def _ai_same_event(a, b):
+    """Ask the free LLM whether two dots report the SAME specific incident (same event, day and place — just
+    a different outlet or wording), as a strict YES/NO. The model is given each dot's PLACE and the sibling
+    headlines already merged onto it, so a town and the sea it sits on, or a 'deaths' report and an
+    'injuries' report of one strike, read as one event. Conservative: different events that merely share a
+    topic, country or person stay apart. Cached 30 days per unordered title pair. False on error / no LLM."""
+    ta, tb = (a.get("title") or "").strip(), (b.get("title") or "").strip()
+    if not ta or not tb:
+        return False
+    # Key on the FACETS (place + headline + sibling headlines), not just the titles: the sibling context can
+    # change between builds and it drives the verdict, so a stale cache must not pin an out-of-date answer.
+    fa, fb = _ai_dedup_facet(a), _ai_dedup_facet(b)
+    lo, hi = sorted((fa, fb))
+    cache = os.path.join(CACHE_DIR, "dedup_" + hashlib.sha1(
+        (_AI_DEDUP_VER + "\n" + lo + "\n" + hi).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            return bool(json.load(open(cache, encoding="utf-8")).get("s"))
+        except Exception:
+            pass
+    system = ("You are a precise news-desk editor deduplicating a world-news map. Two items are the SAME only "
+              "when they report the SAME SPECIFIC INCIDENT — one real event, on the same day, at the same "
+              "place — merely from different outlets or in different words (a 'deaths' report and an "
+              "'injuries' report of the SAME strike are the same event; a town and the body of water it sits "
+              "on are the same place). Different events that merely share a topic, a country, or a person are "
+              "NOT the same: two separate strikes, two different statements, two different deals, or a policy "
+              "and a reaction to it. When genuinely unsure, answer NO.")
+    user = ("Do these two dots report the SAME specific incident? Answer with ONLY 'YES' or 'NO'.\n\n"
+            "ITEM 1\n" + fa + "\n\n"
+            "ITEM 2\n" + fb)
+    _, _url, _ = _summary_cfg()
+    mdl = _DEDUP_MODEL if (_url and "groq" in _url.lower()) else None   # stronger model on Groq; else configured
+    out = _llm_complete(system, user, max_tokens=4, temperature=0.0, model=mdl).strip().upper()
+    same = out.startswith("YES")
+    try:
+        json.dump({"s": same}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return same
+
+
+def _ai_dedup(events, window_h=30, budget=80):
+    """Semantic duplicate pass — the safety net under the deterministic merges. Some duplicates share NO
+    distinctive words and NO casualty fingerprint the code can key on: 'Russia says civilians killed in
+    strike on Black Sea resort' (pinned to the sea) and 'Seven killed in drone attack on Gelendzhik' (the
+    named town) are one event that word-overlap and geo-proximity both miss. For CANDIDATE pairs only — two
+    dots close in time that either share >=2 distinctive words OR sit at specific scenes in the same country
+    within a few degrees — ask the free LLM 'same specific incident?' and fold the later report into the
+    better-resourced dot. Cheap and safe: candidates are pre-filtered so most feeds ask only a handful, every
+    verdict is cached, live calls are capped, and with no LLM the feed is returned untouched."""
+    n = len(events)
+    if n < 2 or not _llm_available():
+        return events
+    if not _WEAK_MATCH:
+        _init_weak_match()
+    info = []
+    for e in events:
+        dist = {w for w in (_sigwords(e.get("title") or "") - _GENERIC_WORDS) if w not in _WEAK_MATCH}
+        pl, co = e.get("place") or "", e.get("country") or ""
+        specific = bool(pl) and pl != co and pl != _co_short(co)
+        info.append((dist, e.get("lat"), e.get("lng"), co, specific, e.get("hrs", 0)))
+    cand = []
+    for i in range(n):
+        di, lai, lni, coi, spi, hri = info[i]
+        for j in range(i + 1, n):
+            dj, laj, lnj, coj, spj, hrj = info[j]
+            if abs(hri - hrj) > window_h:
+                continue
+            shared = len(di & dj)
+            geo = (spi and spj and coi == coj and None not in (lai, lni, laj, lnj)
+                   and (lai - laj) ** 2 + (lni - lnj) ** 2 < 25)     # specific scenes <~5 deg apart, same country
+            if shared >= 2 or geo:
+                cand.append((shared + (1 if geo else 0), i, j))
+    if not cand:
+        return events
+    cand.sort(reverse=True)                                          # spend the budget on the strongest pairs first
+    parent = list(range(n))
+
+    def find(x):
+        r = x
+        while parent[r] != r:
+            r = parent[r]
+        while parent[x] != r:
+            parent[x], x = r, parent[x]
+        return r
+
+    def quality(e):                                                 # which dot should survive a merge
+        return (1 if e.get("image") else 0,
+                1 if (e.get("place") and e["place"] != e.get("country")
+                      and e["place"] != _co_short(e.get("country") or "")) else 0,
+                len(e.get("sources") or [0]),
+                e.get("hrs", 0))                                     # ties -> earliest reporter
+
+    removed, calls = set(), 0
+    for _s, i, j in cand:
+        if calls >= budget:
+            break
+        ri, rj = find(i), find(j)
+        if ri == rj:
+            continue
+        a, b = events[ri], events[rj]
+        calls += 1
+        if not _ai_same_event(a, b):
+            continue
+        if quality(a) >= quality(b):
+            keep, drop, kr, dr = a, b, ri, rj
+        else:
+            keep, drop, kr, dr = b, a, rj, ri
+        keep.setdefault("sources", [_src_of(keep)])
+        _absorb_source(keep, drop)
+        parent[dr] = kr
+        removed.add(dr)
+    if not removed:
+        return events
+    return [e for k, e in enumerate(events) if k not in removed]
 
 
 def _spread(events):

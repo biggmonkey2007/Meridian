@@ -1409,7 +1409,7 @@ function tuneVectorStyle(style){
       l.layout = Object.assign({}, l.layout, {"text-allow-overlap":true, "icon-allow-overlap":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":1});   // region borders stay a touch stronger than Positron's near-invisible pink
+      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":0.9});   // internal region borders (oblasts/states/provinces) — softened 10% so they read fainter under the country outlines
     }
     // COUNTRY borders: the recoloured taupe line looked ugly up close — go back to Positron's OWN border 1:1
     // (native colour untouched) and just drop the opacity so it reads as a soft, clean line.
