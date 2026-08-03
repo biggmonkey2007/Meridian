@@ -2670,17 +2670,18 @@ function setGlobeBasemap(k){
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
         // GLOBE/WORLD relief — a UNIFORM low-res hillshade (source maxzoom 2) so every tile on the globe is
-        // the SAME zoom. The sharp layer below mixed z2/z3 tiles at globe view, and the higher-detail tile
-        // over the mountainous Middle East/Himalayas read as a blurry rectangular SEAM. Capped at z2 there is
-        // nothing to mismatch — even relief across the whole globe, no seam, and it's not flat/washed-out.
-        // Fades out by z6.5 as the sharp layer takes over, so it never blurs a zoomed-in view.
-        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:2});
-        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:7,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 5,0.42, 6.5,0.0],"raster-fade-duration":120}}, belowWater);
-        // SHARP relief up close — full maxzoom 13, OFF at world zoom (0 below z4.5 so it can't seam on the
-        // globe), ramping to full over mountains (0.6 @z10) then eased at street level (0.1 @z13). The
+        // the SAME zoom. Even capping maxzoom at 2 wasn't enough — on the globe MapLibre still picks z2 at
+        // the centre and z1 at the edges, and THAT boundary was the seam over the mountainous Middle East.
+        // Pinning minzoom==maxzoom==2 leaves ONE available zoom, so there is nothing to mix: even relief
+        // across the whole globe, no seam, and not flat/washed-out. Fades out by z4.6 as the sharp layer
+        // takes over, so its overzoomed low-res tiles never blur a zoomed-in view.
+        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:2,maxzoom:2});
+        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.42, 4.6,0.0],"raster-fade-duration":120}}, belowWater);
+        // SHARP relief up close — full maxzoom 13, off at world zoom (0 below z3.8 so it can't seam on the
+        // globe), ramping to full over mountains (0.6 @z8) then eased at street level (0.1 @z13). The
         // prewarmed coarse world (z0-4) stays resident so detail refines in rather than blank-chunking.
         mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.5, 10,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.8,0.0, 5.5,0.45, 8,0.6, 13,0.1],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
