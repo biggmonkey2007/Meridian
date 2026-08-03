@@ -1374,6 +1374,11 @@ function tuneVectorStyle(style){
   // "copy the other map's regions". Cities/towns/villages are native too.
   const LABEL_COL = { place_country_1:"#5f6c78", place_country_2:"#6b7883" };
   const CITY_MZ   = { place_city_dot_r7:5, place_city_dot_r4:4, place_city_r5:7, place_city_r6:7, place_town:7, place_villages:9.5 };
+  // SMART PLACEMENT: dot-anchored names (cities + capitals) try positions AROUND their dot and pick one that
+  // fits, instead of sitting in one fixed spot and printing over a neighbour (Vienna on Bratislava). Also the
+  // dotless city/town tiers, so a name shifts off its point rather than colliding.
+  const _VAR_LABELS = ["place_capital_dot_z7","place_city_dot_r7","place_city_dot_r4","place_city_dot_r2","place_city_dot_z7","place_city_r5","place_city_r6","place_town"];
+  const _VAR_ANCHOR = ["right","left","top","bottom","top-right","bottom-right","top-left","bottom-left"];
   // City & CAPITAL names were reading bigger than COUNTRY names — shrink them ~15% so the country is the
   // dominant tier. Scale handles both a plain size and a {stops:[[z,size],...]} ramp.
   const _CITY_SZ = ["place_capital_dot_z7","place_city_dot_r2","place_city_dot_r4","place_city_dot_r7","place_city_dot_z7","place_city_r5","place_city_r6"];
@@ -1399,14 +1404,25 @@ function tuneVectorStyle(style){
       l.layout = Object.assign({}, l.layout, {"text-size":{"stops":[[5,9.5],[7,11]]}, "text-field":_regionLabel});
       l.paint  = Object.assign({}, l.paint,  {"text-color":"#77848f","text-opacity":1});   // a touch darker again = more present (opacity already maxed)
     }
-    // NATIONAL CAPITALS must always show (Riga/Tallinn were being collision-dropped by the dense region
-    // labels). Restrict this layer to country capitals (capital==2), let them appear early (z3.5) and never
-    // yield — they're few and spread out, so overlap is a non-issue. Regional capitals still render normally
-    // through the city layers, so there's no capital-dot clutter.
+    // VARIABLE ANCHOR: let the name slide around its point (right/left/top/bottom/corners) to dodge a
+    // collision instead of overlapping. It supersedes the fixed text-anchor/text-offset, so clear those and
+    // use text-radial-offset for the gap. The bigger gap (0.6em) also nudges a name off its own news dot.
+    if(_VAR_LABELS.indexOf(l.id)>=0 && l.layout){
+      const nl = Object.assign({}, l.layout);
+      delete nl["text-offset"]; delete nl["text-anchor"];
+      nl["text-variable-anchor"] = _VAR_ANCHOR;
+      nl["text-radial-offset"] = 0.6;
+      nl["text-justify"] = "auto";
+      l.layout = nl;
+    }
+    // NATIONAL CAPITALS: restrict to country capitals (capital==2), appear early (z3.5). The DOT always shows
+    // (icon-allow-overlap) but the NAME collision-manages via the variable anchor above and is OPTIONAL — so
+    // in a tight spot only the name drops, never the dot. (Replaces the old text-allow-overlap:true, which
+    // made two nearby capitals PRINT over each other, e.g. Vienna on Bratislava.)
     if(l.id==="place_capital_dot_z7"){
       l.filter = ["==","capital",2];
       l.minzoom = 3.5;
-      l.layout = Object.assign({}, l.layout, {"text-allow-overlap":true, "icon-allow-overlap":true});
+      l.layout = Object.assign({}, l.layout, {"icon-allow-overlap":true, "text-optional":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":0.81});   // internal region borders (oblasts/states/provinces) — softened again (~19% under full) so they read faint under the country outlines
