@@ -2595,7 +2595,7 @@ function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f26
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
 function globeBgExpr(k){
-  const hi = (k==="satellite") ? "#0a1622" : "#e6ebf0";   // up-close gap tone: deep water / light relief
+  const hi = (k==="satellite") ? "#0a1622" : "#fafaf8";   // up-close base tone — matches the overview raster's bright-white land (was a dimmer #e6ebf0)
   // Dark "space" only while the globe is small in view (zoomed way out); by z4 the globe fills the screen,
   // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
   return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
@@ -2611,7 +2611,7 @@ function globeSphereGeo(){
   r.push([-180, 89.9]);
   return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[r]}}]};
 }
-function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#eaecec"; }   // land/base tone painted under each base (Positron-like light)
+function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#fafaf8"; }   // land/base tone — bright white to match the overview raster (so land stays white when you zoom past z3, not a dimmer #eaecec grey)
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
