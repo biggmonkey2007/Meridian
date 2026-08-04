@@ -1621,11 +1621,18 @@ async function startMap(){
    Both maps pull the same CARTO/Esri raster tiles and the WebView cache persists, so a warmed tile is
    instant for either map and survives relaunches. Low-priority, deduped, throttled Image() requests —
    the visible tiles the maps request themselves always win; this only fills the cache behind them. */
-const _WARM_TPL = [
-  "https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png",       // globe base + flat raster-base fallback
-  "https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",    // place labels (both maps)
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"  // relief shade
-];
+// Which tiles to PRE-WARM depends on the ACTIVE base. Warming CARTO tiles while you're on Satellite left the
+// satellite/topo IMAGERY unprimed, so it streamed in as chunks even warm. Prime the CURRENT base's imagery
+// (the exact URL MapLibre requests) + the relief shade on the bases that draw it (clean/topo, not satellite).
+let _baseMaxZ = 19;
+function warmTemplates(){
+  const out = [];
+  if(currentBase === "clean") out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png");
+  else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }
+  if(currentBase !== "satellite") out.push("https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}");
+  return out;
+}
+const _HILLSHADE_TPL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
 const _warmSeen = new Set();
 let _warmQ = [], _warmRun = false, _pfT = null, _pfLast = 0;
 function _tplUrl(t, x, y, z){ return t.replace("{z}", z).replace("{x}", x).replace("{y}", y); }
@@ -1642,10 +1649,11 @@ function _runWarm(){
 let _worldWarmed = false;
 function warmWorldBaseline(){
   if(_worldWarmed) return; _worldWarmed = true;
+  const tpls = warmTemplates();
   for(let z = 0; z <= 4; z++){
     const span = 1 << z;
     for(let x = 0; x < span; x++) for(let y = 0; y < span; y++){
-      _WARM_TPL.forEach((t, i)=>{ if(i === 2 && z > 3) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade only to z3
+      tpls.forEach(t=>{ if(t === _HILLSHADE_TPL){ if(z > 3) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade only to z3; imagery only to the base's own maxzoom
     }
   }
   _runWarm();
@@ -1703,10 +1711,11 @@ function warmGlobeView(){
     const span = 1 << zz;
     let x0 = lon2x(w, zz) - pad, x1 = lon2x(e, zz) + pad, y0 = lat2y(n, zz) - pad, y1 = lat2y(s, zz) + pad;
     if(x1 - x0 > 48 || x1 < x0){ x0 = 0; x1 = span - 1; }          // whole-world wrap at low zoom / dateline
+    const tpls = warmTemplates();
     for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
       if(y < 0 || y >= span) continue;
       const xx = ((x % span) + span) % span;
-      _WARM_TPL.forEach(t=> _enqWarm(_tplUrl(t, xx, y, zz)));
+      tpls.forEach(t=>{ if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
     }
   });
   _runWarm();
@@ -2634,6 +2643,28 @@ function globeSphereGeo(){
   return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[r]}}]};
 }
 function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#fafaf8"; }   // land/base tone — bright white to match the overview raster (so land stays white when you zoom past z3, not a dimmer #eaecec grey)
+// Web-Mercator tiles stop at ±85°, so the globe's poles have NO imagery — the g-sphere fill shows there, and
+// on Satellite that fill is DARK (#12202e), which erased Antarctica and the Arctic ice as a black cap. Paint
+// the two polar caps (±85°→pole) ICE-WHITE, above the sphere but under the imagery, so the ice shows on every
+// base. (On clean/topo the sphere is already #fafaf8, so this only visibly changes Satellite.)
+function polarCapsGeo(){
+  // Build each cap from FOUR 90°-longitude wedges rather than one polygon that wraps the whole pole — a
+  // full-wrap thin band near the pole triangulates into a lop-sided blob on the globe. Each wedge is a
+  // clean quad (outer-lat edge + near-pole edge), so together they tile the cap seamlessly.
+  const feats=[];
+  const cap=(outer,inner)=>{
+    for(let l0=-180;l0<180;l0+=90){
+      const ring=[];
+      for(let x=l0;x<=l0+90;x+=5) ring.push([x,outer]);
+      for(let x=l0+90;x>=l0;x-=5) ring.push([x,inner]);
+      ring.push([l0,outer]);
+      feats.push({type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[ring]}});
+    }
+  };
+  cap(85,89.9); cap(-85,-89.9);
+  return {type:"FeatureCollection",features:feats};
+}
+function polarCapFill(k){ return k==="satellite" ? "#e8edf1" : "#fafaf8"; }   // ice/snow at the poles (satellite); matches the sphere elsewhere so there's no seam
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2707,14 +2738,19 @@ function applyCartoLabelToggle(){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-sphere","g-overview","g-base","g-shade","g-shade-globe","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-sphere","g-poles","g-overview","g-base","g-shade","g-shade-globe","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
+  _baseMaxZ = (b && b.max) || 19;   // the pre-warmer must not warm past the base's own maxzoom (topo stops at 8)
   // SOLID SPHERE, at the very bottom: paints the whole globe surface a land tone so a missing tile (poles, or
   // a street tile still loading) shows this, never black/space. Static polygon -> always there, no loading.
   mlMap.addSource("g-sphere",{type:"geojson",data:globeSphereGeo()});
   mlMap.addLayer({id:"g-sphere",type:"fill",source:"g-sphere",paint:{"fill-color":polarCapColor(k),"fill-antialias":false}}, before);
+  // ICE CAPS over the tile-less poles (above the sphere, below the imagery/labels) so Antarctica + the Arctic
+  // aren't a dark hole on satellite. The imagery covers ≤85°, so these bands only show at the very poles.
+  mlMap.addSource("g-poles",{type:"geojson",data:polarCapsGeo()});
+  mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapFill(k),"fill-antialias":false}}, before);
   if(k==="clean"){
     // VECTOR base — the Google-Maps approach. Positron is GPU-rendered geometry, not tile images, so it
     // scales INFINITELY SMOOTH from z3 up with no raster "chunks" to swap, and vector tiles are tiny so
@@ -2786,6 +2822,10 @@ function setGlobeBasemap(k){
   // g-borders (the app's own country outline) shows on every mode now — the vector overlay carries no baked
   // boundaries the way the old ESRI raster labels did. White over satellite, dark elsewhere; osm bakes its own.
   if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.16); const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
+  // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
+  // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
+  _worldWarmed = false;
+  setTimeout(function(){ try{ warmWorldBaseline(); warmGlobeView(); }catch(e){} }, 60);
 }
 function segToLines(seg, out){
   // seg is array of [lat,lng]; break further where a point sits on the artificial near-pole closing edge (|lat|>=83)
