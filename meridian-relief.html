@@ -2776,13 +2776,15 @@ function setGlobeBasemap(k){
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        // GLOBE/WORLD relief — a UNIFORM low-res hillshade (source maxzoom 2) so every tile on the globe is
-        // the SAME zoom. Even capping maxzoom at 2 wasn't enough — on the globe MapLibre still picks z2 at
-        // the centre and z1 at the edges, and THAT boundary was the seam over the mountainous Middle East.
-        // Pinning minzoom==maxzoom==2 leaves ONE available zoom, so there is nothing to mix: even relief
-        // across the whole globe, no seam, and not flat/washed-out. Fades out by z4.6 as the sharp layer
-        // takes over, so its overzoomed low-res tiles never blur a zoomed-in view.
-        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:2,maxzoom:2});
+        // GLOBE/WORLD relief — a UNIFORM SINGLE-zoom hillshade so every tile on the globe is the SAME zoom.
+        // On the globe MapLibre otherwise picks a higher zoom at the centre and a lower one at the edges, and
+        // THAT boundary was the seam over the mountainous Middle East; pinning minzoom==maxzoom leaves ONE
+        // available zoom, so nothing mixes → even relief, no seam. It was pinned to z2, but a z2 tile spans a
+        // whole continent, so mountains (Caucasus, Zagros, Tian Shan) read as blurry grey smudges at globe
+        // scale. Pin to z3 instead — still one zoom (seamless), but 2x the detail, so ranges look sharp at the
+        // z2.5-3 globe view; z0-4 is all pre-warmed so the extra tiles are already cached. Fades out by z4.6
+        // as the sharp g-shade layer takes over.
+        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:3,maxzoom:3});
         mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.42, 4.6,0.0],"raster-fade-duration":120}}, belowWater);
         // SHARP relief up close — full maxzoom 13, off at world zoom (0 below z3.8 so it can't seam on the
         // globe), ramping to full over mountains (0.6 @z8) then eased at street level (0.1 @z13). The
