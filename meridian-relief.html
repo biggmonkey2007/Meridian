@@ -2961,8 +2961,11 @@ async function showMap(proj){          // proj: "globe" | "flat"
       // and again on the next idle frame — otherwise the map can come up with an empty event layer.
       updateGlobeData(); mlMap.once("idle", updateGlobeData); });
     // Warm tiles DURING the rotate/pan (throttled), not just after it settles — otherwise panning the
-    // map outruns the tile fetch and you see empty chunks until you stop.
-    mlMap.on("move moveend", scheduleGlobeWarm);
+    // map outruns the tile fetch and you see empty chunks until you stop. NB: MapLibre's .on() takes ONE
+    // event type (not Leaflet's space-separated list), so "move moveend" bound a dead event that NEVER
+    // fired — the whole prefetch-while-panning was silently off. Bind each event separately.
+    mlMap.on("move", scheduleGlobeWarm);
+    mlMap.on("moveend", scheduleGlobeWarm);
     mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const pick=fs.find(f=>+((f.properties||{}).read)===0)||fs[0]; const ev=EVENTS.find(x=>x.id===pick.properties.id); if(ev){ selectEvent(ev); return; } } }
