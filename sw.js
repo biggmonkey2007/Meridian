@@ -15,6 +15,7 @@ function isTileAsset(url){
     return h.endsWith(".basemaps.cartocdn.com")   // CARTO vector/raster tiles, glyphs, sprite
         || h.endsWith(".arcgisonline.com")         // Esri hillshade / satellite / topo
         || h === "basemaps.cartocdn.com"
+        || h === "s3.amazonaws.com"                // AWS terrarium elevation DEM (globe hillshade)
         || h === "flagcdn.com";                    // country flags
   }catch(e){ return false; }
 }
