@@ -3662,19 +3662,23 @@ def _ai_dedup(events, window_h=30, budget=80):
         dist = {w for w in (_sigwords(e.get("title") or "") - _GENERIC_WORDS) if w not in _WEAK_MATCH}
         pl, co = e.get("place") or "", e.get("country") or ""
         specific = bool(pl) and pl != co and pl != _co_short(co)
-        info.append((dist, e.get("lat"), e.get("lng"), co, specific, e.get("hrs", 0)))
+        info.append((dist, e.get("lat"), e.get("lng"), co, specific, e.get("hrs", 0), e.get("cat") or ""))
     cand = []
     for i in range(n):
-        di, lai, lni, coi, spi, hri = info[i]
+        di, lai, lni, coi, spi, hri, cati = info[i]
         for j in range(i + 1, n):
-            dj, laj, lnj, coj, spj, hrj = info[j]
+            dj, laj, lnj, coj, spj, hrj, catj = info[j]
             if abs(hri - hrj) > window_h:
                 continue
+            d2 = ((lai - laj) ** 2 + (lni - lnj) ** 2) if None not in (lai, lni, laj, lnj) else 9e9
             shared = len(di & dj)
-            geo = (spi and spj and coi == coj and None not in (lai, lni, laj, lnj)
-                   and (lai - laj) ** 2 + (lni - lnj) ** 2 < 25)     # specific scenes <~5 deg apart, same country
-            if shared >= 2 or geo:
-                cand.append((shared + (1 if geo else 0), i, j))
+            geo = (spi and spj and coi == coj and d2 < 25)          # specific scenes <~5 deg apart, same country
+            # same country + same category + ONE shared distinctive word at the SAME spot (both on a country
+            # centroid, or the same city): catches 'Syria army on alert' vs 'Syria deploys troops, high alert',
+            # which share no second word and pin to no specific place, so the rules above never pair them.
+            samecat = (shared >= 1 and coi == coj and cati == catj and d2 < 0.36)
+            if shared >= 2 or geo or samecat:
+                cand.append((shared + (1 if geo else 0) + (1 if samecat else 0), i, j))
     if not cand:
         return events
     cand.sort(reverse=True)                                          # spend the budget on the strongest pairs first
