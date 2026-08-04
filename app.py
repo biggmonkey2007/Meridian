@@ -3298,6 +3298,14 @@ _OUTLET_NAMES = {
     "telegraph.co.uk": "The Telegraph", "thetimes.co.uk": "The Times",
     "euronews.com": "Euronews", "rferl.org": "RFE/RL", "voanews.com": "VOA",
     "nehandaradio.com": "Nehanda Radio", "aol.co.uk": "AOL",
+    # regional powers + broader perspective set
+    "cgtn.com": "CGTN", "middleeastmonitor.com": "Middle East Monitor",
+    "tehrantimes.com": "Tehran Times", "riotimesonline.com": "The Rio Times",
+    "antaranews.com": "Antara", "premiumtimesng.com": "Premium Times",
+    "mexiconewsdaily.com": "Mexico News Daily",
+    # Western populist / far-right
+    "breitbart.com": "Breitbart", "thegatewaypundit.com": "The Gateway Pundit",
+    "zerohedge.com": "ZeroHedge",
 }
 
 
@@ -3305,9 +3313,14 @@ def _domain_name(domain):
     d = (domain or "").lower().strip()
     if d.startswith("www."):
         d = d[4:]
-    if d in _OUTLET_NAMES:
-        return _OUTLET_NAMES[d]
-    core = d.split(".")[0] if d else ""
+    parts = d.split(".")
+    # exact match, then drop the leftmost sub-domain label and retry (news.cgtn.com -> cgtn.com,
+    # en.antaranews.com -> antaranews.com) so one mapped base domain names all its sub-domains.
+    for i in range(max(1, len(parts) - 1)):
+        cand = ".".join(parts[i:])
+        if cand in _OUTLET_NAMES:
+            return _OUTLET_NAMES[cand]
+    core = parts[0] if parts and parts[0] else ""
     return (core[:1].upper() + core[1:]) if core else (domain or "Source")
 
 
@@ -3791,6 +3804,20 @@ WORLD_FEEDS = [
     ("https://www.thehindu.com/news/national/feeder/default.rss", "India"),
     ("https://rss.dw.com/xml/rss-en-all", "Germany"),
     ("https://www.batimes.com.ar/feed", "Argentina"),
+    # --- added: NYT, more regional powers, broader-perspective + Western populist outlets ---
+    ("https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "United States of America"),      # The New York Times
+    ("https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml", "United States of America"),
+    ("https://www.middleeastmonitor.com/feed/", "United Kingdom"),                                # pro-Palestinian / Muslim world
+    ("https://www.tehrantimes.com/rss", "Iran"),                                                  # Iran (regional power)
+    ("https://www.cgtn.com/subscribe/rss/section/world.xml", "China"),                            # China state broadcaster
+    ("https://www.scmp.com/rss/91/feed", "China"),                                                # South China Morning Post
+    ("https://riotimesonline.com/feed/", "Brazil"),                                               # Brazil
+    ("https://en.antaranews.com/rss/news.xml", "Indonesia"),                                      # Indonesia (state wire)
+    ("https://www.premiumtimesng.com/feed", "Nigeria"),                                           # Nigeria
+    ("https://mexiconewsdaily.com/feed/", "Mexico"),                                              # Mexico
+    ("https://feeds.feedburner.com/breitbart", "United States of America"),                       # US populist right
+    ("https://www.thegatewaypundit.com/feed/", "United States of America"),                       # US far right
+    ("https://feeds.feedburner.com/zerohedge/feed", "United States of America"),                  # US contrarian / populist
 ]
 
 
