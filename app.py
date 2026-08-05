@@ -163,8 +163,8 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "6"   # bump when the summary prompt/format changes, so cached summaries regenerate
-_AIWHERE_VER = "aw1"    # bump to invalidate the AI location the summary pass emits (keyed by title)
+_SUM_PROMPT_VER = "7"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_AIWHERE_VER = "aw2"    # bump to invalidate the AI location the summary pass emits (keyed by title)
 
 
 def _aiwhere_path(title):
@@ -308,15 +308,20 @@ def _summarize(title, text):
               "label of ONE or TWO words followed by a colon (like **Scale:** or **What's next:**), then "
               "the sentence. NEVER bold more than two words, and NEVER bold a whole phrase or sentence — if "
               "you can't say the label in two words, just write the bullet with no label.\n"
+              "- Do NOT open with a wire dateline or place-stamp like 'TEHRAN —' or 'WASHINGTON (Reuters) —'; "
+              "start straight with the news.\n"
               "- Output nothing else — no headings, no title, no closing line.\n\n"
               "Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
               "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
               "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
               "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
-              "ONE real place the event physically happened: 'City, Country' when a city/town/site is knowable, "
-              "else just the 'Country', else 'NONE'. Give where it HAPPENED, never where someone merely reacted "
-              "to it, never a person's nationality, never an organisation's HQ. This WHERE line is metadata, not "
-              "part of the brief.\n\n"
+              "ONE real place the event physically happened. Name the MOST SPECIFIC real place you can, and when "
+              "the event is on or over water or a natural feature, name THAT feature, not the nearest land: a sea, "
+              "gulf, bay, strait, channel, canal, river, lake, or ocean ('Red Sea', 'Strait of Hormuz', "
+              "'Bab-el-Mandeb', 'Danube River', 'South China Sea', 'Pacific Ocean'); a city, town, or site as "
+              "'City, Country'; otherwise just the 'Country'; else 'NONE'. Give where it HAPPENED, never where "
+              "someone merely reacted to it, never a person's nationality, never an organisation's HQ. This WHERE "
+              "line is metadata, not part of the brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     s = _llm_complete(system, prompt, max_tokens=380, temperature=0.3)
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
@@ -325,6 +330,7 @@ def _summarize(title, text):
     s = re.sub(r"[ \t]+", " ", s)
     s = "\n".join(ln.strip() for ln in s.split("\n"))
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    s = _LEAD_DATELINE.sub("", s)       # belt-and-braces: drop a wire dateline if the model opened with one anyway
     # Pull the WHERE line back OUT of the brief and cache it (keyed by title) for _locate — one AI call gave us
     # both the brief AND the location, so no separate geolocation call is needed once a story is summarised.
     mw = re.search(r"(?im)^\s*WHERE:\s*(.+?)\s*$", s)
@@ -603,9 +609,18 @@ _PROMO_TAIL   = re.compile(
     r"|[\s\-–—|]*(?:read(?:\s+more)?|watch|more|link|source|via|details?|full\s+story)\s*:\s*$",  # a label + colon left dangling after the URL was cut
     re.I | re.S)
 _PROMO_HANDLE = re.compile(r"(?<![\w@])@[A-Za-z]\w{2,}")                            # stray "@InsiderPaper"
+# WIRE DATELINE: "TEHRAN – ", "WASHINGTON — ", "BEIRUT, Lebanon — ", "NEW DELHI (Reuters) — ". A brief should
+# just START, not open with a place-stamp. Only strips an ALL-CAPS leading place (>=3 caps) + optional
+# ", Country" + optional "(Agency)" + a spaced dash — so a Title-cased sentence ("Trump — the president —")
+# and "TEHRAN-based" (no space after the hyphen) are both left alone.
+_LEAD_DATELINE = re.compile(
+    r"^\s*[A-Z]{3,}[A-Z.'’&-]*(?:[ ][A-Z][A-Za-z.'’&-]+){0,3}"
+    r"(?:\s*,\s*[A-Z][A-Za-z.'’-]+(?:[ ][A-Za-z.'’-]+){0,2})?"
+    r"(?:\s+\([^)]{1,40}\))?\s*[–—-]\s+")
 def _strip_promo(t):
     t = _htmlmod.unescape(t or "")
     t = _PROMO_LEAD.sub("", t)
+    t = _LEAD_DATELINE.sub("", t)       # after the promo lead, so "BREAKING - TEHRAN — …" loses both stamps
     t = _PROMO_URL.sub(" ", t)          # bare links first, so a "READ: <url>" collapses to a strippable "READ:"
     prev = None
     while prev != t:                    # trailing promo stacks: "… READ: <url>  Follow @x for more news"
@@ -4196,22 +4211,10 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "gaza strip": (31.42, 34.35, "Palestine"),
     "donbas": (48.5, 37.8, "Ukraine"),
     "crimea": (45.3, 34.4, "Ukraine"),
-    "strait of hormuz": (26.57, 56.25, "Iran"),
-    "hormuz": (26.57, 56.25, "Iran"),
-    "suez canal": (30.42, 32.35, "Egypt"),
-    "bosphorus": (41.12, 29.07, "Turkey"),
-    "dardanelles": (40.22, 26.40, "Turkey"),
-    "strait of gibraltar": (35.95, -5.60, "Spain"),
-    "bab el mandeb": (12.58, 43.33, "Yemen"),
-    "taiwan strait": (24.50, 119.50, "Taiwan"),
-    "english channel": (50.30, 0.30, "France"),
-    "strait of malacca": (2.50, 101.00, "Malaysia"),
-    "panama canal": (9.08, -79.68, "Panama"),
-    "red sea": (20.00, 38.50, "Saudi Arabia"),
-    "south china sea": (13.00, 114.00, "Philippines"),
-    "persian gulf": (26.50, 51.50, "Iran"),
-    "gulf of aden": (12.50, 47.50, "Yemen"),
 }
+# The strategic straits/seas/canals live in _WATERS (below), NOT here: an international water must register
+# at _FACILITY_PRIOR so it is NEVER NER-vetoed (spaCy tags "Hormuz"/"Bosphorus" as a PERSON and a 5M-prior
+# region entry got deleted) and so its arbitrary "country" is overridden by the story's own context.
 # Russian/older transliterations of Ukrainian places. Without these, TASS/RT copy either fails to
 # geolocate or lands in the wrong country entirely ("Odessa" -> Odessa, TEXAS). Coordinates are the
 # real (Ukrainian) ones — the map places events by geography, so Russian-occupied Ukrainian land
@@ -4519,6 +4522,26 @@ _WATERS = {
     "lake baikal": (53.50, 108.00, "Russia"), "lake victoria": (-1.00, 33.00, "Tanzania"),
     "lake chad": (13.00, 14.00, "Chad"), "dnieper": (48.50, 34.60, "Ukraine"),
     "euphrates": (34.50, 41.00, "Iraq"), "tigris": (34.00, 44.00, "Iraq"),
+    # (No continental rivers like the Danube: a 10-country river is a LINE, so a single mention would
+    #  hijack a national story onto an arbitrary point. Dnieper/Euphrates/Tigris earn a point only because
+    #  each is an active war front where the river itself is the scene.)
+    # STRATEGIC CHOKEPOINTS — the straits/canals/seas that show up in shipping-and-strike news. Curated at
+    # facility prior so NER never vetoes them (spaCy reads "Hormuz"/"Bosphorus" as a person) and their
+    # bookkeeping country is overridden by whatever the story actually names.
+    "strait of hormuz": (26.57, 56.25, "Iran"), "hormuz strait": (26.57, 56.25, "Iran"),
+    "hormuz": (26.57, 56.25, "Iran"),
+    "bab el mandeb": (12.58, 43.33, "Yemen"), "bab al mandab": (12.58, 43.33, "Yemen"),
+    "strait of gibraltar": (35.95, -5.60, "Spain"), "gibraltar strait": (35.95, -5.60, "Spain"),
+    "strait of malacca": (2.50, 101.00, "Malaysia"), "malacca strait": (2.50, 101.00, "Malaysia"),
+    "bosphorus": (41.12, 29.07, "Turkey"), "dardanelles": (40.22, 26.40, "Turkey"),
+    "taiwan strait": (24.50, 119.50, "Taiwan"), "english channel": (50.30, 0.30, "France"),
+    "suez canal": (30.42, 32.35, "Egypt"), "panama canal": (9.08, -79.68, "Panama"),
+    "red sea": (20.00, 38.50, "Saudi Arabia"), "south china sea": (13.00, 114.00, "Philippines"),
+    "persian gulf": (26.50, 51.50, "Iran"), "gulf of aden": (12.50, 47.50, "Yemen"),
+    # oceans — a last-resort scene when nothing more specific is knowable (a mid-ocean incident)
+    "pacific ocean": (0.00, -155.00, "United States of America"),
+    "atlantic ocean": (25.00, -40.00, "United States of America"),
+    "indian ocean": (-20.00, 80.00, "India"), "arctic ocean": (85.00, 0.00, "Russia"),
 }
 _WATER_NAMES = set()          # international water -> the label carries no country suffix
 _AREA_NAMES = set()           # broad areas (states, oblasts, Crimea) that a named town can refine
@@ -6196,7 +6219,8 @@ def _locate(title, sourcecountry, desc, url=""):
     gazetteer for coordinates, and anchored to a country the story actually names (so the model can't
     invent one). Purely additive: with no LLM this is exactly _geolocate."""
     r = _geolocate(title, sourcecountry, desc, url)
-    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
+    ment_list = _context_mentions((title or "") + " " + (desc or ""), url)
+    ment = {co for (co, _t) in ment_list}
     # AI PINPOINT (from the summary pass, once this story has been summarised): one AI call wrote the brief AND
     # named WHERE it happened. Trust it — grounded through the gazetteer, anchored to a country the story names
     # (or the rules' own, so the model can't invent one). A cached read (no live call needed) — the "all in one
@@ -6204,7 +6228,15 @@ def _locate(title, sourcecountry, desc, url=""):
     aw = _ai_where(title)
     if aw:
         g = _geolocate(aw, "", aw, "")
-        if g and ((g[3] in ment) or (r and g[3] == r[3])):
+        # A WATER the AI names (Red Sea, Strait of Hormuz, Bab-el-Mandeb) is self-anchoring: a sea/strait is
+        # an unambiguous global feature, so it needs no country-mention check. Its stored "country" is just
+        # bookkeeping, so fly the story's own flag over it (the first country the text actually names).
+        water = bool(g) and bool(g[2]) and (g[2].lower() in _WATER_NAMES or _is_water_place(g[2]))
+        if water and g[3] not in ment:
+            ctx_co = [c for (c, _t) in ment_list if c in COUNTRY_COORDS]
+            if ctx_co:
+                g = (g[0], g[1], g[2], ctx_co[0])
+        if g and ((g[3] in ment) or (r and g[3] == r[3]) or water):
             if not _geo_is_weak(g):
                 return g                              # a specific, anchored place -> use the AI's pinpoint
             if r is None or _geo_is_weak(r):

@@ -300,6 +300,16 @@ GEO_CASES = [
      "SHIPPED BUG: 'in RUSSIA's Samara region' grabbed the preposition -> dot on Moscow"),
     ("Ukrainian drone strike hits the Omsk oil refinery", "", "Omsk Oil Refinery", "facility, not city centre"),
     ("Iran strikes tanker in the Strait of Hormuz", "", "Strait of Hormuz", "a dot in the strait itself"),
+    # A curated strategic water must resolve even NAKED (no locating preposition to force it): spaCy NER
+    # tags "Hormuz"/"Bosphorus" as a PERSON, and while a 5M-prior region entry got vetoed and deleted, a
+    # _WATERS entry sits at facility prior and is never vetoed. This is exactly the bare form the AI's
+    # WHERE line emits ("WHERE: Strait of Hormuz").
+    ("Strait of Hormuz", "", "Hormuz", "bare curated strait resolves; not NER-vetoed to nothing"),
+    ("Bosphorus", "", "Bosphorus", "bare curated strait resolves despite NER reading it as a person"),
+    ("Bab-el-Mandeb", "", "Bab el Mandeb", "hyphen folds to spaces; bare chokepoint resolves"),
+    ("Taiwan Strait", "", "Taiwan Strait", "the STRAIT, not Taiwan the country/capital (regression guard)"),
+    ("Barges idle as the Danube's water level keeps dropping", "", "!Danube",
+     "a continental river is a LINE, not a point — a lone mention must not hijack the dot onto it"),
     ("Russian Military Strikes Ukrainian Port with AI-Enabled Geran-4 drones over the Black Sea",
      "", "Odesa",
      "SHIPPED BUG: no port was NAMED, so the only place in the post was the BLACK SEA and the dot "
@@ -529,6 +539,29 @@ DATELINE_CASES = [
      "Russia", "a BUREAU dateline must NOT win — this story is not about London"),
     ("Ukrainian drones are active over occupied Crimea, with a group seen flying above the Sovetsky district.",
      "", "Sovetsky", "CONTAINMENT: a town named inside a broad area wins"),
+]
+
+# A brief should just START — a wire dateline / place-stamp ("TEHRAN — ", "BEIRUT, Lebanon (Reuters) — ")
+# is stripped from the lead, but only when it is an ALL-CAPS place + spaced dash, so a Title-cased sentence
+# or a hyphenated compound survives untouched. (raw, expected_after__strip_promo, why)
+DATELINE_STRIP_CASES = [
+    ("TEHRAN – Iran said it would resume enrichment.", "Iran said it would resume enrichment.",
+     "SHIPPED: the lead opened with 'TEHRAN –', which looks bad on the card"),
+    ("WASHINGTON — The White House announced new sanctions.", "The White House announced new sanctions.",
+     "em-dash place-stamp"),
+    ("BEIRUT, Lebanon — Hezbollah fired rockets across the border.", "Hezbollah fired rockets across the border.",
+     "place + ', Country' + em-dash"),
+    ("NEW DELHI (Reuters) — India tested a new missile.", "India tested a new missile.",
+     "two-word place + '(Agency)' + em-dash"),
+    ("KYIV, Ukraine (Reuters) - Ukraine struck a Russian depot.", "Ukraine struck a Russian depot.",
+     "place + country + agency + hyphen"),
+    # MUST SURVIVE — not a dateline:
+    ("Trump — the president — said he would act.", "Trump — the president — said he would act.",
+     "a Title-cased sentence with an em-dash aside is NOT a dateline"),
+    ("TEHRAN-based militias regrouped overnight.", "TEHRAN-based militias regrouped overnight.",
+     "a hyphenated compound (no space after the dash) is not a dateline"),
+    ("NATO said the alliance would respond.", "NATO said the alliance would respond.",
+     "an ALL-CAPS acronym with no dash is left alone"),
 ]
 
 # clips must only attach to the story they belong to. (event, clip, should_attach, why)
@@ -1216,6 +1249,15 @@ def main():
             fails.append(("dateline", title, want, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} {str(got)[:24]:26} (want {want[:14]:16}) {title[:32]}")
 
+    print("\n=== DATELINE STRIP (a brief must not open with a wire place-stamp) ===")
+    for raw, want, why in DATELINE_STRIP_CASES:
+        got = app._strip_promo(raw)
+        ok = (got == want)
+        ran[0] += 1
+        if not ok:
+            fails.append(("dateline-strip", raw[:44], want, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {got[:52]}")
+
     print("\n=== TELEGRAM MEDIA (the wire's own photos must actually be extracted) ===")
     for raw, want in CSS_URL_CASES:
         got = app._css_url(raw)
@@ -1452,7 +1494,7 @@ def main():
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1
 
-             + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES)
+             + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES) + len(DATELINE_STRIP_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
              + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
