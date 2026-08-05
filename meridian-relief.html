@@ -1426,7 +1426,7 @@ function tuneVectorStyle(style){
       l.layout = Object.assign({}, l.layout, {"icon-allow-overlap":true, "text-optional":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#d3bcc0", "line-opacity":0.81});   // internal region borders (oblasts/states/provinces) — softened again (~19% under full) so they read faint under the country outlines
+      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.13});   // internal region borders — faint transparent BLACK (Positron's native pink read as red when zoomed out)
     }
     // RIVERS read near-invisible when zoomed out (native 0.5px #d1dbdf on light land). Nudge them a touch
     // wider at low zoom and a shade darker/bluer so the Danube/Volga/Nile etc. show at a regional view;
@@ -1434,13 +1434,13 @@ function tuneVectorStyle(style){
     if(l.id==="waterway"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#b7cad3", "line-width":{"stops":[[5,0.6],[7,0.8],[9,1.1],[15,2],[16,3]]}});
     }
-    // COUNTRY borders: the recoloured taupe line looked ugly up close — go back to Positron's OWN border 1:1
-    // (native colour untouched) and just drop the opacity so it reads as a soft, clean line.
+    // COUNTRY borders: Positron's native line is a salmon-PINK that reads RED when zoomed out. Recolour to a
+    // transparent BLACK — a soft neutral grey line, not red. Inner is the main line; outline is a faint casing.
     if(l.id==="boundary_country_inner"){
-      l.paint = Object.assign({}, l.paint, {"line-opacity":0.85});
+      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.30});
     }
     if(l.id==="boundary_country_outline"){
-      l.paint = Object.assign({}, l.paint, {"line-opacity":0.42});
+      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.10});
     }
     // Body-of-water names (seas/oceans) read too faint — darken ~15% so "Baltic Sea" etc. are legible.
     if(l.id==="watername_ocean" || l.id==="watername_sea"){
@@ -3505,7 +3505,10 @@ sports:'<path d="M296 36 H356 V50 a30 30 0 0 1 -60 0 Z" fill="#fff"/><path d="M2
 // Fill the blurred backdrop behind a contained hero photo with the same image, so a portrait/odd-ratio
 // picture shows whole (no crop) without leaving empty bars. Call wherever the hero-photo src is set.
 function heroBg(hero, src){ if(!hero||!src) return; const bg=hero.querySelector(".hero-bg"); if(bg) bg.style.backgroundImage='url("'+String(src).replace(/"/g,"")+'")'; }
-function heroBanner(d){ const c=CAT[d.cat]; const c1=c.hex, c2=shade(c.hex,0.6); return `<div class="hero" id="hero-${d.id}"><svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="hg-${d.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="225" fill="url(#hg-${d.id})"/><g opacity="0.17" transform="translate(0,48)">${MOTIF[d.cat]||''}</g></svg><div class="hero-mark">${CAT_ICON[d.cat]||""}</div><div class="hero-bg"></div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div><div class="hero-bar"><div class="hero-tag" title="${esc(c.label)}"><span class="hero-ico">${CAT_ICON[d.cat]||""}</span></div></div></div>`; }
+// The hero is JUST the photo now — no coloured category placeholder card, no category symbol in the corner.
+// Every story gets a real picture (the article's own image, else story_photo picks one of the subject/place),
+// so the only "empty" state is the brief neutral-dark load before that photo fades in.
+function heroBanner(d){ return `<div class="hero" id="hero-${d.id}"><div class="hero-bg"></div><img class="hero-photo" alt="" referrerpolicy="no-referrer"><div class="hero-grad"></div><div class="hero-credit"></div></div>`; }
 const CAT_ICON={
   security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3l7 3v5c0 4.4-3 8.3-7 10-4-1.7-7-5.6-7-10V6z"/><path d="M12 9v4"/><circle cx="12" cy="16" r=".6" fill="currentColor"/></svg>',
   politics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 21h18M5 21V10m4 11V10m6 11V10m4 11V10M12 3L3 8h18z"/></svg>',
@@ -3550,15 +3553,15 @@ async function loadHeroFile(d){
           const cr=hero.querySelector(".hero-credit");
           if(cr) cr.textContent=r.title||"";        // a quiet credit, not a badge
         };
-        img.onerror=()=>{};   // photo failed to load -> leave the branded gradient card (no map/flag)
+        img.onerror=()=>{};   // photo failed to load -> the neutral dark frame stands (no map/flag)
         img.referrerPolicy="no-referrer";
         heroBg(hero, r.url); img.src=r.url;
         return;
       }
     }catch(e){}
   }
-  // Nothing anywhere: the branded category gradient stands. We deliberately do NOT draw a map crop here
-  // (or ever fall back to a flag) — the user wants a real photo or a clean card, never a flag or a map.
+  // Nothing anywhere (rare): the neutral dark frame stands. We deliberately do NOT draw a map crop here
+  // (or ever fall back to a flag) — the user wants a real photo, never a flag, a map, or a category card.
 }
 
 /* THE LAST RESORT, and honestly the nicest one: a real map of the spot, marked. It cannot fail (the
@@ -4051,9 +4054,11 @@ async function renderRealEvent(d){
   updateListenTime(d);          // the headline alone, until the article body arrives
   loadEventMedia(d);
   loadEventPeople(d);            // headline names first — usually the officials
-  // give the REAL sources (article image, then a matched wire photo) their chance to land first;
-  // only a card still showing a bare colour block falls back to a labelled file photo.
-  setTimeout(()=>{ if(activeEvent===d.id) loadHeroFile(d); }, 1500);
+  // If the story arrived WITH no picture at all, resolve one right away (story_photo picks the subject/place)
+  // — there's no placeholder card behind it anymore, so we don't want it sitting on a blank dark frame.
+  // Otherwise give the article's own image + the article-page image their moment first, then fall back.
+  if(!(d.image || d._photo)) loadHeroFile(d);
+  setTimeout(()=>{ if(activeEvent===d.id) loadHeroFile(d); }, 1200);
   // pull clean paragraphs + description + hi-res image from the article page itself
   const api=aiBridge();
   const lead=document.getElementById("re-lead-"+d.id);
