@@ -1630,8 +1630,8 @@ function warmTemplates(){
   const out = [];
   if(currentBase === "clean") out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png");
   else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }
-  if(currentBase === "clean") out.push(DEM_TILES);                          // clean's relief is the DEM hillshade
-  else if(currentBase === "topo") out.push(_HILLSHADE_TPL);                 // topo still uses the ESRI raster shade
+  if(currentBase === "clean"){ out.push(DEM_TILES); out.push(_HILLSHADE_TPL); }   // clean: DEM at globe scale + cheap ESRI raster zoomed in
+  else if(currentBase === "topo") out.push(_HILLSHADE_TPL);                       // topo uses the ESRI raster shade
   return out;
 }
 const _HILLSHADE_TPL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
@@ -2783,18 +2783,22 @@ function setGlobeBasemap(k){
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        // TERRAIN RELIEF — a GPU-computed hillshade from an elevation DEM (terrarium), NOT a pre-rendered
-        // raster. A raster hillshade pinned to ONE zoom is blurry on the globe and at high-DPI (256px tiles
-        // upscale), and a MULTI-zoom raster seams on the globe (centre vs edge pick different zooms). A DEM
-        // hillshade is computed PER PIXEL, so it stays razor-sharp at ANY zoom and ANY device pixel ratio and
-        // composites seamlessly — one layer replaces the old two-layer globe/close raster pair. Under the
-        // water fill so it shades LAND only (the ocean keeps its water colour). Exaggeration eases off at
-        // street level so it never muddies zoomed-in detail.
-        mlMap.addSource("g-dem",{type:"raster-dem",tiles:[DEM_TILES],encoding:"terrarium",tileSize:256,maxzoom:12});
+        // TERRAIN RELIEF — a HYBRID, chosen so the globe is razor-sharp AND zooming in is instant:
+        //  • ZOOMED OUT (the globe, where a raster hillshade seams or blurs): a GPU-computed hillshade from an
+        //    elevation DEM (terrarium). It's computed PER PIXEL, so it's crisp at any zoom/DPI and seamless.
+        //    But DEM tiles are ~80KB (10x a raster) from S3 (no CDN), so deep-zoom fetches "load forever" — so
+        //    the DEM source is CAPPED at z5 and its intensity fades out by z7. It never fetches past z5; the
+        //    coarse z0-2 world is prewarmed, z3-5 loads for the view.
+        mlMap.addSource("g-dem",{type:"raster-dem",tiles:[DEM_TILES],encoding:"terrarium",tileSize:256,maxzoom:5});
         mlMap.addLayer({id:"g-dem-hs",type:"hillshade",source:"g-dem",paint:{
-          "hillshade-exaggeration":["interpolate",["linear"],["zoom"], 2,0.4, 6,0.5, 11,0.22],
+          "hillshade-exaggeration":["interpolate",["linear"],["zoom"], 2,0.4, 5,0.5, 7,0.0],
           "hillshade-shadow-color":"#4c525a","hillshade-highlight-color":"#ffffff",
           "hillshade-accent-color":"#565c64","hillshade-illumination-anchor":"map"}}, belowWater);
+        //  • ZOOMED IN: the light (~8KB) CDN raster hillshade takes over from z6 — it loads FAST and, this
+        //    close in, MapLibre picks a consistent tile zoom so it doesn't seam. Off (0) at globe scale so it
+        //    can't seam there. This is what makes zooming in instant instead of waiting on heavy DEM tiles.
+        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 6,0.0, 7.5,0.42, 10,0.55, 13,0.15],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
