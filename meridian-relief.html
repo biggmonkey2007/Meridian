@@ -1655,7 +1655,10 @@ function warmWorldBaseline(){
   for(let z = 0; z <= 4; z++){
     const span = 1 << z;
     for(let x = 0; x < span; x++) for(let y = 0; y < span; y++){
-      tpls.forEach(t=>{ if(t === _HILLSHADE_TPL || t === DEM_TILES){ if(z > 4) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade/DEM only to z4; imagery only to the base's own maxzoom
+      // DEM tiles are ~80KB (10x a raster tile), so prewarming the whole world z0-4 was ~27MB on startup —
+      // THE "long load". Prewarm the DEM only to z2 (the coarse whole-world relief, ~1.7MB — enough to cover
+      // globe rotation); z3+ refines in on-demand + is SW-cached. ESRI shade (topo) stays z0-4.
+      tpls.forEach(t=>{ if(t === DEM_TILES){ if(z > 2) return; } else if(t === _HILLSHADE_TPL){ if(z > 4) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });
     }
   }
   _runWarm();
@@ -1717,7 +1720,9 @@ function warmGlobeView(){
     for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
       if(y < 0 || y >= span) continue;
       const xx = ((x % span) + span) % span;
-      tpls.forEach(t=>{ if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
+      // Skip the DEM here: at ~80KB/tile a wide on-pan ring would refetch megabytes each drag. The globe is
+      // already covered by the z0-2 DEM prewarm; higher-zoom DEM loads on-demand for the view + is SW-cached.
+      tpls.forEach(t=>{ if(t === DEM_TILES) return; if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
     }
   });
   _runWarm();
