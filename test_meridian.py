@@ -95,6 +95,9 @@ GEO_CASES = [
     ("Satellite images reveal the clearest picture yet of damage to the Saudi Aramco oil refinery in Jazan",
      "Satellite images show the worst damage yet to a Saudi oil refinery hit by drone and missile attacks. The refinery in Jazan was targeted by the Houthis.",
      "Saudi Arabia", "SHIPPED: 'Jazan' dotted a tiny Iranian village (pop 1,818); the Saudi city is in GeoNames only as 'Jizan'"),
+    ("Record drought and heatwave bring energy emergency to Eastern Europe",
+     "Governments across Central and Eastern Europe conserve electricity amid record low water on the Danube River. In Hungary, the country's only nuclear plant is being shut down as there is not enough water to cool its reactors.",
+     "Hungary", "SHIPPED: 'Central' (from 'Central and Eastern Europe') dotted Central, Ontario, Canada; the scene is the Danube / Hungary"),
     ("Statue of Yoni Netanyahu unveiled at Uganda's Entebbe Airport, 50 years after raid",
      "A statue of Yonatan Netanyahu, the Israeli brother of PM Benjamin Netanyahu, has been unveiled at the old Entebbe Airport terminal in Uganda.",
      "Uganda", "SHIPPED: dotted ISRAEL — 'Uganda's' pushed the 'at' out of the located window, and the "

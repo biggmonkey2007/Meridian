@@ -4139,8 +4139,10 @@ _BAD_CITY_NAMES = {"maga", "potus", "flotus", "scotus", "nato", "opec", "brics",
 # University of Tehran" — so it's always vetoed. SHIPPED: "UNIVERSITY courses" -> University, Florida.
 _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # "Arab" in the news is the demonym ("Arab citizens/world/League"), never Arab, Alabama;
-                     # "the village" is the generic phrase "the village of X", never The Village(s), US.
-                     "arab", "the village"}
+                     # "the village" is the generic phrase "the village of X", never The Village(s), US;
+                     # "central" is a direction/region word ("Central and Eastern Europe", "Central Asia"),
+                     # never Central, Ontario — the multi-word "Central African Republic" still matches.
+                     "arab", "the village", "central"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
 # dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
 # Sparks, Nevada; "BRENT crude" -> Brent, London.
