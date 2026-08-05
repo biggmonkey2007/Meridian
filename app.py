@@ -163,7 +163,27 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "5"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "6"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_AIWHERE_VER = "aw1"    # bump to invalidate the AI location the summary pass emits (keyed by title)
+
+
+def _aiwhere_path(title):
+    return os.path.join(CACHE_DIR, "aiwhere_" + hashlib.sha1(
+        (_AIWHERE_VER + "\n" + (title or "")).encode("utf-8")).hexdigest()[:16] + ".json")
+
+
+def _ai_where(title):
+    """The location the AI named while writing this story's brief (one call did both) — a plain place name
+    ('City, Country'/'Country') the caller grounds through the gazetteer, or "" if not summarised yet. Read
+    only (no AI call): `_summarize` writes it, `_locate` reads it, so on the next build the dot moves to the
+    AI's pinpoint. Keyed by TITLE so `_locate` (which lacks the article body) can look it up."""
+    p = _aiwhere_path(title)
+    if _fresh(p, 30 * 86400):
+        try:
+            return json.load(open(p, encoding="utf-8")).get("p", "")
+        except Exception:
+            pass
+    return ""
 
 
 def _summary_cfg():
@@ -292,14 +312,31 @@ def _summarize(title, text):
               "Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
               "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
               "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
+              "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
+              "ONE real place the event physically happened: 'City, Country' when a city/town/site is knowable, "
+              "else just the 'Country', else 'NONE'. Give where it HAPPENED, never where someone merely reacted "
+              "to it, never a person's nationality, never an organisation's HQ. This WHERE line is metadata, not "
+              "part of the brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    s = _llm_complete(system, prompt, max_tokens=360, temperature=0.3)
+    s = _llm_complete(system, prompt, max_tokens=380, temperature=0.3)
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
     s = re.sub(r"[ \t]+", " ", s)
     s = "\n".join(ln.strip() for ln in s.split("\n"))
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    # Pull the WHERE line back OUT of the brief and cache it (keyed by title) for _locate — one AI call gave us
+    # both the brief AND the location, so no separate geolocation call is needed once a story is summarised.
+    mw = re.search(r"(?im)^\s*WHERE:\s*(.+?)\s*$", s)
+    if mw:
+        s = re.sub(r"(?im)^\s*WHERE:.*$", "", s).strip()
+        s = re.sub(r"\n{3,}", "\n\n", s).strip()
+        where = re.sub(r'^[\s"\'.*\-]+|[\s"\'.\-]+$', "", mw.group(1)).strip()
+        if 3 <= len(where) <= 60 and where.upper() != "NONE":
+            try:
+                json.dump({"p": where}, open(_aiwhere_path(title), "w", encoding="utf-8"))
+            except Exception:
+                pass
     if s:
         try:
             json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
@@ -6159,9 +6196,21 @@ def _locate(title, sourcecountry, desc, url=""):
     gazetteer for coordinates, and anchored to a country the story actually names (so the model can't
     invent one). Purely additive: with no LLM this is exactly _geolocate."""
     r = _geolocate(title, sourcecountry, desc, url)
+    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
+    # AI PINPOINT (from the summary pass, once this story has been summarised): one AI call wrote the brief AND
+    # named WHERE it happened. Trust it — grounded through the gazetteer, anchored to a country the story names
+    # (or the rules' own, so the model can't invent one). A cached read (no live call needed) — the "all in one
+    # go" path; on the build after a story is summarised, the dot moves to the AI's pinpoint.
+    aw = _ai_where(title)
+    if aw:
+        g = _geolocate(aw, "", aw, "")
+        if g and ((g[3] in ment) or (r and g[3] == r[3])):
+            if not _geo_is_weak(g):
+                return g                              # a specific, anchored place -> use the AI's pinpoint
+            if r is None or _geo_is_weak(r):
+                return g                              # AI at least got the country; the rules had nothing better
     if not _llm_available():
         return r
-    ment = {co for (co, _t) in _context_mentions((title or "") + " " + (desc or ""), url)}
     # NAMESAKE MISMATCH: a SPECIFIC dot whose country the story never names, while it DOES name another
     # country, is almost always a US-town namesake matched for a foreign story ("Arab, AL" for an Israeli
     # story; "The Village, US" for a Greek island; "Hays, KS" for a Yemen clash). Let the AI arbitrate
