@@ -1630,8 +1630,7 @@ function warmTemplates(){
   const out = [];
   if(currentBase === "clean") out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png");
   else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }
-  if(currentBase === "clean"){ out.push(DEM_TILES); out.push(_HILLSHADE_TPL); }   // clean: DEM at globe scale + cheap ESRI raster zoomed in
-  else if(currentBase === "topo") out.push(_HILLSHADE_TPL);                       // topo uses the ESRI raster shade
+  if(currentBase !== "satellite") out.push(_HILLSHADE_TPL);                       // clean + topo relief = cheap ESRI raster hillshade
   return out;
 }
 const _HILLSHADE_TPL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
@@ -1655,10 +1654,7 @@ function warmWorldBaseline(){
   for(let z = 0; z <= 4; z++){
     const span = 1 << z;
     for(let x = 0; x < span; x++) for(let y = 0; y < span; y++){
-      // DEM tiles are ~80KB (10x a raster tile), so prewarming the whole world z0-4 was ~27MB on startup —
-      // THE "long load". Prewarm the DEM only to z2 (the coarse whole-world relief, ~1.7MB — enough to cover
-      // globe rotation); z3+ refines in on-demand + is SW-cached. ESRI shade (topo) stays z0-4.
-      tpls.forEach(t=>{ if(t === DEM_TILES){ if(z > 2) return; } else if(t === _HILLSHADE_TPL){ if(z > 4) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });
+      tpls.forEach(t=>{ if(t === _HILLSHADE_TPL){ if(z > 4) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade only to z4; imagery only to the base's own maxzoom
     }
   }
   _runWarm();
@@ -1720,9 +1716,7 @@ function warmGlobeView(){
     for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
       if(y < 0 || y >= span) continue;
       const xx = ((x % span) + span) % span;
-      // Skip the DEM here: at ~80KB/tile a wide on-pan ring would refetch megabytes each drag. The globe is
-      // already covered by the z0-2 DEM prewarm; higher-zoom DEM loads on-demand for the view + is SW-cached.
-      tpls.forEach(t=>{ if(t === DEM_TILES) return; if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
+      tpls.forEach(t=>{ if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
     }
   });
   _runWarm();
@@ -2745,7 +2739,7 @@ function applyCartoLabelToggle(){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-sphere","g-poles","g-overview","g-base","g-shade","g-shade-globe","g-dem-hs","g-dem","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-sphere","g-poles","g-overview","g-base","g-shade","g-shade-globe","g-labels"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
@@ -2778,27 +2772,22 @@ function setGlobeBasemap(k){
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
-      if(layers.shade && !mlMap.getSource("g-dem")){
+      if(layers.shade && !mlMap.getSource("g-shade")){
         // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        // TERRAIN RELIEF — a HYBRID, chosen so the globe is razor-sharp AND zooming in is instant:
-        //  • ZOOMED OUT (the globe, where a raster hillshade seams or blurs): a GPU-computed hillshade from an
-        //    elevation DEM (terrarium). It's computed PER PIXEL, so it's crisp at any zoom/DPI and seamless.
-        //    But DEM tiles are ~80KB (10x a raster) from S3 (no CDN), so deep-zoom fetches "load forever" — so
-        //    the DEM source is CAPPED at z5 and its intensity fades out by z7. It never fetches past z5; the
-        //    coarse z0-2 world is prewarmed, z3-5 loads for the view.
-        mlMap.addSource("g-dem",{type:"raster-dem",tiles:[DEM_TILES],encoding:"terrarium",tileSize:256,maxzoom:5});
-        mlMap.addLayer({id:"g-dem-hs",type:"hillshade",source:"g-dem",paint:{
-          "hillshade-exaggeration":["interpolate",["linear"],["zoom"], 2,0.4, 5,0.5, 7,0.0],
-          "hillshade-shadow-color":"#4c525a","hillshade-highlight-color":"#ffffff",
-          "hillshade-accent-color":"#565c64","hillshade-illumination-anchor":"map"}}, belowWater);
-        //  • ZOOMED IN: the light (~8KB) CDN raster hillshade takes over from z6 — it loads FAST and, this
-        //    close in, MapLibre picks a consistent tile zoom so it doesn't seam. Off (0) at globe scale so it
-        //    can't seam there. This is what makes zooming in instant instead of waiting on heavy DEM tiles.
+        // TERRAIN RELIEF — LIGHT + SUBTLE. Just the cheap (~8KB) CDN raster hillshade at LOW opacity: enough to
+        // hint at mountains, not a bold relief. (A DEM hillshade was razor-sharp but its ~80KB tiles were heavy
+        // and laggy to zoom into — overkill for a subtle backdrop.) Two layers so it's not blurry on the globe:
+        //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 (a z2 tile smeared a whole
+        //    continent → the original blur); at z4 + low opacity it reads as faint, clean relief, not a smudge.
+        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
+        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
+        //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, loads fast, and this
+        //    far in MapLibre picks a consistent tile zoom so there's no seam. Also kept subtle.
         mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 6,0.0, 7.5,0.42, 10,0.55, 13,0.15],"raster-fade-duration":120}}, belowWater);
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
