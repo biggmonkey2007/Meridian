@@ -98,7 +98,7 @@ header{
   overflow:hidden;
 }
 #briefing{top:66px;left:14px;width:344px;max-height:calc(100vh - 80px)}
-#detail{top:66px;right:14px;width:366px;max-height:calc(100vh - 80px);transform:translateX(420px);opacity:0;pointer-events:none;transition:transform .2s cubic-bezier(.22,1,.36,1),opacity .14s ease-out}
+#detail{top:66px;left:14px;width:366px;max-height:calc(100vh - 80px);transform:translateX(-420px);opacity:0;pointer-events:none;transition:transform .2s cubic-bezier(.22,1,.36,1),opacity .14s ease-out}
 #detail.open{transform:none;opacity:1;pointer-events:auto}
 .panel.collapsed{display:none}
 .p-head{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 11px;border-bottom:1px solid var(--line)}
@@ -372,7 +372,7 @@ a.src-row:hover{background:var(--panel-2)}
 .news-city .nc-title{font-size:11px;color:var(--ink-3);line-height:1.3;margin-top:1px}
 
 /* ---------- Bottom-left controls ---------- */
-.controls{position:fixed;left:14px;bottom:14px;z-index:25;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.controls{position:fixed;right:14px;top:66px;z-index:25;display:flex;flex-direction:column;gap:10px;align-items:flex-end}   /* moved to the RIGHT: the story reader now lives on the left */
 .zoomers{position:fixed;right:14px;bottom:14px;z-index:20;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
 .zoomers button{width:38px;height:36px;border:none;background:transparent;font-size:18px;color:var(--ink-2);display:grid;place-items:center;border-bottom:1px solid var(--line);transition:background .14s,color .14s}
 .zoomers button:last-child{border-bottom:none;font-size:13px}
@@ -422,7 +422,7 @@ a.src-row:hover{background:var(--panel-2)}
   #dmin{display:none}                                   /* no "minimize" in a full-screen story — the × closes it */
   #detail .p-head{padding:14px 16px 12px;position:sticky;top:0;background:var(--panel);z-index:2}
   #detail .p-close{width:38px;height:38px;font-size:20px}   /* a comfortable touch target */
-  .controls{bottom:calc(70px + env(safe-area-inset-bottom,0px));left:8px}
+  .controls{bottom:calc(70px + env(safe-area-inset-bottom,0px));left:8px;top:auto;right:auto;align-items:flex-start}
   .legend{display:none}
   .legend.show{display:block;position:fixed;bottom:calc(70px + env(safe-area-inset-bottom,0px));left:8px;right:8px;max-width:none}
   #mobar{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(54px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);z-index:45;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);align-items:stretch}
@@ -3022,8 +3022,15 @@ function toast(msg){
 }
 function zoomBy(f){ if(globeMode && mlMap){ mlMap.easeTo({ zoom: mlMap.getZoom() + (f>=1 ? 0.9 : -0.9), duration:250 }); return; } if(map) map.setZoom(map.getZoom() + (f>=1 ? 1 : -1)); }
 function resetView(){ if(globeMode && mlMap){ mlMap.easeTo({ center:[14,22], zoom:1.5, duration:600 }); return; } if(map) map.flyTo([30,12], 3, { duration:0.6 }); }
+// When the reader panel is open on the LEFT, inset the map camera so the globe sits CENTRED in the space
+// that's left, not hidden behind the panel. MapLibre honours a `padding`; desktop only (the mobile panel
+// is full-screen). _inset() reads whether the panel is currently open.
+const PANEL_INSET = 396;                                  // panel width (366) + its margins
+function _inset(){ return (detail.classList.contains("open") && innerWidth > 1024) ? PANEL_INSET : 0; }
+function setMapInset(){ try{ if(globeMode && mlMap) mlMap.easeTo({ padding:{left:_inset(),top:0,right:0,bottom:0}, duration:300 }); }catch(e){} }
 function flyTo(lng,lat,z){
-  if(globeMode && mlMap){ mlMap.flyTo({ center:[lng,lat], zoom:Math.max(z||4, mlMap.getZoom()), duration:900 }); return; }
+  const p={left:_inset(),top:0,right:0,bottom:0};
+  if(globeMode && mlMap){ mlMap.flyTo({ center:[lng,lat], zoom:Math.max(z||4, mlMap.getZoom()), padding:p, duration:900 }); return; }
   if(map) map.flyTo([lat,lng], Math.max(z||5, map.getZoom()), { duration:0.7 });
 }
 function centerOnEvent(d,z){ flyTo(d.lng, d.lat, z||5); }
@@ -4223,12 +4230,13 @@ function gotoStory(dir){
   const list=_navList(); if(list.length<2) return;
   let i=list.findIndex(e=>e.id===activeEvent); if(i<0) i=0;
   const ev=list[(i+dir+list.length)%list.length]; if(!ev) return;
-  selectEvent(ev);
-  try{ centerOnEvent(ev, (globeMode&&mlMap&&mlLoaded)?Math.max(mlMap.getZoom(),3.5):5); }catch(e){}
+  selectEvent(ev);          // selectEvent now flies the globe to the story itself
 }
-function selectEvent(d){
+function selectEvent(d, noFly){
   hideTip();
   activeEvent=d.id; activeCountry=null;
+  openDetail();                       // open the reader (+ inset the map) FIRST, so the fly centres correctly
+  if(!noFly){ try{ centerOnEvent(d, 3.6); }catch(e){} }   // take you to where it is — the news dot / region
   // Mark read with a PENDING baseline (-1): this dot's clips have not loaded yet, so we cannot know
   // its count. The first noteMedia() for it will set the real baseline — otherwise the media that was
   // there all along would read as "new" and instantly un-gray the dot you just opened.
@@ -4376,10 +4384,11 @@ function selectCountry(name){
   loadCountryProfile(name);
 }
 
-function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); if(innerWidth<=1024){ document.getElementById("briefing").classList.add("collapsed"); setMobar("map"); } }
+function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); setMapInset(); if(innerWidth<=1024){ const bf=document.getElementById("briefing"); if(bf) bf.classList.add("collapsed"); setMobar("map"); } }
 function deselectAll(){
   activeEvent=null; activeCountry=null;
   detail.classList.remove("open");
+  setMapInset();                              // panel closed -> globe recentres on the full screen
   clearCountryHighlight();
   clearCities();
   clearCountry();
@@ -4522,6 +4531,13 @@ async function loadLive(auto){
     const added=applyWorldEvents(items);
     if(!isStale && added) _haveFresh=true;
     hideSplash();                         // real data is in (fresh, or a current-enough cache) — drop the splash
+    // AUTO-OPEN the reader on the first load (desktop): it lives on the left now, so open it straightaway
+    // showing the top story, with the globe inset to the right — but DON'T fly to the story (the overview
+    // stays). Only once, and never over a selection the user already made.
+    if(added && !_autoOpened && !activeEvent && !activeCountry && innerWidth > 1024){
+      _autoOpened = true;
+      try{ const top=_navList()[0]; if(top) selectEvent(top, true); }catch(e){}
+    }
     if(liveStatus) liveStatus.innerHTML = added
       ? `<span class="live-ok">● ${added} live stories</span> — real headlines, photos &amp; sources. Tap any dot.`
       : `<span class="live-err">No live stories came back.</span> Try again in a moment.`;
@@ -4531,7 +4547,7 @@ async function loadLive(auto){
     if(liveStatus) liveStatus.innerHTML=`<span class="live-err">Couldn’t reach the news service.</span> Check your connection and retry.`;
   }finally{ if(liveBtn) liveBtn.disabled=false; }
 }
-let _stalePending=false, _haveFresh=false;
+let _stalePending=false, _haveFresh=false, _autoOpened=false;
 const _openedAt=Date.now(), _COLD_BLANK_MS=30000;
 // COLD-START SPLASH: cover the map until the first dots land (or a hard 8s cap), so a first-ever launch
 // never stares at an empty grey map. On later launches the disk cache is warm and this vanishes in a blink.
