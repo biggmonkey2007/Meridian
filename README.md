@@ -135,6 +135,23 @@ you may not buy one with the other:
 Every location bug so far was a missing rule, never a reason to bin the story: ACTORS SINK,
 TARGETS SINK, a national ministry acts from its OWN capital. Add the rule, add the test case.
 
+*Exception — the importance gate.* The WORLD map is for country/region/world-changing news, so a
+true-but-minor **local** story (a beach eroding) or a broad analysis with no place to pin is hidden
+from it (`_map_worthy` / the AI `SCOPE`). That is NOT dropping the news: the **starred-country feed
+keeps everything**, and `_hard_news` (casualties, a top official on the record) can never be hidden.
+
+### RULE 5 — Every update does a complete fresh resweep. Bump `_DATA_VER`.
+A fix is worthless if the running app keeps serving stale cached dots built by the old code. So on
+**every shipped change to the news/AI pipeline, bump the single `_DATA_VER` constant** (top of
+`app.py`). It is folded into the feed-cache stamp and the summary + location/scope cache keys, so the
+next launch **throws away all stale data and re-does everything from scratch**: the feed is rebuilt
+live (re-fetch the wire → re-geolocate with the new rules → re-apply the importance gate) and every AI
+product — summary, location (`WHERE`), importance (`SCOPE`) — is regenerated. The fix is then visible
+on the next launch instead of self-healing over a later cycle. (The per-feature vers — `_SUM_PROMPT_VER`,
+`_AIWHERE_VER` — still exist for targeted invalidation; `_DATA_VER` is the big hammer that resweeps all
+of it.) AI geolocation is what deciphers the traps the rules can't — a program *name* like
+`'Golden Fleet'` is not the town of Golden, CO — so a resweep is what lets that judgment reach the map.
+
 ---
 
 ## 3. Architecture

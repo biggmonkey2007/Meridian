@@ -317,6 +317,11 @@ GEO_CASES = [
      "SHIPPED BUG: dotted 'Nikita', a village near Yalta — the trailing 'in' of the promo lead 'JUST IN' "
      "read as '…IN Nikita', flipping on locating context that defeats the tiny-town + surname vetoes. A "
      "person's forename is not a town; the wire's promo lead must be stripped before geolocating."),
+    ("Senate minority leader criticizes Trump's proposed 'Golden Fleet' battleships as costly vanity project",
+     "", "!Golden", "SHIPPED: a program NAME ('Golden Fleet') dotted Golden, Colorado; the words of a "
+     "quoted program name are modifiers, not the town (and not Fleet, UK either) — a US Senate story"),
+    ("Trump unveils 'Golden Dome' missile defense shield", "", "!Golden",
+     "'Golden Dome' is a program, not the city Golden (nor Dome, Ghana) — falls through to the US actor"),
     ("Russian Military Strikes Ukrainian Port with AI-Enabled Geran-4 drones over the Black Sea",
      "", "Odesa",
      "SHIPPED BUG: no port was NAMED, so the only place in the post was the BLACK SEA and the dot "

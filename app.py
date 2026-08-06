@@ -163,13 +163,20 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
+# FRESH RESWEEP ON EVERY UPDATE. Bump this ONE constant on every shipped change to the news/AI pipeline and
+# the next launch throws away all stale data and re-does everything from scratch: the feed is rebuilt live
+# (re-fetch the wire, re-geolocate with the new rules, re-apply the importance gate) and every AI product —
+# summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
+# and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
+# a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
+_DATA_VER = "d1"
 _SUM_PROMPT_VER = "9"   # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw4"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
 
 def _aiwhere_path(title):
     return os.path.join(CACHE_DIR, "aiwhere_" + hashlib.sha1(
-        (_AIWHERE_VER + "\n" + (title or "")).encode("utf-8")).hexdigest()[:16] + ".json")
+        (_DATA_VER + "\n" + _AIWHERE_VER + "\n" + (title or "")).encode("utf-8")).hexdigest()[:16] + ".json")
 
 
 def _ai_where(title):
@@ -294,7 +301,7 @@ def _summarize(title, text):
     if not (title or text) or not _llm_available():
         return ""
     text = text[:4500]
-    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             return json.load(open(cache, encoding="utf-8")).get("s", "")
@@ -1701,6 +1708,10 @@ class Api:
                 cached = json.load(open(cache, encoding="utf-8"))
             except Exception:
                 cached = None
+        # FRESH RESWEEP: a feed built by an OLDER _DATA_VER is from before this update — discard it and build
+        # fresh (new rules, new AI) rather than serving stale dots the fix was meant to correct.
+        if cached and cached.get("dv") != _DATA_VER:
+            cached = None
         if cached:
             # restore the clip->owner map too, or the feed would serve with an EMPTY owner map and the
             # same clip would reappear under several dots until the next rebuild.
@@ -1906,7 +1917,7 @@ class Api:
         except Exception:
             pass
         _spread(events)   # fan out dots that share a location
-        res = {"events": events, "generated": int(time.time()), "clip_owner": _CLIP_OWNER}
+        res = {"events": events, "generated": int(time.time()), "clip_owner": _CLIP_OWNER, "dv": _DATA_VER}
         if events:  # never cache an empty/failed result — let it retry next time
             try:
                 json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -1933,7 +1944,7 @@ class Api:
                 h = 24
             if h not in (6, 12, 24, 48):
                 h = 24
-            cache = os.path.join(CACHE_DIR, "starred_%s_%dh.json" % (_slug(country)[:24], h))
+            cache = os.path.join(CACHE_DIR, "starred_%s_%s_%dh.json" % (_DATA_VER, _slug(country)[:24], h))
             if _fresh(cache, 900):
                 try:
                     return json.load(open(cache, encoding="utf-8"))
@@ -4343,10 +4354,14 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # "central" is a direction/region word ("Central and Eastern Europe", "Central Asia"),
                      # never Central, Ontario — the multi-word "Central African Republic" still matches.
                      "arab", "the village", "central"}
-# These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark — a
-# dot ONLY when the sentence locates something there ("in Sparks"). SHIPPED: "chipmaker SPARKS fears" ->
-# Sparks, Nevada; "BRENT crude" -> Brent, London.
-_NOT_CITY_WORDS = {"sparks", "brent", "shaping"}   # "shaping tomorrow's grid" is a verb, not Shaping, China
+# These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark / an
+# ADJECTIVE in a proper-noun phrase — a dot ONLY when the sentence locates something there ("in Sparks").
+# SHIPPED: "chipmaker SPARKS fears" -> Sparks, Nevada; "BRENT crude" -> Brent, London; a Trump "'GOLDEN
+# Fleet'" battleship program -> Golden, Colorado. "Golden Dome", "Liberty Bell", "Victory Day", "Union
+# workers" are the same trap: the word is a modifier, not the town, unless a preposition locates it.
+_NOT_CITY_WORDS = {"sparks", "brent", "shaping", "golden", "silver", "liberty", "victory",
+                   "union", "enterprise", "sunrise", "sunset", "eagle", "hope", "energy",
+                   "fleet", "dome", "shield", "dawn", "sentinel", "guardian"}   # program/operation names
 # Place names that are ALSO everyday English words — a dot ONLY when Capitalised in the source. "polish"
 # (shine), "china" (porcelain), "turkey" (the bird / cold turkey), "guinea" (guinea pig), "chad" (hanging
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
