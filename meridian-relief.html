@@ -2824,9 +2824,19 @@ function setGlobeBasemap(k){
       }).catch(()=>{});
     }
   }
-  // g-borders (the app's own country outline) shows on every mode now — the vector overlay carries no baked
-  // boundaries the way the old ESRI raster labels did. White over satellite, dark elsewhere; osm bakes its own.
-  if(mlMap.getLayer("g-borders")){ mlMap.setPaintProperty("g-borders","line-color", globeBorderCol()); mlMap.setPaintProperty("g-borders","line-opacity", k==="satellite"?0.45:0.16); const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none"); }
+  // g-borders is the app's OWN country outline. On SATELLITE the vector boundaries are hidden
+  // (tuneCartoForSatellite) so the photo shows through — g-borders is the only border, kept at all zooms.
+  // On CLEAN/TOPO the Positron vector border IS the line, so g-borders there was a SECOND line drawn over it
+  // — a faint ghost offset by its coarser geometry (the "draw-over" the user saw when zoomed in). But at
+  // world scale (z<3) the vector border is covered by the overview raster, so g-borders still has to draw the
+  // outline THERE. So on clean/topo it fades out by ~z3.4: it fills in the far-out globe, then hands off to
+  // the vector line and vanishes before any zoomed-in view — no double border where it shows.
+  if(mlMap.getLayer("g-borders")){
+    mlMap.setPaintProperty("g-borders","line-color", globeBorderCol());
+    mlMap.setPaintProperty("g-borders","line-opacity",
+      k==="satellite" ? 0.45 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);
+    const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
+  }
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
   _worldWarmed = false;
