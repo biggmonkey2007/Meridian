@@ -1438,15 +1438,14 @@ function tuneVectorStyle(style){
     // ONLY that to a soft transparent black. Keep it the original THIN line (native 1->1.5px), just nudged a
     // hair wider and a touch more transparent so it stays a clean hairline, never a heavy band.
     if(l.id==="boundary_country_inner"){
-      // A border that traces a meandering RIVER (the Prut, the Bug) has far more vertices than a zoomed-out
-      // view can resolve, so it reads as a jagged caterpillar. We can't re-simplify CARTO's geometry, but a
-      // hair of BLUR optically fuses those sub-pixel zigzags into one smooth line when zoomed OUT — ramped
-      // back to 0 (fully crisp) by z11, so a close-up is unchanged. Paired with a slightly thinner line at
-      // low zoom so the wiggle recedes instead of shouting.
+      // CRISP + dark, so the line sits ACCURATELY on the real boundary. Blur (which smooths a meandering
+      // river border but makes the line read as a soft, imprecise band) is cut to a whisper that only exists
+      // at globe scale (z<5, where the tiny zigzags would alias) and is fully gone by z6 where you actually
+      // read the map. Darker again (0.34 -> 0.44) so it clearly leads over the faint region lines.
       l.paint = Object.assign({}, l.paint, {
-        "line-color":"#000000", "line-opacity":0.34,
+        "line-color":"#000000", "line-opacity":0.44,
         "line-width":["interpolate",["linear"],["zoom"], 3,0.7, 6,1.0, 10,1.6, 14,2.3],
-        "line-blur": ["interpolate",["linear"],["zoom"], 4,0.8, 9,0.6, 11,0]});
+        "line-blur": ["interpolate",["linear"],["zoom"], 3,0.4, 5,0.15, 6,0]});
     }
     // The OUTLINE is a WIDE 8px casing — meant to be a light halo that lifts the border off the land. Recolouring
     // it black (as we briefly did) turned it into a fat dark band that SMEARS along wiggly river borders (the
