@@ -26,6 +26,9 @@ if ((Test-Path $marker) -and $newest -le (Get-Item $marker).LastWriteTime) { exi
 Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
   Where-Object { $_.CommandLine -like '*app.py*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+# ALSO close the installed Meridian.exe — otherwise the dev copy we relaunch and the exe both bind the
+# app's fixed port (49731), one goes black, and windows pile up. One Meridian at a time, always.
+Get-Process 'Meridian' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 if (Test-Path $pidFile) {
   $old = Get-Content $pidFile
   if ($old) { Stop-Process -Id ([int]$old) -Force -ErrorAction SilentlyContinue }
