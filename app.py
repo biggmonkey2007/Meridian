@@ -1680,9 +1680,15 @@ class Api:
         except Exception:
             return cached                               # last hosted copy, or None to fall back to local
 
-    def _build_world_events(self, h):
+    def _build_world_events(self, h, live=False):
         """The live build — GDELT + feeds + Telegram, geolocated and deduped, written to the cache. Blocks;
-        run synchronously only on a cold start, and in a background thread by stale-while-revalidate."""
+        run synchronously only on a cold start, and in a background thread by stale-while-revalidate.
+
+        live=False (the SYNCHRONOUS cold-start path) keeps every AI step OFF the critical path: locations
+        come from rules + the cached summary WHERE, and the LLM dedup net is skipped. That is the difference
+        between the map filling in ~1 min and sitting empty for 6-12 min while hundreds of live LLM calls
+        stack up. live=True (the BACKGROUND refresh) then does the full AI geo + dedup, so the very next
+        served feed is the upgraded one — the cache warms invisibly while the user already has dots."""
         cache = os.path.join(CACHE_DIR, "world_%dh.json" % h)
         span = "%dh" % h
         # Fetch GDELT, the RSS feeds, and the OSINT Telegram channels ALL AT ONCE, capped by a SINGLE
@@ -1730,7 +1736,11 @@ class Api:
             # refinery) outrank the headline's own subject (a strike in the Sea of Azov). The headline is what
             # the card shows, so it's what the dot must match; body clarifications ("…in southern Lebanon")
             # are still read from the desc when the headline itself names no scene.
-            loc = _locate(title, a.get("sourcecountry") or "", a.get("geo_text") or a.get("desc") or "", url)
+            # Cold start (live=False): rules + the CACHED summary WHERE only. A live per-art geolocation call
+            # would stack to minutes on a cold cache (351 calls seen) and the map would sit empty; the AI
+            # pinpoint lands on the next (background) build via the WHERE the summary prewarm fills in.
+            loc = _locate(title, a.get("sourcecountry") or "", a.get("geo_text") or a.get("desc") or "", url,
+                          allow_ai=live)
             if not loc:
                 continue
             lat, lng, place, country = loc
@@ -1811,10 +1821,11 @@ class Api:
             for _e in events:                      # a merge bug must NEVER blank the feed — degrade to un-merged
                 _e.setdefault("sources", [_src_of(_e)])
         events = _collapse_colocated(events)   # then one dot per place — merge a co-located barrage
-        try:
-            events = _ai_dedup(events)         # last net: fold same-event dots the code can't prove (free LLM)
-        except Exception:
-            pass
+        if live:                               # LLM dedup net is a background-only luxury — never block cold start
+            try:
+                events = _ai_dedup(events)     # last net: fold same-event dots the code can't prove (free LLM)
+            except Exception:
+                pass
         events = events[:260]
         try:
             _assign_clips(events, _tg_all_posts())   # each clip belongs to ONE dot, feed-wide
@@ -1874,7 +1885,7 @@ class Api:
                 if hrs > h:
                     continue
                 loc = _locate(title, a.get("sourcecountry") or country,
-                              a.get("geo_text") or a.get("desc") or "", url)
+                              a.get("geo_text") or a.get("desc") or "", url, allow_ai=False)
                 if not loc:
                     continue
                 lat, lng, place, ev_country = loc
@@ -2872,7 +2883,7 @@ def _spawn_world_refresh(api, h):
 
     def _run():
         try:
-            api._build_world_events(h)
+            api._build_world_events(h, live=True)   # background: full AI geo + dedup, warms the cache for next time
         except Exception:
             pass
         finally:
@@ -6218,11 +6229,18 @@ def _geo_is_weak(r):
     return bool(cc) and abs(lat - cc[0]) < 1e-3 and abs(lng - cc[1]) < 1e-3
 
 
-def _locate(title, sourcecountry, desc, url=""):
+def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     """The location for a dot. RULES first (free, deterministic, tested); only when they can't pin a
     specific place does the FREE AI read the whole story and name it — grounded back through the SAME
     gazetteer for coordinates, and anchored to a country the story actually names (so the model can't
-    invent one). Purely additive: with no LLM this is exactly _geolocate."""
+    invent one). Purely additive: with no LLM this is exactly _geolocate.
+
+    allow_ai=False keeps it to the RULES + the CACHED summary WHERE (no live network call) — the mode the
+    synchronous cold-start build uses so it never blocks on hundreds of live geolocation calls. A live
+    `_geolocate_ai` (uncached, one network round-trip EACH) is only worth it in a background/warm pass;
+    on a cold cache 351 of them stacked to 6-12 min and the map showed no dots. A brand-new story is
+    rule-placed on this build and upgraded to the AI's pinpoint on the next one (via the cached WHERE the
+    summary prewarm fills in) — the same one-build lag summaries already have."""
     r = _geolocate(title, sourcecountry, desc, url)
     ment_list = _context_mentions((title or "") + " " + (desc or ""), url)
     ment = {co for (co, _t) in ment_list}
@@ -6246,8 +6264,8 @@ def _locate(title, sourcecountry, desc, url=""):
                 return g                              # a specific, anchored place -> use the AI's pinpoint
             if r is None or _geo_is_weak(r):
                 return g                              # AI at least got the country; the rules had nothing better
-    if not _llm_available():
-        return r
+    if not allow_ai or not _llm_available():
+        return r                                      # cold-start build (or no LLM): rules + cached WHERE only
     # NAMESAKE MISMATCH: a SPECIFIC dot whose country the story never names, while it DOES name another
     # country, is almost always a US-town namesake matched for a foreign story ("Arab, AL" for an Israeli
     # story; "The Village, US" for a Greek island; "Hays, KS" for a Yemen clash). Let the AI arbitrate

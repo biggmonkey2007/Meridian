@@ -1355,6 +1355,31 @@ def main():
     print(f"  {'ok ' if _ag_ok else 'FAIL'} weak(None)={app._geo_is_weak(None)} weak(city)={app._geo_is_weak(_entebbe)} "
           f"weak(country)={app._geo_is_weak(_country_dot)}; solid scene unchanged")
 
+    # allow_ai=False MUST NOT make a live geolocation call — this is what keeps the cold-start build from
+    # stalling on hundreds of network LLM round-trips. With the LLM "available" and _geolocate_ai stubbed,
+    # a story the rules can't place must skip the live call when allow_ai=False, and take it when True.
+    _orig_geoai, _orig_avail = app._geolocate_ai, app._llm_available
+    _ai_calls = [0]
+    try:
+        app._llm_available = lambda: True
+        def _count_geoai(*a, **k):
+            _ai_calls[0] += 1
+            return ""                                  # no real network; just prove it was (not) called
+        app._geolocate_ai = _count_geoai
+        app._locate("Markets wobble on mixed signals", "", "", "", allow_ai=False)
+        _fast_calls = _ai_calls[0]
+        app._locate("Markets wobble on mixed signals", "", "", "", allow_ai=True)
+        _slow_calls = _ai_calls[0]
+    finally:
+        app._geolocate_ai, app._llm_available = _orig_geoai, _orig_avail
+    _noai_ok = (_fast_calls == 0 and _slow_calls >= 1)   # skipped when False, taken when True
+    ran[0] += 1
+    if not _noai_ok:
+        fails.append(("ai-geo", "allow_ai gate", "0 live calls when False, >=1 when True",
+                      f"fast={_fast_calls} slow={_slow_calls}",
+                      "the cold-start build passes allow_ai=False so it never blocks on live geolocation calls"))
+    print(f"  {'ok ' if _noai_ok else 'FAIL'} allow_ai=False -> {_fast_calls} live call(s); allow_ai=True -> {_slow_calls}")
+
     # SOURCE MUTE — a muted outlet is hidden from the map (no dots, no citations), matched on domain / name
     # / url; other outlets are untouched. (The default mutes The Guardian per the user.)
     print("\n=== SOURCE MUTE (a hidden outlet never reaches the map) ===")
@@ -1506,6 +1531,7 @@ def main():
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
              + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
              + 1   # + flag-coverage one-off
+             + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 3)   # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
