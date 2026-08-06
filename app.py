@@ -2022,7 +2022,12 @@ class Api:
             cache = os.path.join(CACHE_DIR, "update_check.json")
             if _fresh(cache, 6 * 3600):
                 try:
-                    return json.load(open(cache, encoding="utf-8"))
+                    c = json.load(open(cache, encoding="utf-8"))
+                    # RE-VALIDATE against the CURRENT version. The cached 'available' was computed against the
+                    # version that was running when it was written — so after an update it's stale and would
+                    # show a phantom "Update to vX" pill for the version you JUST installed. Recompute it.
+                    c["available"] = bool(c.get("url")) and _is_newer(c.get("version") or "", APP_VERSION)
+                    return c
                 except Exception:
                     pass
             api = "https://api.github.com/repos/%s/releases/latest" % repo
