@@ -1335,6 +1335,24 @@ def main():
     print(f"  {'ok ' if _pf_ok else 'FAIL'} main city Ukraine->{_lc.get('Ukraine')}, Kuwait->{_lc.get('Kuwait')}, "
           f"Iran->{_lc.get('Iran')}; flag rejected: {not app._good_img(_flagurl)}")
 
+    # WIKI THUMBNAIL: a FULL-RES commons original (10-30 MB) never paints in the webview -> a black hero.
+    # _wiki_thumb must bound every Wikimedia URL to a <=NNNpx thumbnail (and leave non-wikimedia URLs alone).
+    _orig = "https://upload.wikimedia.org/wikipedia/commons/2/2b/Mumbai_Bandra-Worli_Sea_Link.jpg"
+    _thm  = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/X.jpg/2400px-X.jpg"
+    _fp   = "https://commons.wikimedia.org/wiki/Special:FilePath/Y.jpg"
+    _nyt  = "https://static01.nyt.com/images/2026/x.jpg"
+    _wt_ok = (app._wiki_thumb(_orig, 1280) == "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/"
+                                              "Mumbai_Bandra-Worli_Sea_Link.jpg/1280px-Mumbai_Bandra-Worli_Sea_Link.jpg"
+              and "/1280px-X.jpg" in app._wiki_thumb(_thm, 1280)      # an existing thumb is just resized
+              and app._wiki_thumb(_fp, 1280).endswith("?width=1280")  # FilePath gets a bounded width
+              and app._wiki_thumb(_nyt, 1280) == _nyt)                # non-wikimedia untouched
+    ran[0] += 1
+    if not _wt_ok:
+        fails.append(("wiki-thumb", "bound to thumbnail", "full-res -> /thumb/../1280px-, others sane",
+                      f"orig->{app._wiki_thumb(_orig,1280)}",
+                      "a full-res commons original stalls to a black hero in the webview"))
+    print(f"  {'ok ' if _wt_ok else 'FAIL'} full-res original -> {app._wiki_thumb(_orig,1280).split('/commons/')[-1][:52]}")
+
     # AI GEO FALLBACK — OFFLINE INVARIANTS. The AI second opinion must be purely additive: it fires ONLY on
     # a weak rule result (None or a bare country centroid), never on a solid city/scene. These checks touch
     # no network (a non-weak result short-circuits before any LLM call), so they stay deterministic.
@@ -1532,6 +1550,7 @@ def main():
              + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
+             + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 3)   # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,

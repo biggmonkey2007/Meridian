@@ -1269,8 +1269,11 @@ class Api:
             try:
                 cached = json.load(open(cache, encoding="utf-8"))
                 # SELF-HEAL: an old cache may hold a flag/locator-map URL saved before _good_img learned to
-                # reject them. Re-validate on read so those stale flags drop out without wiping the cache.
+                # reject them (re-validate), or a FULL-RES original saved before we bounded to a thumbnail
+                # (re-thumb) — so stale entries fix themselves on read without wiping the cache.
                 if (not cached.get("url")) or _good_img(cached["url"]):
+                    if cached.get("url"):
+                        cached["url"] = _wiki_thumb(cached["url"], 1280)
                     return cached
             except Exception:
                 pass
@@ -1304,8 +1307,7 @@ class Api:
             if src and not _good_img(src):
                 src = ""                       # a country's Wikipedia lead image is usually its flag/locator map — skip it
             if src:
-                out = {"url": re.sub(r"/\d+px-([^/]*)$", r"/1280px-\1", src),
-                       "title": j.get("title") or q}
+                out = {"url": _wiki_thumb(src, 1280), "title": j.get("title") or q}
                 break
         res = out or {}
         try:
@@ -3340,6 +3342,26 @@ def _good_img(u):
     return not any(b in lu for b in bad)
 
 
+def _wiki_thumb(url, px=1280):
+    """Bound a Wikimedia image URL to a <=px-wide THUMBNAIL. Wikipedia's `originalimage` is the FULL-RES
+    commons original — routinely 10-30 MB — which never finishes loading in the webview, so the hero stays a
+    black frame (the "many pictures are black" bug). A thumbnail is a few hundred KB and always paints.
+    Handles the three shapes we emit: an already-rendered /thumb/.../NNNpx- URL (swap the size), a
+    Special:FilePath redirector (add ?width=), and a bare /commons/a/bc/File.ext original (build its thumb)."""
+    if not url or ("wikimedia.org" not in url and "Special:FilePath" not in url):
+        return url
+    if re.search(r"/\d+px-[^/]*$", url):                          # already a rendered thumbnail -> resize
+        return re.sub(r"/\d+px-([^/]*)$", (r"/%dpx-\1" % px), url)
+    if "Special:FilePath/" in url:                               # redirector -> ask it for a bounded width
+        return url if re.search(r"[?&]width=", url) else url + ("&" if "?" in url else "?") + "width=" + str(px)
+    m = re.match(r"^(https?://upload\.wikimedia\.org/wikipedia/[^/]+)/([0-9a-fA-F]{1,2})/"
+                 r"([0-9a-fA-F]{1,2})/([^/?#]+)$", url)
+    if m:                                                        # bare full-res original -> its /thumb/ URL
+        base, d1, d2, fname = m.groups()
+        return "%s/thumb/%s/%s/%s/%dpx-%s" % (base, d1, d2, fname, px, fname)
+    return url
+
+
 _OUTLET_NAMES = {
     "aljazeera.com": "Al Jazeera", "aljazeera.net": "Al Jazeera", "bbc.com": "BBC",
     "bbc.co.uk": "BBC", "cnn.com": "CNN", "reuters.com": "Reuters", "apnews.com": "AP",
@@ -5084,6 +5106,8 @@ def _hero_person(title, desc=""):
             try:
                 hit = json.load(open(cache, encoding="utf-8"))
                 if hit:
+                    if hit.get("url"):                       # self-heal a full-res URL cached before we thumbed
+                        hit["url"] = _wiki_thumb(hit["url"], 1280)
                     return hit
                 continue
             except Exception:
@@ -5099,7 +5123,7 @@ def _hero_person(title, desc=""):
             if img and qid and (curated or same):
                 human, _office = _wikidata_person(qid)
                 if curated or human:
-                    out = {"url": re.sub(r"/\d+px-([^/]*)$", r"/1280px-\1", img), "title": wtitle}
+                    out = {"url": _wiki_thumb(img, 1280), "title": wtitle}
         try:
             json.dump(out or {}, open(cache, "w", encoding="utf-8"))
         except Exception:
