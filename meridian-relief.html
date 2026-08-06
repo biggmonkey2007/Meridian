@@ -1426,7 +1426,7 @@ function tuneVectorStyle(style){
       l.layout = Object.assign({}, l.layout, {"icon-allow-overlap":true, "text-optional":true});
     }
     if(l.id==="boundary_state" || l.id==="boundary_county"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.13});   // internal region borders — faint transparent BLACK (Positron's native pink read as red when zoomed out)
+      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.08});   // internal region borders — faint transparent BLACK (Positron's native pink read as red when zoomed out); dropped 0.13->0.08 so regions sit further back than the country line
     }
     // RIVERS read near-invisible when zoomed out (native 0.5px #d1dbdf on light land). Nudge them a touch
     // wider at low zoom and a shade darker/bluer so the Danube/Volga/Nile etc. show at a regional view;
@@ -1444,7 +1444,7 @@ function tuneVectorStyle(style){
       // back to 0 (fully crisp) by z11, so a close-up is unchanged. Paired with a slightly thinner line at
       // low zoom so the wiggle recedes instead of shouting.
       l.paint = Object.assign({}, l.paint, {
-        "line-color":"#000000", "line-opacity":0.28,
+        "line-color":"#000000", "line-opacity":0.34,
         "line-width":["interpolate",["linear"],["zoom"], 3,0.7, 6,1.0, 10,1.6, 14,2.3],
         "line-blur": ["interpolate",["linear"],["zoom"], 4,0.8, 9,0.6, 11,0]});
     }
