@@ -1254,6 +1254,32 @@ def main():
             fails.append(("hard-news", title[:48], want_hard, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} hard={bool(got)} (want {want_hard}) {title[:44]}")
 
+    print("\n=== MAP-WORTHY GATE (broad feature / minor-local hidden; real scene kept) ===")
+    _o_sc, _o_w = app._ai_scope, app._ai_where
+    try:
+        _weak = (app.COUNTRY_COORDS["Iran"][0], app.COUNTRY_COORDS["Iran"][1], "Iran", "Iran")  # bare centroid
+        _city = (50.45, 30.52, "Kyiv, Ukraine", "Ukraine")                                      # a real scene
+        app._ai_scope = lambda t: "regional"; app._ai_where = lambda t: ""
+        _mw_broad = app._map_worthy("Wars, Wildfires and Migrants Leave Europe Straining", "war in Iran", _weak)
+        app._ai_where = lambda t: "Kyiv, Ukraine"
+        _mw_scene = app._map_worthy("Russia strikes Kyiv apartment block", "", _city)
+        app._ai_scope = lambda t: "local"; app._ai_where = lambda t: ""
+        _mw_local = app._map_worthy("Illegal sand extraction erodes a beach", "", _city)
+        _mw_cas = app._map_worthy("Gunman kills 9 at a local market", "", _city)   # hard-news override
+        app._ai_scope = lambda t: ""
+        _mw_new = app._map_worthy("A fresh unsummarised story about a place", "", _city)  # no scope yet -> shown
+    finally:
+        app._ai_scope, app._ai_where = _o_sc, _o_w
+    _mw_ok = (not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
+    ran[0] += 1
+    if not _mw_ok:
+        fails.append(("map-worthy", "importance gate",
+                      "broad+local DROP; scene/casualty/unrated KEEP",
+                      f"broad={_mw_broad} scene={_mw_scene} local={_mw_local} casualty={_mw_cas} new={_mw_new}",
+                      "the world map hides broad features & minor-local, keeps real scenes/casualties/unrated"))
+    print(f"  {'ok ' if _mw_ok else 'FAIL'} broad={'DROP' if not _mw_broad else 'keep'} scene={'KEEP' if _mw_scene else 'drop'} "
+          f"local={'DROP' if not _mw_local else 'keep'} local+casualty={'KEEP' if _mw_cas else 'drop'} unrated={'KEEP' if _mw_new else 'drop'}")
+
     print("\n=== TERSE STRIKE CLASSIFICATION (firehose posts -> security, no false positives) ===")
     for title, want, why in CLASSIFY_STRIKE_CASES:
         got = app._classify(title)
@@ -1599,6 +1625,7 @@ def main():
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
+             + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3)   # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,

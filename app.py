@@ -1820,12 +1820,12 @@ class Api:
                 continue
             # IMPORTANCE GATE. The world map is for news that is COUNTRY-, REGION- or WORLD-changing — a war
             # move, a leader's consequential statement, a mass-casualty event — not every true-but-minor local
-            # story ("illegal sand extraction erodes a beach"). The AI rates each story's SCOPE in the summary
-            # pass; a 'local' story is dropped from the world map UNLESS a hard signal (casualties, a top
-            # official on the record) overrides. It still surfaces in the STARRED-country feed (country_news),
-            # which deliberately keeps everything. No AI scope yet (a brand-new story) -> shown, then filtered
-            # on the next build once summarised — the same one-build lag as the AI pinpoint.
-            if _ai_scope(title) == "local" and not _hard_news(title, a.get("desc") or ""):
+            # story ("illegal sand extraction erodes a beach"), and not a broad analysis with no place to pin.
+            # The AI rates each story's SCOPE + WHERE in the summary pass. Both drops are overridden by
+            # _hard_news (casualties or a top official on the record). Hidden stories still surface in the
+            # STARRED-country feed (country_news). No scope yet (a brand-new story) -> shown, then gated on the
+            # next build once summarised — the same one-build lag as the AI pinpoint.
+            if not _map_worthy(title, a.get("desc") or "", loc):
                 continue
             # Dedup on DISTINCTIVE words only. Comparing raw sigwords merged genuinely different
             # events: every Russia+security story shares {drone, strike, oil, refinery...}, so a
@@ -3605,6 +3605,24 @@ def _hard_news(title, desc=""):
     if _MAJOR_ACTOR.search(t) and _TG_STMT_VERB.search(t):
         return True                                    # a government / leader / institution on the record
     return False
+
+
+def _map_worthy(title, desc, loc):
+    """The IMPORTANCE GATE for the WORLD map (the STARRED-country feed keeps everything). `loc` is the
+    _locate tuple (or None). Hide a story that is minor-LOCAL, or a broad analysis with no place to pin —
+    UNLESS _hard_news (casualties / a top official on the record) forces it on. The AI's SCOPE + WHERE from
+    the summary pass drive it, so it only bites once a story is summarised (brand-new -> shown, then gated)."""
+    if _hard_news(title, desc):
+        return True
+    if _ai_scope(title) == "local":
+        return False                                   # a true-but-minor LOCAL story
+    # The AI reviewed it (scope set) but named NO single scene (WHERE was NONE -> _ai_where empty), and the
+    # rules found nothing specific either (a bare country centroid) — a "state of the world/region" analysis
+    # with nowhere to pin (the "Wars, Wildfires and Migrants Leave Europe" piece that kept landing in the
+    # Mediterranean / on Iran). Not a map dot.
+    if _ai_scope(title) and not _ai_where(title) and (loc is None or _geo_is_weak(loc)):
+        return False
+    return True
 
 
 def _src_of(e):
