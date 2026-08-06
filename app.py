@@ -2247,7 +2247,9 @@ class Api:
                 pass
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-                list(ex.map(one, list(events)[:120]))   # top ~120 (already sorted best-first) covers the map
+                list(ex.map(one, list(events)[:300]))   # the WHOLE feed: the importance gate needs a SCOPE for
+                #   every story (a low-ranked local one at position 162 must still be scored so it can be gated),
+                #   not just the top clicks. Background + cached 30 days, so it's a one-time cost per new story.
         except Exception:
             pass
 
