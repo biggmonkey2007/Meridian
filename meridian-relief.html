@@ -766,13 +766,13 @@ a.src-row:hover{background:var(--panel-2)}
 
 /* ---- Live Wire (Telegram-style breaking-news drawer) ---- */
 #btn-wire.on{background:#e8edf3;color:#12467f}
-.wire{position:fixed;top:0;left:0;width:392px;min-width:320px;max-width:480px;height:100vh;background:#0e1621;color:#e7edf3;z-index:1400;display:flex;flex-direction:column;box-shadow:10px 0 46px rgba(0,0,0,.45);transform:translateX(-102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-right:1px solid #1c2836}
+.wire{position:fixed;top:0;right:0;width:392px;min-width:320px;max-width:480px;height:100vh;background:var(--panel);color:var(--ink);z-index:1400;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(20,30,45,.13);transform:translateX(102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-left:1px solid var(--line)}
 .wire.open{transform:translateX(0)}
-/* drag the right edge to resize the wire, within narrow limits (320-480px) */
-.wire-resize{position:absolute;top:0;right:-3px;width:9px;height:100%;cursor:ew-resize;z-index:3}
-.wire-resize::after{content:"";position:absolute;top:50%;right:3px;transform:translateY(-50%);width:3px;height:40px;border-radius:2px;background:#33465a;opacity:.55;transition:opacity .15s}
-.wire-resize:hover::after{opacity:.95;background:#4a688a}
-.wire-head{padding:15px 18px 12px;background:#17212b;border-bottom:1px solid #0a1017;position:relative;flex:0 0 auto}
+/* drag the LEFT edge to resize the wire, within narrow limits (320-480px) */
+.wire-resize{position:absolute;top:0;left:-3px;width:9px;height:100%;cursor:ew-resize;z-index:3}
+.wire-resize::after{content:"";position:absolute;top:50%;left:3px;transform:translateY(-50%);width:3px;height:40px;border-radius:2px;background:#cbd4de;opacity:.75;transition:opacity .15s}
+.wire-resize:hover::after{opacity:1;background:var(--ink-3)}
+.wire-head{padding:15px 18px 12px;background:var(--panel-2);border-bottom:1px solid var(--line);position:relative;flex:0 0 auto}
 .wire-title{font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px}
 /* unread count shown IN the drawer header too, ticking down as you read */
 .wire-unread{display:none;min-width:20px;height:19px;padding:0 6px;box-sizing:border-box;align-items:center;justify-content:center;background:#e0403a;color:#fff;font-size:11px;font-weight:800;line-height:1;border-radius:10px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
@@ -780,26 +780,26 @@ a.src-row:hover{background:var(--panel-2)}
 .wire-bolt{filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
 .wire-live{font-size:9px;font-weight:800;letter-spacing:.08em;color:#fff;background:#e0403a;padding:2px 6px;border-radius:5px;animation:wpip 2s infinite}
 @keyframes wpip{50%{opacity:.5}}
-.wire-sub{font-size:11.5px;color:#7d8fa3;margin-top:4px}
-.wire-x{position:absolute;top:13px;right:14px;width:28px;height:28px;border:none;background:#22303e;color:#cdd8e3;border-radius:7px;cursor:pointer;font-size:12px;line-height:1}
-.wire-x:hover{background:#2c3d4e}
+.wire-sub{font-size:11.5px;color:var(--ink-3);margin-top:4px}
+.wire-x{position:absolute;top:13px;right:14px;width:28px;height:28px;border:none;background:var(--chip);color:var(--ink-2);border-radius:7px;cursor:pointer;font-size:12px;line-height:1}
+.wire-x:hover{background:#e2e8ef;color:var(--ink)}
 .wire-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:4px 0 34px}
-.wire-body::-webkit-scrollbar{width:9px}.wire-body::-webkit-scrollbar-thumb{background:#26333f;border-radius:5px}
-.wire-load{padding:26px 20px;color:#7d8fa3;font-size:13px}
-.wire-load .spin{border-color:#33465a;border-top-color:#5b9bd5;vertical-align:-2px;margin-right:8px}
-.wpost{position:relative;display:flex;gap:11px;padding:12px 15px 12px 15px;border-bottom:1px solid #131e29;text-decoration:none;color:inherit;cursor:pointer;transition:background .12s}
-.wpost:hover{background:#17212b}
+.wire-body::-webkit-scrollbar{width:9px}.wire-body::-webkit-scrollbar-thumb{background:#d4dbe3;border-radius:5px}
+.wire-load{padding:26px 20px;color:var(--ink-3);font-size:13px}
+.wire-load .spin{border-color:#dfe5ec;border-top-color:#3d7bc0;vertical-align:-2px;margin-right:8px}
+.wpost{position:relative;display:flex;gap:11px;padding:12px 15px 12px 15px;border-bottom:1px solid var(--line);text-decoration:none;color:inherit;cursor:pointer;transition:background .12s}
+.wpost:hover{background:var(--panel-2)}
 /* an UNREAD post: a soft tint and a bright dot on the left rail. Both clear the instant you read it. */
 .wpost.unread{background:rgba(224,64,58,.06)}
 .wpost.unread::before{content:"";position:absolute;left:5px;top:22px;width:6px;height:6px;border-radius:50%;background:#e0403a;box-shadow:0 0 0 2px rgba(224,64,58,.18)}
-.wpost-av-img{object-fit:cover;background:#1c2836;display:block}
-.wclip-av{width:17px;height:17px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:#1c2836}
+.wpost-av-img{object-fit:cover;background:var(--chip);display:block}
+.wclip-av{width:17px;height:17px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:var(--chip)}
 .wpost-av{flex:0 0 auto;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
 .wpost-main{flex:1 1 auto;min-width:0}
 .wpost-top{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
-.wpost-ch{font-size:12.5px;font-weight:700;color:#7fb2e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wpost-t{font-size:11px;font-weight:600;color:#9fb2c4;flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums}
-.wpost-tx{font-size:13.5px;line-height:1.45;color:#e0e8f0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+.wpost-ch{font-size:12.5px;font-weight:700;color:#1d5fa8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wpost-t{font-size:11px;font-weight:600;color:var(--ink-3);flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums}
+.wpost-tx{font-size:13.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
 .wpost-img{margin-top:8px;border-radius:9px;max-width:100%;display:block;max-height:200px;object-fit:cover}
 @media (max-width:520px){.wire{width:100vw;max-width:100vw;min-width:0}}
 .win-static{font-size:11px;font-weight:600;color:var(--ink-2);letter-spacing:.01em;white-space:nowrap;padding-right:2px}
@@ -822,23 +822,23 @@ a.src-row:hover{background:var(--panel-2)}
 .toast-t{font-size:12.5px;line-height:1.34;font-weight:600;color:#eef3f8;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
 .wire-tabs{display:flex;gap:6px;margin-top:11px}
-.wire-tab{flex:1;background:#0e1621;color:#8fa6bd;border:1px solid #223141;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
-.wire-tab:hover{color:#cfe0f0}
-.wire-tab.on{background:#243444;color:#fff;border-color:#33546f}
+.wire-tab{flex:1;background:var(--chip);color:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.wire-tab:hover{color:var(--ink)}
+.wire-tab.on{background:#e8f0f9;color:#12467f;border-color:#bcd4ec}
 .wire-clips{padding:8px 12px 34px}
-.wclip-group{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#9db4cb;margin:15px 2px 9px;display:flex;align-items:center;gap:8px}
+.wclip-group{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin:15px 2px 9px;display:flex;align-items:center;gap:8px}
 .wclip-group:first-child{margin-top:4px}
 .wg-pill{background:#e0403a;color:#fff;font-size:9px;font-weight:700;padding:1.5px 6px;border-radius:6px;letter-spacing:.03em}
-.wclip{background:#141d27;border:1px solid #1c2836;border-radius:11px;overflow:hidden;margin-bottom:11px}
+.wclip{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:11px}
 .wclip-vid{width:100%;display:block;background:#000;max-height:240px}
 .wclip-body{padding:9px 12px 10px}
 .wclip-meta{display:flex;align-items:center;gap:8px;margin-bottom:5px}
-.wclip-ch{font-size:11px;font-weight:700;color:#7fb2e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wclip-t{font-size:10.5px;color:#66788b;margin-left:auto;flex:0 0 auto}
-.wclip-cap{font-size:12.5px;line-height:1.42;color:#dfe7ef}
-.wclip-open{display:inline-block;margin-top:7px;font-size:11px;color:#7fb2e6;text-decoration:none}
+.wclip-ch{font-size:11px;font-weight:700;color:#1d5fa8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wclip-t{font-size:10.5px;color:var(--ink-3);margin-left:auto;flex:0 0 auto}
+.wclip-cap{font-size:12.5px;line-height:1.42;color:var(--ink)}
+.wclip-open{display:inline-block;margin-top:7px;font-size:11px;color:#1d5fa8;text-decoration:none}
 .wclip-open:hover{text-decoration:underline}
-.wclip-fallback{padding:22px 12px;text-align:center;color:#8fa6bd;font-size:12.5px}
+.wclip-fallback{padding:22px 12px;text-align:center;color:var(--ink-3);font-size:12.5px}
 
 /* ---- clips & photos attached to a story ---- */
 .ev-media{margin-top:18px}
@@ -3031,10 +3031,11 @@ function resetView(){ if(globeMode && mlMap){ mlMap.easeTo({ center:[14,22], zoo
 // beside it, not hidden behind it. _inset() reads the wire's LIVE width, so it tracks a resize. The article
 // reader (on the right) never insets the map. MapLibre honours a `padding`; desktop only.
 function _inset(){ const w=document.getElementById("wire"); return (w && w.classList.contains("open") && innerWidth > 1024) ? (w.offsetWidth + 8) : 0; }
-function setMapInset(){ try{ if(globeMode && mlMap) mlMap.easeTo({ padding:{left:_inset(),top:0,right:0,bottom:0}, duration:300 }); }catch(e){} }
-function setMapInsetNow(){ try{ if(globeMode && mlMap) mlMap.setPadding({left:_inset(),top:0,right:0,bottom:0}); }catch(e){} }   // instant, for live drag-resize
+function _insetPad(){ return {top:0,bottom:0,left:0,right:_inset()}; }   // wire is on the RIGHT -> pad the right
+function setMapInset(){ try{ if(globeMode && mlMap) mlMap.easeTo({ padding:_insetPad(), duration:300 }); }catch(e){} }
+function setMapInsetNow(){ try{ if(globeMode && mlMap) mlMap.setPadding(_insetPad()); }catch(e){} }   // instant, for live drag-resize
 function flyTo(lng,lat,z){
-  const p={left:_inset(),top:0,right:0,bottom:0};
+  const p=_insetPad();
   if(globeMode && mlMap){ mlMap.flyTo({ center:[lng,lat], zoom:Math.max(z||4, mlMap.getZoom()), padding:p, duration:900 }); return; }
   if(map) map.flyTo([lat,lng], Math.max(z||5, map.getZoom()), { duration:0.7 });
 }
@@ -4534,12 +4535,8 @@ async function loadLive(auto){
     const added=applyWorldEvents(items);
     if(!isStale && added) _haveFresh=true;
     hideSplash();                         // real data is in (fresh, or a current-enough cache) — drop the splash
-    // AUTO-OPEN the LIVE WIRE on the first load (desktop): the breaking-news feed on the left, open by
-    // default, with the globe inset beside it. Only once, and not if the user already opened/closed it.
-    if(added && !_autoOpened && innerWidth > 1024){
-      _autoOpened = true;
-      try{ const w=document.getElementById("wire"); if(w && !w.classList.contains("open")) toggleWire(); }catch(e){}
-    }
+    // (The Live Wire is a toggle on the right via the ⚡ button — NOT auto-opened, or it would cover the
+    //  article reader, which shares that side. Opening it insets the globe to centre beside it.)
     if(liveStatus) liveStatus.innerHTML = added
       ? `<span class="live-ok">● ${added} live stories</span> — real headlines, photos &amp; sources. Tap any dot.`
       : `<span class="live-err">No live stories came back.</span> Try again in a moment.`;
@@ -5169,7 +5166,7 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ const w=document
   const h=document.getElementById("wire-resize"), w=document.getElementById("wire"); if(!h||!w) return;
   const MIN=320, MAX=480; let dragging=false;
   h.addEventListener("mousedown", e=>{ dragging=true; e.preventDefault(); document.body.style.userSelect="none"; document.body.style.cursor="ew-resize"; });
-  window.addEventListener("mousemove", e=>{ if(!dragging) return; const width=Math.max(MIN, Math.min(MAX, e.clientX)); w.style.width=width+"px"; setMapInsetNow(); });
+  window.addEventListener("mousemove", e=>{ if(!dragging) return; const width=Math.max(MIN, Math.min(MAX, innerWidth - e.clientX)); w.style.width=width+"px"; setMapInsetNow(); });
   window.addEventListener("mouseup", ()=>{ if(!dragging) return; dragging=false; document.body.style.userSelect=""; document.body.style.cursor=""; setMapInset(); });
 })();
 
