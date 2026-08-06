@@ -163,8 +163,8 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "7"   # bump when the summary prompt/format changes, so cached summaries regenerate
-_AIWHERE_VER = "aw2"    # bump to invalidate the AI location the summary pass emits (keyed by title)
+_SUM_PROMPT_VER = "8"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_AIWHERE_VER = "aw3"    # bump to invalidate the AI location the summary pass emits (keyed by title)
 
 
 def _aiwhere_path(title):
@@ -315,13 +315,18 @@ def _summarize(title, text):
               "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
               "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
               "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
-              "ONE real place the event physically happened. Name the MOST SPECIFIC real place you can, and when "
-              "the event is on or over water or a natural feature, name THAT feature, not the nearest land: a sea, "
-              "gulf, bay, strait, channel, canal, river, lake, or ocean ('Red Sea', 'Strait of Hormuz', "
-              "'Bab-el-Mandeb', 'Danube River', 'South China Sea', 'Pacific Ocean'); a city, town, or site as "
-              "'City, Country'; otherwise just the 'Country'; else 'NONE'. Give where it HAPPENED, never where "
-              "someone merely reacted to it, never a person's nationality, never an organisation's HQ. This WHERE "
-              "line is metadata, not part of the brief.\n\n"
+              "ONE real place the event PHYSICALLY happened. Apply these rules IN ORDER:\n"
+              "1) If the story is a broad analysis, round-up, trend or feature spanning MANY places with no single "
+              "scene (e.g. 'Europe strains under wars, wildfires and migrants'), output NONE — never pick one "
+              "place to stand for all of them.\n"
+              "2) Name a body of water — a sea, gulf, strait, channel, canal, river or ocean ('Red Sea', 'Strait "
+              "of Hormuz', 'Black Sea') — ONLY when the event ITSELF physically happens ON or OVER that water (a "
+              "ship, a naval strike, a rescue, a sinking). NEVER when the water is just a route, a border, or a "
+              "backdrop that gets mentioned.\n"
+              "3) Otherwise give the most specific real scene: 'City, Country' when a city/town/site is knowable, "
+              "else the 'Country', else NONE.\n"
+              "Never give where someone merely REACTED, a person's nationality, or an organisation's HQ. This "
+              "WHERE line is metadata, not part of the brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     s = _llm_complete(system, prompt, max_tokens=380, temperature=0.3)
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
@@ -702,13 +707,33 @@ def _tg_headline(text):
     return line.strip()
 
 
-_TG_SPECULATIVE = re.compile(
-    r"\b(could|would|might|may|reportedly|allegedly|alleged|claim|claims|claimed|"
-    r"rumou?r|rumou?rs|unconfirmed|purportedly|apparently|appears?\s+to|seems?\s+to|"
-    r"locked and loaded|aimed at|threaten\w*|warns?|warned|vow\w*|"
+# UNVERIFIED / hedged — a rumour, never a fact. Always dropped from the map, attributed or not.
+_TG_RUMOR = re.compile(
+    r"\b(reportedly|allegedly|alleged|claim|claims|claimed|rumou?r|rumou?rs|unconfirmed|"
+    r"purportedly|apparently|appears?\s+to|seems?\s+to|possible|possibly|speculat\w*)\b", re.I)
+# FUTURE-tense / threat wording. Speculation on its OWN ("attack imminent", "missiles could strike Tel
+# Aviv") — but the SAME words carry an on-record official statement ("Iran vows to respond", "Kremlin
+# warns"). So this is only disqualifying when the post is NOT an attributed statement (see _tg_is_statement).
+_TG_FUTURE = re.compile(
+    r"\b(could|would|might|may|locked and loaded|aimed at|threaten\w*|warns?|warned|vow\w*|"
     r"plan(?:s|ning)?\s+to|set to|expected to|likely to|about to|preparing to|prepares? to|"
-    r"imminent|brace[sd]?\s+for|fear\w*|possible|possibly|speculat\w*|"
-    r"if\s+(?:iran|russia|china|israel|the\s+us)|would\s+(?:strike|attack)|to\s+strike)\b", re.I)
+    r"imminent|brace[sd]?\s+for|fear\w*|if\s+(?:iran|russia|china|israel|the\s+us)|"
+    r"would\s+(?:strike|attack)|to\s+strike)\b", re.I)
+# An ATTRIBUTED official statement: a named speaker label ("Lavrov:", "Iran's Foreign Ministry:", kept by
+# _tg_headline as "Speaker: …") OR a saying/announcing verb. These are the statements the map was dropping.
+_TG_STMT_LABEL = re.compile(r"^\s*[\"'“]?[A-Z][\w.'’&/-]*(?:[ ,][\w.'’&/-]+){0,6}\s*:\s+\S")
+_TG_STMT_VERB = re.compile(
+    r"\b(said|says|say|stated|states|state|announce[sd]?|announces|announcing|declare[sd]?|declares|"
+    r"told|tells|vow[eds]*|vows|warn[eds]*|warns|confirm[eds]*|confirms|urge[sd]*|urges|"
+    r"demand[eds]*|demands|reject[eds]*|rejects|accus[eds]*|accuses|insist[eds]*|insists|"
+    r"pledge[sd]*|pledges|threaten[eds]*|threatens|slam[meds]*|slams|calls?\s+(?:on|for))\b", re.I)
+
+
+def _tg_is_statement(text):
+    """True when the post is an on-record statement — a speaker label ('Lavrov: …') or a saying verb
+    ('Iran vows', 'Kremlin warns'). Such a post is NEWS even when it is future-tense or a threat."""
+    h = (text or "").strip()
+    return bool(_TG_STMT_LABEL.match(h) or _TG_STMT_VERB.search(h))
 
 
 # The channel talking about ITSELF is not news. "If you reside anywhere in West Asia affected by the
@@ -752,17 +777,21 @@ def _tg_is_chatter(text):
 
 
 def _tg_reliable(headline):
-    """Secondary OSINT channels are noisier — drop speculative, future-tense, threat or unverified posts,
-    and anything that is the channel talking about ITSELF rather than reporting an event."""
+    """OSINT/wire posts are noisy — drop channel self-talk, unverified RUMOURS, and bare SPECULATION.
+    But an ATTRIBUTED official statement is kept even when it's future-tense or a threat ('Iran vows to
+    respond', 'Lavrov: we would retaliate') — those on-record statements are exactly the news the map was
+    silently dropping. Only UNattributed future-tense/threat wording ('attack imminent') is speculation."""
     h = (headline or "").strip()
     if len(h) < 22:
         return False
     if h.endswith("?"):
         return False
-    if _TG_SPECULATIVE.search(h):
-        return False
     if _TG_HOUSEKEEPING.search(h):
         return False
+    if _TG_RUMOR.search(h):
+        return False                                       # unverified rumour -> out, attributed or not
+    if _TG_FUTURE.search(h) and not _tg_is_statement(h):
+        return False                                       # speculation only when NOT an on-record statement
     return True
 
 

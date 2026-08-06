@@ -905,6 +905,23 @@ CHATTER_CASES = [
      "GUARD: 'Good Friday' is a proper noun, not a greeting"),
 ]
 
+# _tg_reliable gates what becomes a MAP DOT. An ATTRIBUTED official statement is news even when it's
+# future-tense/threat wording; unverified rumour and UNattributed speculation are not. (text, keep?, why)
+RELIABLE_CASES = [
+    ("Iran warns Strait of Hormuz will remain closed until US accepts its terms", True,
+     "an official warning is an on-record statement ('warns'), not speculation — the user was missing these"),
+    ("Israel says it will respond to the attack tomorrow", True, "'says' = attributed statement"),
+    ("Russian Foreign Minister Sergey Lavrov: Europe buried the agreements reached in Alaska", True,
+     "a 'Speaker: …' label is an on-record statement"),
+    ("Kremlin vows to retaliate against the new EU sanctions package", True, "'vows' = attributed statement"),
+    ("Zelensky says Ukraine will not cede any territory in talks", True, "'says' = attributed statement"),
+    ("Russia reportedly moving troops toward the Sumy border overnight", False, "'reportedly' = unverified rumour"),
+    ("Unconfirmed reports of a large explosion near the airbase", False, "'unconfirmed' = rumour"),
+    ("Attack on the base could be imminent, situation developing fast", False,
+     "'could'/'imminent' with NO speaker = bare speculation"),
+    ("Missiles might strike Tel Aviv within the hour as tensions rise", False, "unattributed speculation"),
+]
+
 # terse OSINT strike posts must classify as security (so they merge), without false positives.
 CLASSIFY_STRIKE_CASES = [
     ("Kh-22/32 impacts in Odesa.", "security", "missile designation is an unambiguous strong signal"),
@@ -1205,6 +1222,15 @@ def main():
         if not ok:
             fails.append(("chatter", text[:48], want_drop, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} {'DROP' if got else 'KEEP'} (want {'DROP' if want_drop else 'KEEP'}) {text[:44]}")
+
+    print("\n=== MAP RELIABILITY (attributed statements reach the map; rumour/speculation don't) ===")
+    for text, want_keep, why in RELIABLE_CASES:
+        got = app._tg_reliable(text)
+        ok = bool(got) == want_keep
+        ran[0] += 1
+        if not ok:
+            fails.append(("reliable", text[:48], want_keep, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if want_keep else 'DROP'}) {text[:44]}")
 
     print("\n=== TERSE STRIKE CLASSIFICATION (firehose posts -> security, no false positives) ===")
     for title, want, why in CLASSIFY_STRIKE_CASES:
@@ -1547,7 +1573,7 @@ def main():
              + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES) + len(DATELINE_STRIP_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
-             + len(CHATTER_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
+             + len(CHATTER_CASES) + len(RELIABLE_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
