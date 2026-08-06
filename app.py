@@ -163,8 +163,8 @@ def _share_id(url, title=""):
 
 
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
-_SUM_PROMPT_VER = "8"   # bump when the summary prompt/format changes, so cached summaries regenerate
-_AIWHERE_VER = "aw3"    # bump to invalidate the AI location the summary pass emits (keyed by title)
+_SUM_PROMPT_VER = "9"   # bump when the summary prompt/format changes, so cached summaries regenerate
+_AIWHERE_VER = "aw4"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
 
 def _aiwhere_path(title):
@@ -181,6 +181,20 @@ def _ai_where(title):
     if _fresh(p, 30 * 86400):
         try:
             return json.load(open(p, encoding="utf-8")).get("p", "")
+        except Exception:
+            pass
+    return ""
+
+
+def _ai_scope(title):
+    """How far this story's consequences reach — 'global'|'regional'|'national'|'local'|'' — as the AI rated
+    it while writing the brief (same call, same cache file as _ai_where, no extra request). The world map
+    shows global/regional/national and HIDES 'local' (true-but-minor stories: a beach eroding, a local
+    crime); the starred-country feed still carries everything. "" = not summarised yet -> treated as shown."""
+    p = _aiwhere_path(title)
+    if _fresh(p, 30 * 86400):
+        try:
+            return (json.load(open(p, encoding="utf-8")).get("sc", "") or "").lower()
         except Exception:
             pass
     return ""
@@ -327,6 +341,19 @@ def _summarize(title, text):
               "else the 'Country', else NONE.\n"
               "Never give where someone merely REACTED, a person's nationality, or an organisation's HQ. This "
               "WHERE line is metadata, not part of the brief.\n\n"
+              "On ONE more separate final line, output `SCOPE: <global|regional|national|local>` — how far this "
+              "story's consequences reach, judged by CONSEQUENCE, not by how dramatic it sounds:\n"
+              "- global: reshapes international politics, security or the economy — a war or strike between "
+              "states, a major-power decision, a leader's or foreign minister's consequential statement, a "
+              "market-moving policy, a major disaster.\n"
+              "- national: changes ONE country's direction — its government, a national policy or election, a "
+              "coup, or a mass-casualty attack/shooting/disaster.\n"
+              "- regional: shifts a region within or across countries.\n"
+              "- local: a local or human-interest story with NO wider consequence — a local crime, a beach "
+              "eroding, an environmental, cultural or lifestyle feature.\n"
+              "Examples: a foreign minister warning of retaliation -> global; a big shooting -> national; "
+              "'illegal sand extraction erodes a beach' -> local. This SCOPE line is metadata, not part of the "
+              "brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     s = _llm_complete(system, prompt, max_tokens=380, temperature=0.3)
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
@@ -336,18 +363,25 @@ def _summarize(title, text):
     s = "\n".join(ln.strip() for ln in s.split("\n"))
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     s = _LEAD_DATELINE.sub("", s)       # belt-and-braces: drop a wire dateline if the model opened with one anyway
-    # Pull the WHERE line back OUT of the brief and cache it (keyed by title) for _locate — one AI call gave us
-    # both the brief AND the location, so no separate geolocation call is needed once a story is summarised.
+    # Pull the WHERE + SCOPE lines back OUT of the brief and cache them (keyed by title) — one AI call gave us
+    # the brief, the location (for _locate) AND the importance (for the world-map gate), no extra request.
+    where, scope = "", ""
     mw = re.search(r"(?im)^\s*WHERE:\s*(.+?)\s*$", s)
     if mw:
-        s = re.sub(r"(?im)^\s*WHERE:.*$", "", s).strip()
-        s = re.sub(r"\n{3,}", "\n\n", s).strip()
         where = re.sub(r'^[\s"\'.*\-]+|[\s"\'.\-]+$', "", mw.group(1)).strip()
-        if 3 <= len(where) <= 60 and where.upper() != "NONE":
-            try:
-                json.dump({"p": where}, open(_aiwhere_path(title), "w", encoding="utf-8"))
-            except Exception:
-                pass
+        if not (3 <= len(where) <= 60) or where.upper() == "NONE":
+            where = ""
+    ms = re.search(r"(?im)^\s*SCOPE:\s*([a-z]+)\s*$", s)
+    if ms:
+        _sc = ms.group(1).lower()
+        scope = _sc if _sc in ("global", "regional", "national", "local") else ""
+    s = re.sub(r"(?im)^\s*(WHERE|SCOPE):.*$", "", s).strip()   # strip both metadata lines from the brief
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    if where or scope:
+        try:
+            json.dump({"p": where, "sc": scope}, open(_aiwhere_path(title), "w", encoding="utf-8"))
+        except Exception:
+            pass
     if s:
         try:
             json.dump({"s": s}, open(cache, "w", encoding="utf-8"))
@@ -1783,6 +1817,15 @@ class Api:
             if "/football/" in url or "/sport/" in url or "/sports/" in url:
                 cat = "sports"
             if cat == "sports" and not _sports_worthy(title):
+                continue
+            # IMPORTANCE GATE. The world map is for news that is COUNTRY-, REGION- or WORLD-changing — a war
+            # move, a leader's consequential statement, a mass-casualty event — not every true-but-minor local
+            # story ("illegal sand extraction erodes a beach"). The AI rates each story's SCOPE in the summary
+            # pass; a 'local' story is dropped from the world map UNLESS a hard signal (casualties, a top
+            # official on the record) overrides. It still surfaces in the STARRED-country feed (country_news),
+            # which deliberately keeps everything. No AI scope yet (a brand-new story) -> shown, then filtered
+            # on the next build once summarised — the same one-build lag as the AI pinpoint.
+            if _ai_scope(title) == "local" and not _hard_news(title, a.get("desc") or ""):
                 continue
             # Dedup on DISTINCTIVE words only. Comparing raw sigwords merged genuinely different
             # events: every Russia+security story shares {drone, strike, oil, refinery...}, so a
@@ -3539,6 +3582,29 @@ def _injured_toll(text):
             if n and n <= 20000:
                 return n
     return None
+
+
+# A top-tier actor whose ON-RECORD statement is consequential enough to belong on the world map even when
+# the AI, judging the wording alone, filed it as 'local'. Deliberately institutions/offices (not every named
+# person) so it stays a tight safety net, not a second classifier.
+_MAJOR_ACTOR = re.compile(
+    r"\b(president|prime minister|foreign minister|defen[cs]e minister|chancellor|"
+    r"kremlin|white house|pentagon|state department|secretary of (?:state|defen[cs]e)|"
+    r"supreme leader|ayatollah|(?:the\s+)?(?:un|eu|nato|imf|opec|g7|g20)|central bank|"
+    r"federal reserve|the fed|parliament|congress|senate|politburo|"
+    r"prosecutor|attorney general|sanctions?|tariffs?|ceasefire|treaty)\b", re.I)
+
+
+def _hard_news(title, desc=""):
+    """A deterministic 'this matters regardless' net for the importance gate — so the world map NEVER hides a
+    mass-casualty event or a top-official statement, even if the AI rated the wording 'local'. Everything
+    else defers to the AI's SCOPE. Kept tight on purpose (casualties + institution-level statements)."""
+    t = title or ""
+    if _death_toll(t) or _death_toll(desc or "") or _injured_toll(t):
+        return True                                    # a shooting / attack / disaster with casualties
+    if _MAJOR_ACTOR.search(t) and _TG_STMT_VERB.search(t):
+        return True                                    # a government / leader / institution on the record
+    return False
 
 
 def _src_of(e):

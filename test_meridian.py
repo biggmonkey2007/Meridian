@@ -922,6 +922,19 @@ RELIABLE_CASES = [
     ("Missiles might strike Tel Aviv within the hour as tensions rise", False, "unattributed speculation"),
 ]
 
+# The IMPORTANCE GATE hides 'local' (AI-scoped) stories from the world map, but _hard_news is the safety
+# net: a mass-casualty event or a top-official statement must NEVER be hidden even if the AI mis-scored it.
+# (title, is_hard_news, why)
+HARD_NEWS_CASES = [
+    ("Gunman kills 9 at a shopping mall in Texas", True, "casualties always reach the map"),
+    ("Air strike leaves 12 dead and 30 injured in Gaza", True, "killed + injured toll"),
+    ("Iran's foreign minister warns of retaliation against Israel", True, "a top official on the record"),
+    ("Kremlin says it will respond to the new sanctions", True, "an institution's statement"),
+    ("EU announces fresh sanctions package on Russia", True, "institution + 'sanction' + a saying verb"),
+    ("Illegal sand extraction erodes Cape Verde coastline", False, "minor/local -> defer to the AI SCOPE"),
+    ("Local bakery in Lisbon revives a traditional recipe", False, "human-interest -> defer to the AI SCOPE"),
+]
+
 # terse OSINT strike posts must classify as security (so they merge), without false positives.
 CLASSIFY_STRIKE_CASES = [
     ("Kh-22/32 impacts in Odesa.", "security", "missile designation is an unambiguous strong signal"),
@@ -1231,6 +1244,15 @@ def main():
         if not ok:
             fails.append(("reliable", text[:48], want_keep, got, why))
         print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if want_keep else 'DROP'}) {text[:44]}")
+
+    print("\n=== IMPORTANCE SAFETY NET (_hard_news: casualties/top-official never hidden) ===")
+    for title, want_hard, why in HARD_NEWS_CASES:
+        got = app._hard_news(title)
+        ok = bool(got) == want_hard
+        ran[0] += 1
+        if not ok:
+            fails.append(("hard-news", title[:48], want_hard, got, why))
+        print(f"  {'ok ' if ok else 'FAIL'} hard={bool(got)} (want {want_hard}) {title[:44]}")
 
     print("\n=== TERSE STRIKE CLASSIFICATION (firehose posts -> security, no false positives) ===")
     for title, want, why in CLASSIFY_STRIKE_CASES:
@@ -1573,7 +1595,7 @@ def main():
              + len(CLIP_CASES) + len(HEADLINE_CASES) + len(DATELINE_CASES) + len(DATELINE_STRIP_CASES)
              + len(FLAG_CASES) + len(CSS_URL_CASES) + len(MEDIA_DEDUP_CASES)
              + len(CLEAN_HEADLINE_CASES) + len(COLLAPSE_CASES) + len(CLASSIFY_STRIKE_CASES)
-             + len(CHATTER_CASES) + len(RELIABLE_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
+             + len(CHATTER_CASES) + len(RELIABLE_CASES) + len(HARD_NEWS_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
