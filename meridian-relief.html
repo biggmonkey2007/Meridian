@@ -16,6 +16,26 @@
   --c-security:#DC4A3D; --c-politics:#4E63C8; --c-economy:#1FA06A; --c-climate:#E1902F;
   --c-tech:#2E9BD6; --c-health:#9B54B8; --c-society:#E0658E; --c-sports:#6FB03A;
 }
+/* DARK MODE — re-tint the chrome variables (panels, wire, articles, header, text). The map keeps its own
+   basemap. Toggled via the sun/moon button; persisted in localStorage. */
+:root[data-theme="dark"]{
+  --ink:#E7ECF3; --ink-2:#9AA7B5; --ink-3:#6E7A88; --line:#232C38;
+  --panel:#141B24; --panel-2:#1B2530; --chip:#232C38;
+  --shadow:0 10px 30px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.42);
+}
+:root[data-theme="dark"] header{background:rgba(16,22,30,.92)}
+:root[data-theme="dark"] .lead{color:#c4ceda}
+:root[data-theme="dark"] .icon-btn:hover{background:#232c38;color:var(--ink)}
+:root[data-theme="dark"] .seg button[aria-pressed="true"],
+:root[data-theme="dark"] .icon-btn.active{color:#0f151c}
+:root[data-theme="dark"] .p-body::-webkit-scrollbar-thumb{background:#2c3743;border-color:var(--panel)}
+:root[data-theme="dark"] .wire-x:hover{background:#2c3743;color:var(--ink)}
+:root[data-theme="dark"] .wire-body::-webkit-scrollbar-thumb,
+:root[data-theme="dark"] .wire-resize::after{background:#2c3743}
+#btn-theme svg{width:17px;height:17px}
+#btn-theme .th-sun{display:none}
+:root[data-theme="dark"] #btn-theme .th-sun{display:block}
+:root[data-theme="dark"] #btn-theme .th-moon{display:none}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -766,8 +786,10 @@ a.src-row:hover{background:var(--panel-2)}
 
 /* ---- Live Wire (Telegram-style breaking-news drawer) ---- */
 #btn-wire.on{background:#e8edf3;color:#12467f}
-.wire{position:fixed;top:0;right:0;width:392px;min-width:320px;max-width:480px;height:100vh;background:var(--panel);color:var(--ink);z-index:1400;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(20,30,45,.13);transform:translateX(102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-left:1px solid var(--line)}
+.wire{position:fixed;top:0;right:0;width:var(--wire-w,392px);min-width:320px;max-width:480px;height:100vh;background:var(--panel);color:var(--ink);z-index:1400;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(20,30,45,.13);transform:translateX(102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-left:1px solid var(--line)}
 .wire.open{transform:translateX(0)}
+/* when the article overlays the OPEN wire, it takes the wire's exact footprint (full height, same width) */
+#detail.over-wire{top:0;right:0;width:var(--wire-w,392px);height:100vh;height:100dvh;max-height:none;border-radius:0}
 /* drag the LEFT edge to resize the wire, within narrow limits (320-480px) */
 .wire-resize{position:absolute;top:0;left:-3px;width:9px;height:100%;cursor:ew-resize;z-index:3}
 .wire-resize::after{content:"";position:absolute;top:50%;left:3px;transform:translateY(-50%);width:3px;height:40px;border-radius:2px;background:#cbd4de;opacity:.75;transition:opacity .15s}
@@ -800,6 +822,13 @@ a.src-row:hover{background:var(--panel-2)}
 .wpost-ch{font-size:12.5px;font-weight:700;color:#1d5fa8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wpost-t{font-size:11px;font-weight:600;color:var(--ink-3);flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums}
 .wpost-tx{font-size:13.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+/* Telegram-style reaction picker: right-click a wire post -> a tiny popup of the 7 expressions, nothing more */
+.react-pop{position:fixed;z-index:1600;display:none;gap:1px;padding:5px 7px;background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}
+.react-pop.show{display:flex}
+.react-pop button{border:none;background:transparent;font-size:21px;line-height:1;width:34px;height:34px;border-radius:50%;cursor:pointer;transition:transform .1s ease,background .12s;padding:0}
+.react-pop button:hover{background:var(--chip);transform:scale(1.25)}
+.wpost-react{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:2px 9px;background:var(--chip);border:1px solid var(--line);border-radius:12px;font-size:13.5px;line-height:1.35;cursor:pointer;user-select:none}
+.wpost-react:hover{border-color:var(--ink-3)}
 .wpost-img{margin-top:8px;border-radius:9px;max-width:100%;display:block;max-height:200px;object-fit:cover}
 @media (max-width:520px){.wire{width:100vw;max-width:100vw;min-width:0}}
 .win-static{font-size:11px;font-weight:600;color:var(--ink-2);letter-spacing:.01em;white-space:nowrap;padding-right:2px}
@@ -947,6 +976,10 @@ video{color-scheme:dark}
       <div class="wordmark">Meridian</div>
     </div>
   </div>
+  <button class="icon-btn" id="btn-theme" title="Dark / light mode" aria-label="Toggle dark mode" style="margin-left:2px;flex:0 0 auto">
+    <svg class="th-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.2v2.1M12 19.7v2.1M4.5 4.5l1.5 1.5M18 18l1.5 1.5M2.2 12h2.1M19.7 12h2.1M4.5 19.5l1.5-1.5M18 6l1.5-1.5"/></svg>
+    <svg class="th-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
 
   <div class="hdr-center">
     <span class="seg-label seg-depth-label">Depth</span>
@@ -975,7 +1008,6 @@ video{color-scheme:dark}
     <div class="wire-title"><span class="wire-bolt">⚡</span> Live Wire <span class="wire-live">LIVE</span><span class="wire-unread" id="wire-unread"></span></div>
     <div class="wire-sub" id="wire-sub">breaking news, as it drops</div>
     <button class="wire-x" id="wire-x" aria-label="Close">✕</button>
-    <div class="wire-tabs"><button class="wire-tab on" data-wtab="feed">📰 Wire</button><button class="wire-tab" data-wtab="clips">▶ Clips</button></div>
   </div>
   <div class="wire-body" id="wire-body"><div class="wire-load"><span class="spin"></span> Connecting to the wire…</div></div>
   <div class="wire-body wire-clips" id="wire-clips" style="display:none"><div class="wire-load"><span class="spin"></span> Loading clips…</div></div>
@@ -1211,14 +1243,14 @@ function renderBrief(sum){
   sum=String(sum||"").trim(); if(!sum) return "";
   // Bold ONLY a short label (a word or two) — never a whole clause. A model that bolds a long phrase
   // ("**Drones are hitting targets near Moscow's airports**") gets un-bolded to plain text.
-  const inl = t => esc(t).replace(/\*\*([^*]+)\*\*/g,(m,g)=>g.length<=22?"<b>"+g+"</b>":g).replace(/\*([^*]+)\*/g,"$1");
+  const inl = t => flagifyText(t).replace(/\*\*([^*]+)\*\*/g,(m,g)=>g.length<=22?"<b>"+g+"</b>":g).replace(/\*([^*]+)\*/g,"$1");
   const lines = sum.split(/\n+/).map(l=>l.trim()).filter(Boolean);
   const WHY=/^\s*(?:[-*•‣·]\s*)?\**\s*why\s+it\s+matters\b\s*[:\-–—]?\s*\**\s*(.*)$/i;
   const BUL=/^\s*(?:[-*•‣·]|\d+[.)])\s+(.*)$/;
   const lede=[]; const items=[];        // items: {t, wm}
   for(const ln of lines){
     const mW=ln.match(WHY);
-    if(mW){ if(mW[1].trim()) items.push({t:mW[1].trim(), wm:true}); continue; }
+    if(mW){ continue; }                    // drop the "Why it matters" bullet — not wanted in articles
     const mB=ln.match(BUL);
     if(mB){ if(mB[1].trim()) items.push({t:mB[1].trim(), wm:false}); continue; }
     lede.push(ln);                       // prose — the lede (and any stray non-bullet line)
@@ -3650,9 +3682,9 @@ function openMedia(o){
     ? `<video class="fv-img" src="${esc(clipSrc(o.video))}" ${o.img?`poster="${esc(o.img)}"`:""} controls autoplay playsinline></video>`
     : `<img class="fv-img" src="${esc(o.img)}" alt="" referrerpolicy="no-referrer">`;
   const foot = (o.note||o.cap||o.channel||o.link) ? `<div class="fv-foot">
-        ${o.channel?`<div class="fv-ch">${esc(o.channel)}${o.dur&&!o.video?` · ${esc(o.dur)}`:""}</div>`:""}
+        ${o.channel?`<div class="fv-ch">${flagifyText(o.channel)}${o.dur&&!o.video?` · ${esc(o.dur)}`:""}</div>`:""}
         ${o.note?`<div class="fv-note">${o.note}</div>`:""}
-        ${o.cap?`<div class="fv-cap">${esc(o.cap)}</div>`:""}
+        ${o.cap?`<div class="fv-cap">${flagifyText(o.cap)}</div>`:""}
         ${o.link?`<a class="fv-src" href="${esc(o.link)}" target="_blank" rel="noopener">Open the original post ↗</a>`:""}
       </div>` : "";
   back.innerHTML=`<div class="fv-box" role="dialog" aria-modal="true">
@@ -4055,7 +4087,7 @@ async function renderRealEvent(d){
     </div>
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
-    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?esc(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
+    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?flagifyText(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
@@ -4267,12 +4299,11 @@ function selectEvent(d){
     ${d.live?`<span class="live-badge">● LIVE · pulled from the web ${timeAgo(d.reportedAt)}</span>`:""}
     <h2 class="p-title" style="font-size:22px;margin-top:10px;line-height:1.22">${esc(d.title)}</h2>
     <div class="evt-meta"><span><b>Reported</b> ${timeAgo(d.reportedAt)}</span><span><b>Occurred</b> ~${timeAgo(d.occurredAt)}</span><span><b>Where</b> ${esc(d.place)}</span></div>
-    <p class="lead">${esc(leadText(d.sum))}</p>
+    <p class="lead">${flagifyText(leadText(d.sum))}</p>
     <div class="bcast" data-bcast role="button" tabindex="0"><div class="bcast-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div><div class="bcast-tx"><div class="bcast-t">Broadcast &amp; video</div><div class="bcast-s">Tap to preview &mdash; verified clips stream here in the live app.</div></div><div class="bcast-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div></div>
     <div class="bcast-frame" data-bcast-frame hidden><div class="bcast-screen"><div class="bcast-grid"></div><div class="bcast-bigplay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div></div><div class="bcast-note">Demo build &mdash; no clip is attached to this sample story. In production the verified broadcast or wire-service video plays in this frame, with source provenance and a transcript.</div></div>
     ${d.facts&&d.facts.length?`<div class="sec-label">The key points</div><ul class="facts">${d.facts.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>`:""}
     ${d.body?`<div class="sec-label">What\u2019s happening</div><div class="body">${d.body.split("\n\n").map(p=>`<p>${esc(p)}</p>`).join("")}</div>`:""}
-    ${d.context?`<div class="sec-label">Why it matters</div><div class="body ctx">${d.context.split("\n\n").map(p=>`<p>${esc(p)}</p>`).join("")}</div>`:""}
     ${d.statements&&d.statements.length?`<div class="sec-label">What officials are saying <span class="ill-tag">illustrative</span></div><div class="stmts">${d.statements.map((st,si)=>`<div class="stmt"><div class="stmt-av" style="background:linear-gradient(135deg,${STMT_AV[si%STMT_AV.length]},${shade(STMT_AV[si%STMT_AV.length],0.62)})"><svg class="stmt-portrait" viewBox="0 0 42 42"><circle cx="21" cy="16" r="7.2" fill="#fff" opacity="0.96"/><path d="M6.5 37 a14.5 14.5 0 0 1 29 0 Z" fill="#fff" opacity="0.96"/></svg></div><div class="stmt-main"><div class="stmt-who"><span class="stmt-name">${esc(st[0])}</span><span class="stmt-role">${esc(st[1])}</span></div><div class="stmt-quote">“${esc(st[3])}”</div><div class="stmt-src">${esc(st[4])} · ${timeAgo(NOW-st[5]*60000)}</div></div></div>`).join("")}</div>`:""}
     ${d.media&&d.media.length?`<div class="sec-label">Across the media <span class="ill-tag">auto-translated</span></div><div class="media-list">${d.media.map(m=>`<div class="media-it"><div class="media-top">${flagImg(ISO2[m[1]]||"")}<span class="media-out">${esc(m[0])}</span>${m[4]?`<span class="xlate">translated · ${esc(m[2])}</span>`:""}</div><div class="media-head">${esc(m[3])}</div></div>`).join("")}</div>`:""}
     ${d.views&&d.views.length?`<div class="sec-label">Different perspectives</div><div class="views">${d.views.map(v=>`<div class="view"><div class="view-who">${esc(v[0])}</div><div class="view-tx">${esc(v[1])}</div></div>`).join("")}</div>`:""}
@@ -4389,7 +4420,10 @@ function selectCountry(name){
   loadCountryProfile(name);
 }
 
-function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); if(innerWidth<=1024){ const bf=document.getElementById("briefing"); if(bf) bf.classList.add("collapsed"); setMobar("map"); } }
+function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); syncDetailOverWire(); if(innerWidth<=1024){ const bf=document.getElementById("briefing"); if(bf) bf.classList.add("collapsed"); setMobar("map"); } }
+// The article overlays the wire, so match the wire's footprint (full height) ONLY while the wire is open,
+// on desktop — else it's the normal floating panel on the map.
+function syncDetailOverWire(){ const w=document.getElementById("wire"); const over = w && w.classList.contains("open") && innerWidth>1024; detail.classList.toggle("over-wire", !!over); }
 function deselectAll(){
   activeEvent=null; activeCountry=null;
   detail.classList.remove("open");
@@ -5137,6 +5171,7 @@ async function loadWire(silent){
     }).join("");
     wireIds = items.map(wirePostId).filter(Boolean);
     _wireFirstSeen = true;
+    if(window.paintReactions) window.paintReactions();     // restore any saved reactions on the redrawn posts
     updateWireBadge();
     wireWireUpReaders();
     if(!silent) body.scrollTop=0;
@@ -5147,6 +5182,7 @@ function toggleWire(){
   const open=!w.classList.contains("open");
   w.classList.toggle("open", open); w.setAttribute("aria-hidden", open?"false":"true");
   setMapInset();                          // inset the globe beside the wire (or recentre it when closing)
+  syncDetailOverWire();                   // if an article is open, keep it matched to the wire's footprint
   const b=document.getElementById("btn-wire"); if(b) b.classList.toggle("on", open);
   if(open){ wireActiveLoad(false); if(wireTimer) clearInterval(wireTimer); wireTimer=setInterval(()=>{ const el=document.getElementById("wire"); if(el&&el.classList.contains("open")) wireActiveLoad(true); }, 60000); }
   else if(wireTimer){ clearInterval(wireTimer); wireTimer=null; }
@@ -5166,13 +5202,59 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ const w=document
   const h=document.getElementById("wire-resize"), w=document.getElementById("wire"); if(!h||!w) return;
   const MIN=320, MAX=480; let dragging=false;
   h.addEventListener("mousedown", e=>{ dragging=true; e.preventDefault(); document.body.style.userSelect="none"; document.body.style.cursor="ew-resize"; });
-  window.addEventListener("mousemove", e=>{ if(!dragging) return; const width=Math.max(MIN, Math.min(MAX, innerWidth - e.clientX)); w.style.width=width+"px"; setMapInsetNow(); });
+  window.addEventListener("mousemove", e=>{ if(!dragging) return; const width=Math.max(MIN, Math.min(MAX, innerWidth - e.clientX)); document.documentElement.style.setProperty("--wire-w", width+"px"); setMapInsetNow(); });
   window.addEventListener("mouseup", ()=>{ if(!dragging) return; dragging=false; document.body.style.userSelect=""; document.body.style.cursor=""; setMapInset(); });
 })();
 
 const briefingPanel=document.getElementById("briefing");   // removed — kept null-safe below
 document.getElementById("btn-globe").onclick=()=>setMode(mode==="globe"?"map":"globe");
 { const bw=document.getElementById("btn-wire"); if(bw) bw.onclick=toggleWire; const wx=document.getElementById("wire-x"); if(wx) wx.onclick=toggleWire; }
+// DARK / LIGHT theme — the top-left button toggles it; persisted across sessions.
+function setTheme(t){ document.documentElement.setAttribute("data-theme", t==="dark"?"dark":"light"); try{ localStorage.setItem("meridian-theme", t); }catch(_){} }
+(function(){ let t="light"; try{ t=localStorage.getItem("meridian-theme")||"light"; }catch(_){} setTheme(t);
+  const b=document.getElementById("btn-theme"); if(b) b.onclick=()=>setTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark"); })();
+// REACTIONS — right-click a Live Wire post to pick one of the 7 universal expressions (Telegram-style).
+(function(){
+  const EMO=["\u{1F642}","\u{1F622}","\u{1F628}","\u{1F922}","\u{1F620}","\u{1F62E}","\u{1F60F}"];  // happy sad fear disgust anger surprise contempt
+  const NM=["Happiness","Sadness","Fear","Disgust","Anger","Surprise","Contempt"];
+  const pop=document.createElement("div"); pop.className="react-pop";
+  pop.innerHTML=EMO.map((e,i)=>`<button type="button" data-emo="${e}" title="${NM[i]}">${e}</button>`).join("");
+  document.body.appendChild(pop);
+  let targetId=null;
+  const get=()=>{ try{ return JSON.parse(localStorage.getItem("meridian-reactions")||"{}"); }catch(_){ return {}; } };
+  const put=r=>{ try{ localStorage.setItem("meridian-reactions", JSON.stringify(r)); }catch(_){} };
+  const hide=()=>{ pop.classList.remove("show"); targetId=null; };
+  function paint(id){
+    const r=get()[id];
+    const sel='.wpost[data-id="'+(window.CSS&&CSS.escape?CSS.escape(id):String(id).replace(/"/g,'\\"'))+'"]';
+    const post=document.querySelector(sel); if(!post) return;
+    const main=post.querySelector(".wpost-main")||post;
+    let pill=main.querySelector(".wpost-react");
+    if(!r){ if(pill) pill.remove(); return; }
+    if(!pill){ pill=document.createElement("div"); pill.className="wpost-react"; main.appendChild(pill);
+      pill.addEventListener("click", ev=>{ ev.stopPropagation(); const rr=get(); delete rr[id]; put(rr); paint(id); }); }
+    pill.textContent=r+" 1";
+  }
+  window.paintReactions=function(){ const r=get(); Object.keys(r).forEach(paint); };
+  const wireEl=document.getElementById("wire");
+  if(wireEl) wireEl.addEventListener("contextmenu", e=>{
+    const post=e.target.closest ? e.target.closest(".wpost") : null; if(!post) return;
+    e.preventDefault(); targetId=post.getAttribute("data-id");
+    pop.classList.add("show");
+    const pw=pop.offsetWidth||280, ph=pop.offsetHeight||46;
+    let x=Math.min(e.clientX, innerWidth-pw-8), y=e.clientY-ph-8; if(y<8) y=e.clientY+12;
+    pop.style.left=Math.max(8,x)+"px"; pop.style.top=y+"px";
+  });
+  pop.addEventListener("click", e=>{
+    const b=e.target.closest ? e.target.closest("button[data-emo]") : null; if(!b||!targetId) return;
+    const emo=b.getAttribute("data-emo"), r=get();
+    if(r[targetId]===emo) delete r[targetId]; else r[targetId]=emo;   // click again to remove
+    put(r); paint(targetId); hide();
+  });
+  window.addEventListener("mousedown", e=>{ if(!pop.contains(e.target)) hide(); });
+  window.addEventListener("scroll", hide, true);
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") hide(); });
+})();
 document.querySelectorAll(".wire-tab").forEach(t=>t.addEventListener("click", ()=>{
   const tab=t.getAttribute("data-wtab"); if(tab===wireTab) return; wireTab=tab;
   document.querySelectorAll(".wire-tab").forEach(x=>x.classList.toggle("on", x===t));
