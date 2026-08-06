@@ -5981,7 +5981,12 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     after the first pass. The result is a plain tuple/None (deterministic — depends only on the static
     gazetteer), so caching is safe. Restart clears it, which is exactly what we want after a logic fix."""
     title = _expand_water_coord(title or "")      # "Black and Azov seas" -> "Black Sea and Azov Sea"
-    desc = _expand_water_coord(desc or "")
+    # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
+    # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
+    # because the trailing "in" of "JUST IN" read as "…IN Nikita", flipping on the locating context that
+    # defeats the tiny-town and surname vetoes. A source URL ("reuters.com/world/china") can inject a place too.
+    _d = _PROMO_URL.sub(" ", _PROMO_LEAD.sub("", desc or ""))
+    desc = _expand_water_coord(_d)
     mentions = _context_mentions(title + " " + (desc or ""), url)
     dl = _dateline_place(desc, mentions)
     hits, words = _scan_places(title, _person_spans(title), mentions)

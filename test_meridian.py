@@ -310,6 +310,13 @@ GEO_CASES = [
     ("Taiwan Strait", "", "Taiwan Strait", "the STRAIT, not Taiwan the country/capital (regression guard)"),
     ("Barges idle as the Danube's water level keeps dropping", "", "!Danube",
      "a continental river is a LINE, not a point — a lone mention must not hijack the dot onto it"),
+    ('Nikita Bier resigns as X\'s Head of Product, will continue as an "advisor."',
+     'JUST IN - Nikita Bier resigns as X\'s Head of Product, will continue as an "advisor." '
+     'Source: https://x.com/nikitabier/status/2085105586966827343 @disclosetv',
+     "!Nikita",
+     "SHIPPED BUG: dotted 'Nikita', a village near Yalta — the trailing 'in' of the promo lead 'JUST IN' "
+     "read as '…IN Nikita', flipping on locating context that defeats the tiny-town + surname vetoes. A "
+     "person's forename is not a town; the wire's promo lead must be stripped before geolocating."),
     ("Russian Military Strikes Ukrainian Port with AI-Enabled Geran-4 drones over the Black Sea",
      "", "Odesa",
      "SHIPPED BUG: no port was NAMED, so the only place in the post was the BLACK SEA and the dot "
