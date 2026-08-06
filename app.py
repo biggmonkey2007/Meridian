@@ -82,7 +82,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2067,24 +2067,41 @@ class Api:
             with open(bat, "w", encoding="utf-8") as f:
                 f.write(
                     "@echo off\r\n"
+                    "setlocal enableextensions\r\n"
                     "ping 127.0.0.1 -n 2 >nul\r\n"
+                    "set /a n=0\r\n"
                     ":wait\r\n"
-                    'tasklist /fi "imagename eq Meridian.exe" | find /i "Meridian.exe" >nul '
-                    "&& (ping 127.0.0.1 -n 2 >nul & goto wait)\r\n"
+                    # wait for us to quit — but bounded (~60s), then force it, so a lingering process can
+                    # never wedge the update. findstr, not find (find hung the whole updater once).
+                    'tasklist /nh /fi "imagename eq Meridian.exe" 2>nul | findstr /i "Meridian.exe" >nul\r\n'
+                    "if errorlevel 1 goto swap\r\n"
+                    "set /a n+=1\r\n"
+                    "if %n% geq 30 goto swap\r\n"
+                    "ping 127.0.0.1 -n 2 >nul\r\n"
+                    "goto wait\r\n"
+                    ":swap\r\n"
+                    "taskkill /f /im Meridian.exe >nul 2>&1\r\n"   # make sure nothing holds the file open
+                    "ping 127.0.0.1 -n 2 >nul\r\n"
                     'copy /y "' + newexe + '" "' + target + '" >nul\r\n'
                     'del "' + newexe + '" >nul 2>&1\r\n'
                     'start "" "' + target + '"\r\n'
                     'del "%~f0" >nul 2>&1\r\n'
                 )
-            DETACHED = 0x00000008 | 0x00000200            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen(["cmd", "/c", bat], creationflags=DETACHED, close_fds=True)
+            # CREATE_NO_WINDOW, NOT DETACHED_PROCESS. A detached (console-less) cmd left `tasklist | find`'s
+            # `find` blocked on stdin forever — the update hung with a stuck window and never swapped the exe.
+            # CREATE_NO_WINDOW keeps a real (hidden) console so the pipe works; a child still outlives us.
+            FLAGS = 0x08000000 | 0x00000200               # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+            subprocess.Popen(["cmd", "/c", bat], creationflags=FLAGS, close_fds=True)
 
             def _bye():
                 time.sleep(0.7)                           # let the response reach the UI first
                 try:
                     webview.windows[0].destroy()
                 except Exception:
-                    os._exit(0)
+                    pass
+                time.sleep(0.6)
+                os._exit(0)                                # GUARANTEE the process is gone so the swapper can
+                #   replace the exe — a lingering process is exactly what left the old swapper waiting.
             threading.Thread(target=_bye, daemon=True).start()
             return {"ok": True}
         except Exception as ex:
