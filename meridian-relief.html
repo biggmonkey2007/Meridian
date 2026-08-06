@@ -1434,13 +1434,19 @@ function tuneVectorStyle(style){
     if(l.id==="waterway"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#b7cad3", "line-width":{"stops":[[5,0.6],[7,0.8],[9,1.1],[15,2],[16,3]]}});
     }
-    // COUNTRY borders: Positron's native line is a salmon-PINK that reads RED when zoomed out. Recolour to a
-    // transparent BLACK — a soft neutral grey line, not red. Inner is the main line; outline is a faint casing.
+    // COUNTRY borders: Positron's native INNER line is a salmon-PINK that reads RED when zoomed out — recolour
+    // ONLY that to a soft transparent black. Keep it the original THIN line (native 1->1.5px), just nudged a
+    // hair wider and a touch more transparent so it stays a clean hairline, never a heavy band.
     if(l.id==="boundary_country_inner"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.30});
+      l.paint = Object.assign({}, l.paint, {
+        "line-color":"#000000", "line-opacity":0.28,
+        "line-width":{"stops":[[3,1],[6,1.5],[10,1.9],[14,2.3]]}});
     }
+    // The OUTLINE is a WIDE 8px casing — meant to be a light halo that lifts the border off the land. Recolouring
+    // it black (as we briefly did) turned it into a fat dark band that SMEARS along wiggly river borders (the
+    // Bug), the "furry" look zoomed in. Leave it its native light colour: invisible on the pale land, no smear.
     if(l.id==="boundary_country_outline"){
-      l.paint = Object.assign({}, l.paint, {"line-color":"#000000", "line-opacity":0.10});
+      l.paint = Object.assign({}, l.paint, {"line-color":"#f3efed", "line-opacity":0.5});
     }
     // Body-of-water names (seas/oceans) read too faint — darken ~15% so "Baltic Sea" etc. are legible.
     if(l.id==="watername_ocean" || l.id==="watername_sea"){
