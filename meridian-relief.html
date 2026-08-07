@@ -44,6 +44,22 @@
 :root[data-theme="dark"] .lt-dur{background:rgba(255,255,255,.10);color:var(--ink-2)}
 :root[data-theme="dark"] .leg-item{color:var(--ink)}                     /* all category names white in dark mode */
 :root[data-theme="dark"] .leg-item .ct{color:var(--ink-2)}
+/* article body / brief / description text — was hardcoded dark (#2b333c), unreadable on dark */
+:root[data-theme="dark"] .body,
+:root[data-theme="dark"] .body.ctx,
+:root[data-theme="dark"] .body.out,
+:root[data-theme="dark"] .brief-lede,
+:root[data-theme="dark"] .brief-points li{color:#ccd6e2}
+:root[data-theme="dark"] .brief-points li::before{background:#7f8ea0}
+:root[data-theme="dark"] .em-item{background:var(--panel-2)}             /* the wire "description" card */
+/* light hover states -> dark, so buttons don't vanish (white-on-light) on hover in dark mode */
+:root[data-theme="dark"] .icon-btn:hover,
+:root[data-theme="dark"] .p-close:hover,
+:root[data-theme="dark"] .p-min:hover,
+:root[data-theme="dark"] .src:hover,
+:root[data-theme="dark"] .btn-ghost:hover,
+:root[data-theme="dark"] .news-city:hover,
+:root[data-theme="dark"] .persp-tab:hover{background:#2c3743;color:var(--ink)}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -1240,7 +1256,7 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—.\s]+$/,"").trim()+"."; }
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
-function leadText(s){ s=String(s||"").trim(); if(!s) return s; return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
+function leadText(s){ s=String(s||"").trim(); if(!s) return s; if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1); return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
 // Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
 //   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
 //   only when the stakes aren't obvious — a final "Why it matters:" line that we fold into the SAME
@@ -2818,14 +2834,16 @@ function setGlobeBasemap(k){
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
       const firstSym = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
       const belowLabels = firstSym || (mlMap.getLayer("g-borders") ? "g-borders" : undefined);
-      // At WORLD SCALE (z<3) MapLibre's globe mis-renders some vector FILLS (a dark wedge), so cover them with
-      // the always-resident clean RASTER (instant zoom-out, artifact-free); vector fills take over from z3 up.
+      // At WORLD SCALE MapLibre's globe mis-renders some vector FILLS (a dark wedge streaking across the sphere),
+      // so cover them with the always-resident clean RASTER (instant zoom-out, artifact-free); vector fills take
+      // over from z4 up. The wedge was still showing at the z3 boundary (raster gone, sphere still small), so the
+      // raster now holds to z4 — the @2x tile stays crisp that far out and the vector base is a seamless match.
       // Use the @2x (512px) tiles: at globe zoom a 256px tile is stretched over a whole continent and reads
       // BLURRY — the persistent "why is the globe soft" complaint. The retina tile doubles the resolution so
       // the base is crisp; the vector borders/labels and hillshade sit sharp on top.
       if(!mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
-        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
+        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:4,paint:{"raster-fade-duration":0}}, belowLabels);
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){

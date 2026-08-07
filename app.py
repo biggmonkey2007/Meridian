@@ -3698,8 +3698,21 @@ def _cite_source(primary, dup):
     ds = _src_of(dup)
     if ds["url"] and not any(s.get("url") == ds["url"] for s in srcs):
         srcs.append(ds)
+    # PRIMARY = the FIRST to report (largest hrs). The build adds the FRESHEST copy first, so a later-fetched
+    # but EARLIER-reported outlet was being cited under the fresher one's byline ("Source: Aa" while
+    # 'Middle East Monitor … FIRST' sat in the list). If this copy reported earlier than the one shown,
+    # promote its outlet + headline so the story is attributed to whoever broke it.
+    _shown = primary.get("_shown_hrs")
+    if _shown is None:
+        _shown = primary.get("hrs", 0) or 0
+    if (dup.get("hrs") or 0) > _shown + 0.05:
+        for k in ("title", "source", "domain", "url", "sum"):
+            if dup.get(k):
+                primary[k] = dup[k]
+        primary["_shown_hrs"] = dup.get("hrs")
+    primary.setdefault("_shown_hrs", _shown)
     if dup.get("hrs") is not None:
-        primary["hrs"] = min(primary.get("hrs", dup["hrs"]), dup["hrs"])
+        primary["hrs"] = min(primary.get("hrs", dup["hrs"]), dup["hrs"])   # the DOT's timestamp stays freshest
     if not primary.get("image") and dup.get("image"):
         primary["image"] = dup["image"]
 

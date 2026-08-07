@@ -1526,6 +1526,25 @@ def main():
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
+    # FIRST-REPORTER PROMOTION — the inline dedup adds the FRESHEST copy first, then cites older copies onto it.
+    # A story broken by an outlet 12h ago and re-run by another 4h ago must stay attributed to whoever broke it,
+    # not the later re-run. _cite_source promotes the earlier reporter's outlet + headline to the shown primary.
+    _prim = {"source": "Aa", "domain": "aa.com", "url": "https://aa.com/x",
+             "title": "4 Palestinians injured in West Bank raid", "sum": "later re-run text", "hrs": 4.1}
+    _older = {"source": "Middle East Monitor", "domain": "middleeastmonitor.com", "url": "https://memo.org/y",
+              "title": "Israeli forces injure four in West Bank", "sum": "the outlet that broke it", "hrs": 12.2}
+    app._cite_source(_prim, _older)
+    _fr_ok = (_prim["source"] == "Middle East Monitor"          # first reporter now leads the byline
+              and _prim["title"].startswith("Israeli forces")   # ...with its headline
+              and _prim["hrs"] == 4.1                            # dot timestamp stays freshest
+              and len(_prim.get("sources", [])) == 2)           # both outlets cited
+    ran[0] += 1
+    if not _fr_ok:
+        fails.append(("merge", "first-reporter-promotion", "Middle East Monitor leads",
+                      f"source={_prim.get('source')} sources={len(_prim.get('sources', []))}",
+                      "an earlier-reporting cited outlet must become the shown primary"))
+    print(f"  {'ok ' if _fr_ok else 'FAIL'} first reporter promoted -> primary={_prim['source']}")
+
     # CASUALTY FINGERPRINT — two reports that match on BOTH killed AND injured are the same incident even
     # when they sit far apart with different wording (one on 'Black Sea', one on the named town). No geo
     # constraint, so a merge the plain same-place rule can never make. Also guards the injured extractor.
@@ -1631,7 +1650,8 @@ def main():
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
-             + 3)   # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
+             + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
+             + 1)   # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
