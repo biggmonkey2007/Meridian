@@ -170,8 +170,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
 _DATA_VER = "d1"
-_SUM_PROMPT_VER = "9"   # bump when the summary prompt/format changes, so cached summaries regenerate
-_AIWHERE_VER = "aw4"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
+_SUM_PROMPT_VER = "10"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
 
 def _aiwhere_path(title):
@@ -346,8 +346,12 @@ def _summarize(title, text):
               "backdrop that gets mentioned.\n"
               "3) Otherwise give the most specific real scene: 'City, Country' when a city/town/site is knowable, "
               "else the 'Country', else NONE.\n"
-              "Never give where someone merely REACTED, a person's nationality, or an organisation's HQ. This "
-              "WHERE line is metadata, not part of the brief.\n\n"
+              "Never give where someone merely REACTED, or a person's nationality. And NEVER give the home "
+              "country of a charity, NGO, aid group, company, agency or foundation that funds, backs, runs, "
+              "donates to or is merely named in the story — even when its name CONTAINS a country ('CARITAS "
+              "Canada', 'Bank of China', 'US Agency'): the place is where the event/project PHYSICALLY happens "
+              "('CARITAS Canada backs an oil-spill clean-up in Akwa Ibom' -> Akwa Ibom, Nigeria, NOT Canada). "
+              "This WHERE line is metadata, not part of the brief.\n\n"
               "On ONE more separate final line, output `SCOPE: <global|regional|national|local>` — how far this "
               "story's consequences reach, judged by CONSEQUENCE, not by how dramatic it sounds:\n"
               "- global: reshapes international politics, security or the economy — a war or strike between "
@@ -4397,6 +4401,12 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
 _NOT_CITY_WORDS = {"sparks", "brent", "shaping", "golden", "silver", "liberty", "victory",
                    "union", "enterprise", "sunrise", "sunset", "eagle", "hope", "energy",
                    "fleet", "dome", "shield", "dawn", "sentinel", "guardian"}   # program/operation names
+# Month names are DATES, never the scene. A single "May"/"March"/"August" — even after a preposition that
+# normally locates ("only two in May", "since March") — is a gazetteer town (May, India; March, England) the
+# scan would otherwise dot. SHIPPED BUG: a Kamchatka submarine story dotted "May, India" off "…two in May".
+# Only lone month tokens are blocked, so a real multi-word place ("May Pen", Jamaica) still matches first.
+_MONTHS = {"january", "february", "march", "april", "may", "june", "july",
+           "august", "september", "october", "november", "december"}
 # Place names that are ALSO everyday English words — a dot ONLY when Capitalised in the source. "polish"
 # (shine), "china" (porcelain), "turkey" (the bird / cold turkey), "guinea" (guinea pig), "chad" (hanging
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
@@ -5734,6 +5744,8 @@ def _scan_places(text, spans, mentions):
             if i + size > n:
                 continue
             gram = " ".join(words[i:i + size])
+            if size == 1 and gram in _MONTHS:   # a bare month ("in May", "since March") is a DATE, never a place
+                continue
             r = _resolve(gram, mentions)
             if not r:
                 continue

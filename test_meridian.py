@@ -488,6 +488,13 @@ GEO_CASES = [
     ("Ukrainian forces recapture a village near Kupiansk", "", "Kupiansk",
      "GUARD: 'forces' is a STATE ACTOR (not a _PERSON_NOUN), so 'Ukrainian' must NOT be dropped as a "
      "mere nationality — the country stays a party and the scene resolves normally"),
+    ("Russia expands anti-drone defenses over nuclear submarines at the Rybachiy base on Kamchatka",
+     "More than five submarines are visible beneath large protective nets, compared with only two in May.",
+     "!India", "SHIPPED: 'only two in May' dotted the town of May, India — a month is a DATE, never a place"),
+    ("JRS launches project to strengthen oil spill resilience in Akwa Ibom community",
+     "A community in Nigeria is getting help to deal with oil spills. The initiative is backed by CARITAS Canada.",
+     "Nigeria", "SHIPPED: dotted CANADA off 'CARITAS Canada' — an aid group's home country is not the scene; "
+     "the located 'in Nigeria' must win (the AI WHERE prompt now says the same for the summary-pass pinpoint)"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
