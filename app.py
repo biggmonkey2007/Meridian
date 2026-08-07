@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d1"
+_DATA_VER = "d2"
 _SUM_PROMPT_VER = "10"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
@@ -705,6 +705,17 @@ def _strip_promo(t):
     return re.sub(r"\s{2,}", " ", t).strip(" \t\r\n-–—|:")
 
 
+def _sharpen_desc(text, n=460):
+    """The summary shown under an article, made professional: promo/handles gone, inline image/agency
+    credits stripped ('… [Abu Adem Muhammed – Anadolu Agency]'), and a terminal full stop when it ends
+    mid-air ('… researchers say' -> '… researchers say.'). RSS descriptions skipped these — only Telegram
+    text was cleaned — so wire copy reached the card raw. End-stop BEFORE the clip so a complete short
+    description keeps its period; a truly truncated one loses it and the UI adds an ellipsis instead."""
+    t = _CREDIT_BRACKET.sub(" ", _strip_promo(text or ""))
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    return _clip(_end_stop(t), n)
+
+
 # Prepositions / articles / coordinating conjunctions that essentially NEVER validly end a sentence (each
 # demands an object, or is an article) — so a period after one is a stray dot and a trailing one is a
 # truncation. Deliberately EXCLUDES words that can legitimately close a sentence ("game over", "moving on",
@@ -1027,6 +1038,41 @@ _GLOSSARY = [
     ("Hezbollah al-Nujaba / Iraqi militias", ("popular mobilization forces", "pmf", "hashd al-shaabi"),
      "State-linked, largely Shia armed groups in Iraq, many of them close to Iran, folded into the official "
      "security forces after the fight against Islamic State."),
+    ("Rapid Support Forces (RSF)", ("rapid support forces",),   # not bare "RSF" — also Reporters Without Borders
+     "A Sudanese paramilitary force fighting the national army in a devastating civil war since 2023, grown "
+     "out of the earlier Janjaweed militias."),
+    ("Syrian Democratic Forces (SDF)", ("syrian democratic forces",),   # not bare "SDF" — also Japan's Self-Defense Forces
+     "A Kurdish-led, US-backed armed coalition that controls much of northeastern Syria."),
+    ("M23", ("m23",),
+     "A mainly Tutsi armed group in the eastern Democratic Republic of Congo, widely reported to be backed "
+     "by neighbouring Rwanda."),
+    ("Polisario Front", ("polisario",),
+     "The movement seeking independence for Western Sahara from Morocco, which controls most of the territory."),
+    ("European Union", ("european union",),
+     "A political and economic union of 27 European countries with a single market and, for most members, a "
+     "shared currency, the euro."),
+    ("United Nations", ("united nations", "un security council", "un general assembly"),
+     "The world body of 193 member states, founded in 1945 to keep the peace, set international law and "
+     "coordinate humanitarian aid."),
+    ("African Union", ("african union",),
+     "A continental body of 55 African states that coordinates political, economic and security policy."),
+    ("Arab League", ("arab league",),
+     "A bloc of 22 Arab states that coordinates political and economic ties across the Middle East and North Africa."),
+    ("BRICS", ("brics",),
+     "A bloc of major emerging economies — Brazil, Russia, India, China, South Africa and newer members — that "
+     "positions itself as a counterweight to the Western-led order."),
+    ("OPEC", ("opec",),
+     "The Organization of the Petroleum Exporting Countries, a group of major oil producers that coordinates "
+     "output to steer world crude prices."),
+    ("International Monetary Fund", ("international monetary fund", "imf"),
+     "A UN-linked lender of 190 member states that provides emergency loans to countries in financial trouble, "
+     "usually with conditions attached."),
+    ("World Health Organization", ("world health organization", "world health organisation"),
+     "The United Nations' health agency, which coordinates the response to disease outbreaks and sets global "
+     "health standards."),
+    ("International Criminal Court", ("international criminal court",),
+     "A permanent court in The Hague that prosecutes individuals for genocide, war crimes and crimes against "
+     "humanity."),
 ]
 _GLOSSARY_RE = [(canon, defn, re.compile(r"(?<![\w'-])(?:" + "|".join(re.escape(a) for a in aliases) + r")(?![\w'-])", re.I))
                 for (canon, aliases, defn) in _GLOSSARY]
@@ -2009,7 +2055,7 @@ class Api:
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
                 "image": img if _good_img(img) else "",   # filter Telegram link-preview logos too (TASS/RT cards)
-                "sum": _clip(_strip_promo(a.get("desc") or ""), 460),
+                "sum": _sharpen_desc(a.get("desc") or ""),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
                 "srcmedia": (a.get("_media") or []) if _is_tg else [],   # source post's own media, always available
@@ -2110,7 +2156,7 @@ class Api:
                     "source": _domain_name(a.get("domain") or ""),
                     "domain": a.get("domain") or "", "url": url,
                     "image": img if _good_img(img) else "",
-                    "sum": _clip(_strip_promo(a.get("desc") or ""), 460),
+                    "sum": _sharpen_desc(a.get("desc") or ""),
                     "involved": (_involved_countries(title, ev_country) or [ev_country]),
                     "starred": True, "tg": False, "channel": "",
                 })

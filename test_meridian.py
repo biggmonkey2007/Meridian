@@ -1651,10 +1651,15 @@ def main():
     _c2 = app._tg_clean("Israeli forces arrest a Palestinian as settlers attack civilians in Nablus and Bethlehem")
     _c3 = app._tg_clean("He called the deal \"done\" [sic] on Tuesday")
     _c4 = app._tg_clean("Lavrov:")
+    # RSS descriptions bypass _tg_clean — _sharpen_desc gives them the SAME treatment (the shipped bug)
+    _r1 = app._sharpen_desc("Chinese AI startup Moonshot's flagship model bypassed a UK safety test, researchers say")
+    _r2 = app._sharpen_desc("Migrants begin returning to Morocco on July 31, 2026. [Abu Adem Muhammed – Anadolu Agency]")
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
-                 and not _c4.endswith("."))                             # a bare speaker label is left alone
+                 and not _c4.endswith(".")                              # a bare speaker label is left alone
+                 and _r1.endswith("say.")                               # RSS desc gets an end stop too
+                 and "[" not in _r2 and _r2.endswith("2026."))          # RSS credit bracket stripped
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
