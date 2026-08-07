@@ -476,11 +476,36 @@ _TG_XLINK = re.compile(r"(?im)^\W*(https?://)?(www\.)?(x|twitter|vxtwitter|fxtwi
 _TG_AD = re.compile(r"(?i)(rainbet|non-kyc|casino|sportsbook|promo code|use code|deposit bonus|betting|\bt\.me/\+|📲|referral)")
 
 
+# Image/agency credit tags a wire leaves inline: "[Photo/AA]", "[Screengrab/AA]", "[File photo]",
+# "[Iranian Presidency / Handout – Anadolu Agency]", "[Getty Images]", "[REUTERS]", "(AFP)". A bracket is a
+# credit when it holds a slash OR a media/agency word — strip it. Plain editorial brackets ("[sic]", a
+# clarifying "[Gaza]") have neither, so they survive.
+_CREDIT_BRACKET = re.compile(
+    r"[\[(][^\])]*(?:/|photo|screengrab|screenshot|video|footage|handout|getty|reuters|"
+    r"\bafp\b|\bap\b|\bepa\b|anadolu|\baa\b|file|image|imagery|courtesy|graphic|infographic|"
+    r"illustration|archive|social ?media|stringer|\bpool\b)[^\])]*[\])]", re.I)
+
+
+def _end_stop(t):
+    """Give a wire line a terminal full stop when it ends mid-air. Many channel posts ship a headline with
+    no end punctuation ('… settlers attack civilians in Nablus and Bethlehem'); a lone period reads far
+    sharper than a fragment. Only when the last line ends on a word or closing quote — not ':' (a speaker
+    label), not already '.?!…,;' — and is a real sentence (>=4 words), so 'Lavrov:' and one-word lines stay."""
+    tr = (t or "").rstrip()
+    if not tr:
+        return t
+    last = tr.rsplit("\n", 1)[-1]
+    if len(last.split()) < 4 or not re.search(r"[A-Za-z0-9”’\"']$", last):
+        return t
+    return tr + "."
+
+
 def _tg_clean(text):
     t = re.sub(r"<br\s*/?>", "\n", text)
     t = re.sub(r"</p>", "\n", t)
     t = re.sub(r"<[^>]+>", "", t)
     t = _htmlmod.unescape(t)
+    t = _CREDIT_BRACKET.sub(" ", t)
     t = re.sub(r"[ \t]+", " ", t)
     # vxTwitter/fixvx repost: everything up to and including the x.com link is the reposter's comment —
     # the news is the embedded tweet that follows. Only when a provider marker confirms the embed, so a
@@ -514,7 +539,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()
+    return _end_stop(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())
 
 
 def _tg_fetch(ch):
@@ -936,6 +961,90 @@ def build_prompt(country, fb_hint=""):
     )
 
 
+# ---- WHO'S INVOLVED: a fair, plain-language glossary of the groups and bodies that recur in world news.
+# Written to INFORM a reader who meets the name cold — who they are, where, and whose side — NOT to label:
+# no "terrorist", no cheerleading, just the facts a wire assumes you already know. A story's own text is
+# scanned for these so the reader can tap a name they don't recognise. Each entry: (canonical, aliases, def).
+# `aliases` are lowercase spellings a wire might use; matched whole-word so "AP" or "map" never false-fire.
+_GLOSSARY = [
+    ("Ansar Allah (the Houthis)", ("ansarallah", "ansar allah", "ansarullah", "houthi", "houthis"),
+     "A Zaydi Shia movement that controls much of northern Yemen, including the capital Sanaa. Aligned with "
+     "Iran, it fought a Saudi-led coalition to a stalemate and has attacked Red Sea shipping since the Gaza war."),
+    ("Hamas", ("hamas",),
+     "The Palestinian Islamist movement that has governed the Gaza Strip since 2007 — both a political party "
+     "and an armed wing. It is backed politically by Iran and Qatar and is the main rival to Fatah."),
+    ("Hezbollah", ("hezbollah", "hizbollah", "hizbullah", "hesbollah"),
+     "A Lebanese Shia political party and armed movement, funded and armed by Iran. It holds seats in "
+     "Lebanon's parliament and is one of the most powerful forces in the country."),
+    ("Palestinian Islamic Jihad", ("palestinian islamic jihad", "islamic jihad", "pij"),
+     "A smaller Iran-backed Palestinian armed group based mainly in Gaza — separate from, and generally more "
+     "hardline than, Hamas."),
+    ("Islamic Revolutionary Guard Corps", ("irgc", "revolutionary guard", "revolutionary guards", "quds force"),
+     "A branch of Iran's armed forces answering directly to the Supreme Leader, with wide military, economic "
+     "and intelligence reach. Its Quds Force runs operations and arms allied groups abroad."),
+    ("Taliban", ("taliban",),
+     "The Islamist movement that has ruled Afghanistan since 2021, enforcing a strict reading of Islamic law "
+     "and sharply curtailing women's rights."),
+    ("Islamic State", ("islamic state", "isis", "isil", "daesh"),
+     "A transnational Sunni jihadist group that seized parts of Iraq and Syria in 2014 and declared a "
+     "'caliphate'. Territorially defeated by 2019, it still runs insurgent cells and regional affiliates."),
+    ("al-Qaeda", ("al-qaeda", "al qaeda", "alqaeda"),
+     "The transnational Sunni jihadist network founded by Osama bin Laden and behind the 2001 attacks on the "
+     "United States. It now operates mostly through regional affiliates."),
+    ("Wagner Group", ("wagner group", "wagner"),
+     "A Russian private military company used by the Kremlin for deniable operations in Ukraine, Syria and "
+     "several African states."),
+    ("Hayat Tahrir al-Sham", ("hayat tahrir al-sham", "tahrir al-sham", "hts"),
+     "The dominant Islamist faction in Syria's northwest, rooted in a former al-Qaeda affiliate it later "
+     "broke from. It led the 2024 offensive that toppled the Assad government."),
+    ("Kurdistan Workers' Party (PKK)", ("pkk",),
+     "A Kurdish militant group that waged a decades-long insurgency against Turkey seeking Kurdish autonomy "
+     "and rights, and in 2025 began a move to disarm."),
+    ("Boko Haram", ("boko haram",),
+     "A Nigerian jihadist group that has waged an insurgency across the Lake Chad region since 2009."),
+    ("al-Shabaab", ("al-shabaab", "al shabaab", "al-shabab", "shabaab"),
+     "An al-Qaeda-aligned jihadist group fighting the internationally-backed government of Somalia."),
+    ("Fatah", ("fatah",),
+     "The secular Palestinian party that dominates the Palestinian Authority and the West Bank; the main "
+     "rival to Hamas."),
+    ("Palestinian Authority", ("palestinian authority",),
+     "The internationally-recognised body that governs parts of the occupied West Bank, led by the Fatah party."),
+    ("Muslim Brotherhood", ("muslim brotherhood",),
+     "A transnational Sunni Islamist movement founded in Egypt in 1928; influential across the Arab world and "
+     "outlawed by several governments."),
+    ("Kataib Hezbollah", ("kataib hezbollah", "kata'ib hezbollah"),
+     "An Iran-backed Iraqi Shia armed group, part of Iraq's state-linked Popular Mobilization Forces."),
+    ("Axis of Resistance", ("axis of resistance",),
+     "The name Iran and its allies use for their network of aligned states and armed groups — Hezbollah, "
+     "Hamas, the Houthis and Iraqi militias — opposed to Israel and the United States."),
+    ("Israel Defense Forces (IDF)", ("israel defense forces", "israeli defense forces", "idf"),
+     "Israel's national military."),
+    ("NATO", ("nato",),
+     "A military alliance of 32 North American and European countries whose members pledge to defend one "
+     "another from attack."),
+    ("IAEA", ("iaea", "international atomic energy agency"),
+     "The United Nations' nuclear watchdog, which inspects nuclear sites to verify they stay peaceful."),
+    ("Hezbollah al-Nujaba / Iraqi militias", ("popular mobilization forces", "pmf", "hashd al-shaabi"),
+     "State-linked, largely Shia armed groups in Iraq, many of them close to Iran, folded into the official "
+     "security forces after the fight against Islamic State."),
+]
+_GLOSSARY_RE = [(canon, defn, re.compile(r"(?<![\w'-])(?:" + "|".join(re.escape(a) for a in aliases) + r")(?![\w'-])", re.I))
+                for (canon, aliases, defn) in _GLOSSARY]
+
+
+def _glossary_terms(text, limit=6):
+    """Which glossary groups/bodies does this story name? Returns [{term, def}] in the glossary's own order
+    (most-central first), deduped, capped. Whole-word match so 'AP', 'map', 'Hamasa' never trip a definition."""
+    low = _fold(text or "")
+    out = []
+    for canon, defn, rx in _GLOSSARY_RE:
+        if rx.search(low):
+            out.append({"term": canon, "def": defn})
+            if len(out) >= limit:
+                break
+    return out
+
+
 class Api:
     """Exposed to the page as window.pywebview.api.*"""
 
@@ -944,6 +1053,15 @@ class Api:
 
     def ping(self):
         return {"ok": True, "ai": bool(load_gemini_key())}
+
+    def article_terms(self, title, desc=""):
+        """The groups/bodies this story names, with a fair one-line explainer each — for the 'Who's involved'
+        panel under an article. Curated so a reader meeting 'Ansar Allah' or 'IRGC' cold gets an even-handed
+        definition, never a label. Returns [{term, def}]; empty when the story names none we cover."""
+        try:
+            return _glossary_terms((title or "") + " . " + (desc or ""))
+        except Exception:
+            return []
 
     def find_clip(self, query):
         """Resolve the top YouTube result for a query to an embeddable video id (no API key). A long,

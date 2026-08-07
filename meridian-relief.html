@@ -376,6 +376,18 @@ img.flag-img{object-fit:cover;background:#eef1f5}
    specifics; a "Why it matters" bullet folds into the same list only when the stakes aren't obvious.
    No section label — the brief starts straight into the paragraph, set off by a thin rule. */
 .brief{margin:0;padding-top:14px;border-top:1px solid var(--line)}
+/* "Who's involved" — a collapsed button that opens fair one-line explainers for the groups a story names */
+.terms{margin:15px 0 2px}
+.terms-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.terms-toggle:hover{border-color:var(--ink-3)}
+.terms-toggle>svg{flex:0 0 auto;color:var(--ink-2)}
+.terms-toggle .terms-n{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--chip);color:var(--ink-2);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.terms-toggle .terms-chev{color:var(--ink-3);font-size:11px;transition:transform .18s}
+.terms-toggle.open .terms-chev{transform:rotate(180deg)}
+.terms-list{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.term-card{padding:10px 12px;border:1px solid var(--line);border-left:3px solid #3d78c9;border-radius:8px;background:var(--panel)}
+.term-n{font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:3px}
+.term-d{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
 .brief-lede{font-size:14px;line-height:1.6;color:#2b333c;margin:0 0 11px}
 .brief-lede:last-child{margin-bottom:0}
 .brief-points{list-style:none;margin:0;padding:0}
@@ -4128,6 +4140,7 @@ async function renderRealEvent(d){
     <div id="re-people-${d.id}" class="ppl-row"></div>
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?flagifyText(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
+    <div id="re-terms-${d.id}" class="terms"></div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
@@ -4157,6 +4170,7 @@ async function renderRealEvent(d){
     rs.onchange=()=>setTtsRate(rs.value, d);   // takes effect immediately, mid-sentence
   }
   updateListenTime(d);          // the headline alone, until the article body arrives
+  loadTerms(d);                 // "Who's involved" — fair explainers for any groups/bodies the story names
   loadEventMedia(d);
   loadEventPeople(d);            // headline names first — usually the officials
   // If the story arrived WITH no picture at all, resolve one right away (story_photo picks the subject/place)
@@ -4247,6 +4261,23 @@ function noteMedia(d, n){
   const base=readEvents.get(k);
   if(base===-1){ noteReadKey(k, n); return; }       // establish the baseline the first time (persisted)
   if(n > base){ clearReadKey(k); drawDots(); }       // genuinely NEW footage -> re-light the dot
+}
+// WHO'S INVOLVED — a fair, tap-to-open glossary of any groups/bodies the story names (Ansar Allah, IRGC,
+// Hamas…), so a reader who meets the name cold gets an even-handed definition, not a label. Curated in the
+// backend; the button only appears when the story actually names one, and starts collapsed to stay tidy.
+async function loadTerms(d){
+  const box=document.getElementById("re-terms-"+d.id);
+  if(!box) return;
+  box.innerHTML="";
+  const api=aiBridge();
+  if(!api || !api.article_terms) return;
+  let terms=[];
+  try{ terms=await api.article_terms(d.title||"", d.sum||"") || []; }catch(e){ return; }
+  if(activeEvent!==d.id || !terms.length) return;
+  const cards=terms.map(t=>`<div class="term-card"><div class="term-n">${esc(t.term)}</div><div class="term-d">${esc(t.def)}</div></div>`).join("");
+  box.innerHTML=`<button type="button" class="terms-toggle" aria-expanded="false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5"/><circle cx="12" cy="7.6" r=".7" fill="currentColor" stroke="none"/></svg><span>Who's involved?</span><span class="terms-n">${terms.length}</span><span class="terms-chev">▾</span></button><div class="terms-list" hidden>${cards}</div>`;
+  const btn=box.querySelector(".terms-toggle"), list=box.querySelector(".terms-list");
+  btn.onclick=()=>{ const open=list.hasAttribute("hidden"); if(open){ list.removeAttribute("hidden"); } else { list.setAttribute("hidden",""); } btn.setAttribute("aria-expanded", open?"true":"false"); btn.classList.toggle("open", open); };
 }
 async function loadEventMedia(d){
   const box=document.getElementById("re-media-"+d.id);

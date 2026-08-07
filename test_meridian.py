@@ -1644,6 +1644,41 @@ def main():
                       "a resort strike and a refinery note both pinned to 'Black Sea' must NOT merge"))
     print(f"  {'ok ' if _wp_ok else 'FAIL'} resort + refinery on Black Sea -> {len(_wc)} dots")
 
+    # TEXT SHARPEN — a wire post's inline image/agency credits are stripped and a mid-air headline gets a
+    # terminal stop, while legit brackets and speaker labels are left alone.
+    print("\n=== TEXT SHARPEN (credits stripped, end-stop added) ===")
+    _c1 = app._tg_clean("Gaza beekeepers rebuild on rooftops [Screengrab/AA] [Photo/AA] after attacks")
+    _c2 = app._tg_clean("Israeli forces arrest a Palestinian as settlers attack civilians in Nablus and Bethlehem")
+    _c3 = app._tg_clean("He called the deal \"done\" [sic] on Tuesday")
+    _c4 = app._tg_clean("Lavrov:")
+    _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
+                 and _c2.endswith(".")                                   # mid-air headline gets a full stop
+                 and "[sic]" in _c3                                      # a real editorial bracket survives
+                 and not _c4.endswith("."))                             # a bare speaker label is left alone
+    ran[0] += 1
+    if not _sharp_ok:
+        fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
+                      f"c1={_c1!r} c2_end={_c2[-1:]!r} c3_has_sic={'[sic]' in _c3} c4={_c4!r}",
+                      "image/agency credits must be stripped and a fragment given an end stop"))
+    print(f"  {'ok ' if _sharp_ok else 'FAIL'} {_c1!r}")
+
+    # WHO'S INVOLVED — the glossary detects the groups a story names, in order, without false-firing on
+    # ordinary words ('AP', 'map'), and returns a fair (non-labelling) definition.
+    print("\n=== WHO'S INVOLVED (glossary term detection) ===")
+    _g1 = app._glossary_terms("Houthis attack a ship in the Red Sea as the IRGC vows to respond")
+    _g2 = app._glossary_terms("AP publishes a new map of the region")
+    _terms1 = [t["term"] for t in _g1]
+    _gloss_ok = (len(_g1) == 2 and "Houthi" in _terms1[0]
+                 and "Revolutionary Guard" in _terms1[1]
+                 and "terrorist" not in _g1[0]["def"].lower()          # fair definition, never a label
+                 and _g2 == [])                                         # no false-fire on 'AP'/'map'
+    ran[0] += 1
+    if not _gloss_ok:
+        fails.append(("glossary", "term-detect", "Houthis+IRGC, fair defs, no false-fire",
+                      f"g1={_terms1} g2={_g2}",
+                      "the story's groups are defined; ordinary words never trip a definition"))
+    print(f"  {'ok ' if _gloss_ok else 'FAIL'} {_terms1}")
+
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -1658,7 +1693,8 @@ def main():
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
-             + 1)   # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
+             + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
+             + 2)   # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
