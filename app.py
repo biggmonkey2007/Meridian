@@ -2280,6 +2280,12 @@ class Api:
                     self.summarize_event(ev.get("title") or "", u)              # real article -> summarize it
                 elif ev.get("tg") and len((ev.get("sum") or "")) >= 180:
                     _summarize(ev.get("title") or "", ev.get("sum") or "")       # substantial pure-TG post
+                # THE PICTURE. A story that shipped without its own image needs a story_photo lookup at click
+                # time (1-5s — the black-hero wait). Resolve it HERE so its underlying person/place lookups are
+                # cached; the client's prefetch then returns instantly and the hero paints the moment you click.
+                if not ev.get("image"):
+                    self.story_photo(ev.get("title") or "", ev.get("sum") or "",
+                                     ev.get("place") or "", ev.get("country") or "")
             except Exception:
                 pass
         try:

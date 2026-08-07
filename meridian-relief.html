@@ -1011,7 +1011,6 @@ video{color-scheme:dark}
   </button>
 
   <div class="hdr-center">
-    <span class="seg-label seg-depth-label">Depth</span>
     <div class="seg seg-mode" id="seg-mode" role="group" aria-label="Analysis depth">
       <button data-mode="beginner" aria-pressed="true">Basic</button>
       <button data-mode="expert">Advanced</button>
@@ -3018,7 +3017,7 @@ function buildGlobeLayers(){
   if(!mlMap.getSource("g-events")){
     mlMap.addSource("g-events",{type:"geojson",data:globeEventsGeo()});
     mlMap.addLayer({id:"g-pulse",type:"circle",source:"g-events",paint:{ "circle-radius":5, "circle-color":eventColorExpr(), "circle-opacity":["case",["==",["get","read"],1],0,0.4], "circle-stroke-width":0 }});
-    mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["get","r"], "circle-color":eventColorExpr(), "circle-stroke-width":1.7, "circle-stroke-color":"#ffffff" }});
+    mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["case",["==",["get","read"],1],["*",["get","r"],0.5],["get","r"]], "circle-color":eventColorExpr(), "circle-stroke-width":["case",["==",["get","read"],1],1.0,1.7], "circle-stroke-color":"#ffffff" }});   // a READ dot shrinks to half size (+thinner ring) so it recedes and takes less of the map
   }
   addGlobeOverlays();
   startGlobePulse();
@@ -4678,9 +4677,9 @@ function applyWorldEvents(items){
   try{
     const _inView = e => { try{ if(mlMap && mlLoaded){ const b=mlMap.getBounds(); return e.lng>=b.getWest() && e.lng<=b.getEast() && e.lat>=b.getSouth() && e.lat<=b.getNorth(); } }catch(_){} return false; };
     const near = built.filter(_inView), far = built.filter(e=>!_inView(e));
-    near.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 18*i));
-    far.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, near.length*18 + 45*i));
-  }catch(e){ built.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 55*i)); }
+    near.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 10*i));
+    far.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, near.length*10 + 22*i));
+  }catch(e){ built.forEach((e,i)=> setTimeout(()=>{ try{ warmPhoto(e); }catch(_){} }, 28*i)); }
   return built.length;
 }
 /* ---- merge pinned ("starred") countries' news into the map ---- */
