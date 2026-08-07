@@ -23,7 +23,7 @@
   --panel:#141B24; --panel-2:#1B2530; --chip:#232C38;
   --shadow:0 10px 30px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.42);
 }
-:root[data-theme="dark"] header{background:rgba(16,22,30,.92)}
+:root[data-theme="dark"] header{background:rgba(14,19,26,.96)}   /* near-opaque so the light map doesn't bleed through the top bar */
 :root[data-theme="dark"] .lead{color:#c4ceda}
 :root[data-theme="dark"] .icon-btn:hover{background:#232c38;color:var(--ink)}
 :root[data-theme="dark"] .seg button[aria-pressed="true"],
@@ -36,6 +36,14 @@
 #btn-theme .th-sun{display:none}
 :root[data-theme="dark"] #btn-theme .th-sun{display:block}
 :root[data-theme="dark"] #btn-theme .th-moon{display:none}
+:root[data-theme="dark"] body{background:#0d1219}                         /* dark page bg so the header is flush, no light peek */
+:root[data-theme="dark"] .re-listen,
+:root[data-theme="dark"] .lt-speed select{background-color:var(--chip);color:var(--ink);border-color:var(--line)}
+:root[data-theme="dark"] .re-listen:hover,
+:root[data-theme="dark"] .lt-speed select:hover{background-color:#2c3743}
+:root[data-theme="dark"] .lt-dur{background:rgba(255,255,255,.10);color:var(--ink-2)}
+:root[data-theme="dark"] .leg-item{color:var(--ink)}                     /* all category names white in dark mode */
+:root[data-theme="dark"] .leg-item .ct{color:var(--ink-2)}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -121,7 +129,7 @@ header{
 #detail{top:66px;right:14px;width:366px;max-height:calc(100vh - 80px);z-index:1500;transform:translateX(420px);opacity:0;pointer-events:none;transition:transform .2s cubic-bezier(.22,1,.36,1),opacity .14s ease-out}   /* above the Live Wire (1400) so an opened article OVERLAYS the feed */
 #detail.open{transform:none;opacity:1;pointer-events:auto}
 .panel.collapsed{display:none}
-.p-head{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 11px;border-bottom:1px solid var(--line)}
+.p-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .p-eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
 .p-title{font-family:var(--serif);font-size:19px;line-height:1.15;margin:3px 0 0;font-weight:600}
 .p-sub{font-size:12px;color:var(--ink-2);margin-top:4px;font-variant-numeric:tabular-nums}
@@ -130,10 +138,10 @@ header{
 .p-nav{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:2px;user-select:none}
 .p-navb{width:28px;height:28px;flex:0 0 auto;border:none;background:transparent;border-radius:7px;color:var(--ink-2);font-size:22px;line-height:1;display:grid;place-items:center;cursor:pointer;transition:background .12s,color .12s}
 .p-navb:hover{background:var(--chip);color:var(--ink)}
-.p-navc{font-size:11.5px;font-weight:600;color:var(--ink-2);letter-spacing:.02em;min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+.p-navc{font-size:12px;font-weight:600;color:var(--ink-2);letter-spacing:.02em;min-width:60px;text-align:center;font-variant-numeric:tabular-nums}
 .p-navd{color:var(--ink-3,#9aa4ad);font-weight:500}
 .p-nav + .p-close{margin-left:0}
-#detail .p-navb{width:38px;height:38px;font-size:26px}
+#detail .p-navb{width:32px;height:32px;font-size:23px}
 .p-close:hover{background:#e3e9ef;color:var(--ink)}
 .p-body{padding:12px 14px 16px;overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch}
 .ill-tag{display:inline-block;margin-left:6px;font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;vertical-align:middle}
@@ -4267,7 +4275,7 @@ function _navList(){ try{ return visibleEvents().slice().sort((a,b)=> (b.reporte
 function gotoStory(dir){
   const list=_navList(); if(list.length<2) return;
   let i=list.findIndex(e=>e.id===activeEvent); if(i<0) i=0;
-  const ev=list[(i+dir+list.length)%list.length]; if(!ev) return;
+  const ev=list[(i-dir+list.length)%list.length]; if(!ev) return;   // flipped: left(prev)=older, right(next)=newer
   selectEvent(ev);          // flip the article in the panel; the globe stays put (no recentre per article)
 }
 function selectEvent(d){
@@ -5215,10 +5223,9 @@ function setTheme(t){ document.documentElement.setAttribute("data-theme", t==="d
   const b=document.getElementById("btn-theme"); if(b) b.onclick=()=>setTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark"); })();
 // REACTIONS — right-click a Live Wire post to pick one of the 7 universal expressions (Telegram-style).
 (function(){
-  const EMO=["\u{1F642}","\u{1F622}","\u{1F628}","\u{1F922}","\u{1F620}","\u{1F62E}","\u{1F60F}"];  // happy sad fear disgust anger surprise contempt
-  const NM=["Happiness","Sadness","Fear","Disgust","Anger","Surprise","Contempt"];
+  const EMO=["\u{1F642}","\u{1F44D}","\u{1F61F}","\u{1F44E}","\u{1F620}","\u{1F92E}","\u{1F64F}"];  // smile 👍 worried 👎 angry vomit pray
   const pop=document.createElement("div"); pop.className="react-pop";
-  pop.innerHTML=EMO.map((e,i)=>`<button type="button" data-emo="${e}" title="${NM[i]}">${e}</button>`).join("");
+  pop.innerHTML=EMO.map(e=>`<button type="button" data-emo="${e}">${e}</button>`).join("");   // no title -> no hover tooltip
   document.body.appendChild(pop);
   let targetId=null;
   const get=()=>{ try{ return JSON.parse(localStorage.getItem("meridian-reactions")||"{}"); }catch(_){ return {}; } };
