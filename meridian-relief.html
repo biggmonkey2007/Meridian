@@ -60,6 +60,11 @@
 :root[data-theme="dark"] .btn-ghost:hover,
 :root[data-theme="dark"] .news-city:hover,
 :root[data-theme="dark"] .persp-tab:hover{background:#2c3743;color:var(--ink)}
+/* layer toggles (Place labels / Strategic straits / Major ports …) were a bright light-grey (OFF) and a
+   near-white var(--ink) (ON) bar — both glared on the dark panel. Dark OFF track, muted-blue ON track. */
+:root[data-theme="dark"] .tog{background:#39424e}
+:root[data-theme="dark"] .lyr.on .tog{background:#4f83c2}
+:root[data-theme="dark"] .tog::after{background:#dfe6ee}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -2709,11 +2714,20 @@ function globeBgExpr(k){
 // — shows this tone, NEVER the dark space background and never a black chunk. It's a static polygon (whole
 // world, -89.9..89.9), so it's there instantly and never loads. Tiles paint on top when they arrive.
 function globeSphereGeo(){
-  const r=[];
-  for(let x=-180;x<=180;x+=5) r.push([x, 89.9]);      // top edge (near N pole), densified for smooth globe fill
-  for(let x=180;x>=-180;x-=5) r.push([x,-89.9]);      // bottom edge (near S pole)
-  r.push([-180, 89.9]);
-  return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[r]}}]};
+  // A GRID of small quads, NOT one world-spanning polygon. MapLibre's globe projects each triangle's corners
+  // onto the sphere and fills the flat CHORD between them, so a single -180..180 x -90..90 polygon earcuts
+  // into a fan of long triangles whose chords cut ACROSS the globe — the dark "space" background shows through
+  // that gap as the black wedge (worst right at the zoomed-out opening view). Tiling into 10° cells keeps every
+  // triangle short so the fill hugs the surface with no gap. Still a static polygon set — instant, never loads.
+  const polys=[], S=10;
+  for(let y=-89.9; y<89.9; y+=S){
+    const y2=Math.min(89.9, y+S);
+    for(let x=-180; x<180; x+=S){
+      const x2=Math.min(180, x+S);
+      polys.push([[[x,y],[x2,y],[x2,y2],[x,y2],[x,y]]]);
+    }
+  }
+  return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"MultiPolygon",coordinates:polys}}]};
 }
 function polarCapColor(k){ return k==="satellite" ? "#12202e" : "#fafaf8"; }   // land/base tone — bright white to match the overview raster (so land stays white when you zoom past z3, not a dimmer #eaecec grey)
 // Web-Mercator tiles stop at ±85°, so the globe's poles have NO imagery — the g-sphere fill shows there, and
