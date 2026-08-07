@@ -376,18 +376,16 @@ img.flag-img{object-fit:cover;background:#eef1f5}
    specifics; a "Why it matters" bullet folds into the same list only when the stakes aren't obvious.
    No section label — the brief starts straight into the paragraph, set off by a thin rule. */
 .brief{margin:0;padding-top:14px;border-top:1px solid var(--line)}
-/* "Who's involved" — a collapsed button that opens fair one-line explainers for the groups a story names */
-.terms{margin:15px 0 2px}
-.terms-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
-.terms-toggle:hover{border-color:var(--ink-3)}
-.terms-toggle>svg{flex:0 0 auto;color:var(--ink-2)}
-.terms-toggle .terms-n{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--chip);color:var(--ink-2);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
-.terms-toggle .terms-chev{color:var(--ink-3);font-size:11px;transition:transform .18s}
-.terms-toggle.open .terms-chev{transform:rotate(180deg)}
-.terms-list{margin-top:8px;display:flex;flex-direction:column;gap:8px}
-.term-card{padding:10px 12px;border:1px solid var(--line);border-left:3px solid #3d78c9;border-radius:8px;background:var(--panel)}
-.term-n{font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:3px}
-.term-d{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+/* Inline glossed term: an unfamiliar group/body, lightly bolded with a faint dotted underline so it reads as
+   "there's more here" without shouting. Hover / tap / focus -> #gloss-pop. */
+.gloss{font-weight:600;cursor:help;text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:2px;text-decoration-color:var(--ink-3);border-radius:2px}
+.gloss:hover,.gloss:focus-visible{background:var(--chip);outline:none}
+#gloss-pop{position:fixed;z-index:3000;max-width:min(280px,80vw);padding:9px 11px;border-radius:9px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 26px rgba(10,16,24,.28);font-size:12px;line-height:1.45;opacity:0;transform:translateY(3px);transition:opacity .12s ease,transform .12s ease;pointer-events:none}
+#gloss-pop.show{opacity:1;transform:none}
+#gloss-pop .gp-t{font-weight:800;margin-bottom:3px}
+#gloss-pop .gp-d{color:var(--ink-2)}
+#gloss-pop::after{content:"";position:absolute;left:var(--ax,50%);top:100%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--panel)}
+#gloss-pop.below::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:var(--panel)}
 .brief-lede{font-size:14px;line-height:1.6;color:#2b333c;margin:0 0 11px}
 .brief-lede:last-child{margin-bottom:0}
 .brief-points{list-style:none;margin:0;padding:0}
@@ -4140,7 +4138,6 @@ async function renderRealEvent(d){
     <div id="re-people-${d.id}" class="ppl-row"></div>
     <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?flagifyText(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
-    <div id="re-terms-${d.id}" class="terms"></div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
     <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
@@ -4170,7 +4167,7 @@ async function renderRealEvent(d){
     rs.onchange=()=>setTtsRate(rs.value, d);   // takes effect immediately, mid-sentence
   }
   updateListenTime(d);          // the headline alone, until the article body arrives
-  loadTerms(d);                 // "Who's involved" — fair explainers for any groups/bodies the story names
+  annotateDetailTerms(d);       // lightly bold any unfamiliar group/body inline -> hover/tap/focus for context
   loadEventMedia(d);
   loadEventPeople(d);            // headline names first — usually the officials
   // If the story arrived WITH no picture at all, resolve one right away (story_photo picks the subject/place)
@@ -4192,6 +4189,8 @@ async function renderRealEvent(d){
              if(bodyEl) bodyEl.innerHTML=`<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
            if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
+    d._terms=undefined;                 // body text changed -> re-scan and re-bold the glossed terms
+    annotateDetailTerms(d);
   };
   if(d.tg && (!d.url || /t\.me\//.test(d.url))){
     // A PURE Telegram post: the post text IS the story (no article page to scrape). Show the post as the lead;
@@ -4262,23 +4261,89 @@ function noteMedia(d, n){
   if(base===-1){ noteReadKey(k, n); return; }       // establish the baseline the first time (persisted)
   if(n > base){ clearReadKey(k); drawDots(); }       // genuinely NEW footage -> re-light the dot
 }
-// WHO'S INVOLVED — a fair, tap-to-open glossary of any groups/bodies the story names (Ansar Allah, IRGC,
-// Hamas…), so a reader who meets the name cold gets an even-handed definition, not a label. Curated in the
-// backend; the button only appears when the story actually names one, and starts collapsed to stay tidy.
-async function loadTerms(d){
-  const box=document.getElementById("re-terms-"+d.id);
-  if(!box) return;
-  box.innerHTML="";
+// WHO'S INVOLVED, inline — any group/body the story names that an average reader might not know (Ansar Allah,
+// IRGC, the IMF…) is lightly bolded right in the text. Hover, tap or keyboard-focus it for a clean little
+// popup with a fair, even-handed definition (never a label). No panel, no button — just the words themselves.
+async function annotateDetailTerms(d){
   const api=aiBridge();
   if(!api || !api.article_terms) return;
-  let terms=[];
-  try{ terms=await api.article_terms(d.title||"", d.sum||"") || []; }catch(e){ return; }
+  let terms=d._terms;
+  if(terms===undefined){
+    try{ terms=await api.article_terms(d.title||"", (d.sum||"")+" "+(d.summary||"")) || []; }catch(e){ terms=[]; }
+    d._terms=terms;
+  }
   if(activeEvent!==d.id || !terms.length) return;
-  const cards=terms.map(t=>`<div class="term-card"><div class="term-n">${esc(t.term)}</div><div class="term-d">${esc(t.def)}</div></div>`).join("");
-  box.innerHTML=`<button type="button" class="terms-toggle" aria-expanded="false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5"/><circle cx="12" cy="7.6" r=".7" fill="currentColor" stroke="none"/></svg><span>Who's involved?</span><span class="terms-n">${terms.length}</span><span class="terms-chev">▾</span></button><div class="terms-list" hidden>${cards}</div>`;
-  const btn=box.querySelector(".terms-toggle"), list=box.querySelector(".terms-list");
-  btn.onclick=()=>{ const open=list.hasAttribute("hidden"); if(open){ list.removeAttribute("hidden"); } else { list.setAttribute("hidden",""); } btn.setAttribute("aria-expanded", open?"true":"false"); btn.classList.toggle("open", open); };
+  // one flat list of (alias -> definition), longest alias first so "Islamic Revolutionary Guard Corps" wins
+  // over a bare "Islamic" fragment; each canonical term is bolded only ONCE (its first mention).
+  const al=[];
+  terms.forEach(t=> (t.aliases||[]).forEach(a=> al.push({a:a, term:t.term, def:t.def})));
+  al.sort((x,y)=> y.a.length-x.a.length);
+  const used=new Set();
+  ["re-lead-"+d.id, "re-body-"+d.id].forEach(id=>{ const el=document.getElementById(id); if(el) wrapTermsIn(el, al, used); });
 }
+function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+// Walk the TEXT NODES of a rendered block and wrap the first mention of each term in a .gloss span — never
+// touching existing markup (flags, links) and never re-wrapping inside a .gloss. Word-bounded + case-insensitive.
+function wrapTermsIn(root, al, used){
+  al.forEach(entry=>{
+    if(used.has(entry.term)) return;
+    const rx=new RegExp("(^|[^\\w'-])("+_reEsc(entry.a)+")(?![\\w'-])","i");
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(n){
+        if(!n.nodeValue || !rx.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
+        for(let p=n.parentNode; p && p!==root; p=p.parentNode){
+          if(p.classList && p.classList.contains("gloss")) return NodeFilter.FILTER_REJECT;
+          if(p.tagName==="A"||p.tagName==="BUTTON") return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const node=walker.nextNode(); if(!node) return;
+    const m=node.nodeValue.match(rx); if(!m) return;
+    const start=m.index+m[1].length, end=start+m[2].length;
+    const span=document.createElement("span");
+    span.className="gloss"; span.tabIndex=0; span.setAttribute("role","button");
+    span.setAttribute("aria-label", entry.term+". "+entry.def);
+    span.dataset.term=entry.term; span.dataset.def=entry.def;
+    span.textContent=node.nodeValue.slice(start,end);
+    const frag=document.createDocumentFragment();
+    const before=node.nodeValue.slice(0,start), after=node.nodeValue.slice(end);
+    if(before) frag.appendChild(document.createTextNode(before));
+    frag.appendChild(span);
+    if(after) frag.appendChild(document.createTextNode(after));
+    node.parentNode.replaceChild(frag, node);
+    used.add(entry.term);
+  });
+}
+// ONE shared popup for every glossed term. Mouse: hover shows / leave hides. Touch: tap pins it open (tap
+// again or anywhere else closes). Keyboard: Tab focuses the term (it's a button), which shows it; Esc or
+// blur hides. The popup itself is pointer-transparent so moving toward it never causes a flicker.
+const glossPop=(function(){
+  let el=null, cur=null, pinned=false;
+  function ensure(){ if(!el){ el=document.createElement("div"); el.id="gloss-pop"; el.setAttribute("role","tooltip"); el.innerHTML='<div class="gp-t"></div><div class="gp-d"></div>'; document.body.appendChild(el); } return el; }
+  function position(span){
+    const p=el, r=span.getBoundingClientRect();
+    p.style.left="0px"; p.style.top="0px"; p.classList.add("show");   // measure at full size
+    const pw=p.offsetWidth, ph=p.offsetHeight, mg=8;
+    let left=Math.max(mg, Math.min(r.left+r.width/2-pw/2, innerWidth-pw-mg));
+    let top=r.top-ph-10, below=false;
+    if(top<mg){ top=r.bottom+10; below=true; }
+    p.style.left=left+"px"; p.style.top=top+"px";
+    p.classList.toggle("below", below);
+    p.style.setProperty("--ax",(r.left+r.width/2-left)+"px");
+  }
+  function show(span){ ensure(); el.querySelector(".gp-t").textContent=span.dataset.term; el.querySelector(".gp-d").textContent=span.dataset.def; position(span); cur=span; }
+  function hide(){ if(el) el.classList.remove("show"); cur=null; pinned=false; }
+  function toggle(span){ if(cur===span && pinned){ hide(); } else { show(span); pinned=true; } }
+  return { show, hide, toggle, get cur(){return cur;}, get pinned(){return pinned;} };
+})();
+document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gloss"); if(g && !glossPop.pinned) glossPop.show(g); });
+document.addEventListener("mouseout", e=>{ const g=e.target.closest&&e.target.closest(".gloss"); if(g && !glossPop.pinned){ const to=e.relatedTarget; if(!(to&&to.closest&&to.closest(".gloss"))) glossPop.hide(); } });
+document.addEventListener("focusin", e=>{ const g=e.target.closest&&e.target.closest(".gloss"); if(g) glossPop.show(g); });
+document.addEventListener("focusout", e=>{ const g=e.target.closest&&e.target.closest(".gloss"); if(g && !glossPop.pinned) glossPop.hide(); });
+document.addEventListener("click", e=>{ const g=e.target.closest&&e.target.closest(".gloss"); if(g){ e.preventDefault(); glossPop.toggle(g); } else glossPop.hide(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ glossPop.hide(); return; } const a=document.activeElement; if((e.key==="Enter"||e.key===" ")&&a&&a.classList&&a.classList.contains("gloss")){ e.preventDefault(); glossPop.toggle(a); } });
+document.addEventListener("scroll", ()=>{ if(glossPop.cur) glossPop.hide(); }, true);
 async function loadEventMedia(d){
   const box=document.getElementById("re-media-"+d.id);
   if(!box) return;

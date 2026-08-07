@@ -1074,18 +1074,20 @@ _GLOSSARY = [
      "A permanent court in The Hague that prosecutes individuals for genocide, war crimes and crimes against "
      "humanity."),
 ]
-_GLOSSARY_RE = [(canon, defn, re.compile(r"(?<![\w'-])(?:" + "|".join(re.escape(a) for a in aliases) + r")(?![\w'-])", re.I))
+_GLOSSARY_RE = [(canon, defn, aliases,
+                 re.compile(r"(?<![\w'-])(?:" + "|".join(re.escape(a) for a in aliases) + r")(?![\w'-])", re.I))
                 for (canon, aliases, defn) in _GLOSSARY]
 
 
-def _glossary_terms(text, limit=6):
-    """Which glossary groups/bodies does this story name? Returns [{term, def}] in the glossary's own order
-    (most-central first), deduped, capped. Whole-word match so 'AP', 'map', 'Hamasa' never trip a definition."""
+def _glossary_terms(text, limit=8):
+    """Which glossary groups/bodies does this story name? Returns [{term, def, aliases}] in the glossary's own
+    order (most-central first), deduped, capped. `aliases` lets the client bold the exact surface form it finds
+    inline. Whole-word match so 'AP', 'map', 'Hamasa' never trip a definition."""
     low = _fold(text or "")
     out = []
-    for canon, defn, rx in _GLOSSARY_RE:
+    for canon, defn, aliases, rx in _GLOSSARY_RE:
         if rx.search(low):
-            out.append({"term": canon, "def": defn})
+            out.append({"term": canon, "def": defn, "aliases": list(aliases)})
             if len(out) >= limit:
                 break
     return out
