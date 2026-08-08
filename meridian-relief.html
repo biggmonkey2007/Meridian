@@ -768,7 +768,7 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 .lt-speed{display:inline-flex;align-items:center}
 .lt-speed select{appearance:none;-webkit-appearance:none;padding:9px 22px 9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%237a8798' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 7px center/10px;color:var(--ink);font-family:var(--sans);font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer}
 .lt-speed select:hover{background-color:#f4f7fb}
-.re-listen{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink-1);font-weight:700;font-size:12.5px;cursor:pointer;transition:background .15s}
+.re-listen{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink-1);font-weight:700;font-size:11.5px;cursor:pointer;transition:background .15s}
 .re-listen:hover{background:#f4f7fb}
 .re-listen.on{background:#22303c;color:#fff;border-color:#22303c}
 /* Share — same shell as Listen so the row reads as one control set, sitting at the end of it. */
@@ -2865,16 +2865,11 @@ function setGlobeBasemap(k){
   // aren't a dark hole on satellite. The imagery covers ≤85°, so these bands only show at the very poles.
   mlMap.addSource("g-poles",{type:"geojson",data:polarCapsGeo()});
   mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapFill(k),"fill-antialias":false}}, before);
-  if(k==="clean" || k==="topo"){
+  if(k==="clean"){
     // VECTOR base — the Google-Maps approach. Positron is GPU-rendered geometry, not tile images, so it
     // scales INFINITELY SMOOTH from z3 up with no raster "chunks" to swap, and vector tiles are tiny so
     // panning fills near-instantly. Same Positron look as the raster base we were using. (Its full-canvas
     // background layer is skipped — our dark bg + the sphere fill handle space and the poles.)
-    // TOPOGRAPHIC rides this SAME reliable vector base (crisp, ENGLISH labels exactly like Clean relief, loads
-    // instantly) but wears a TERRAIN skin: a green land tone (the sphere fill), a bluer sea, and a BOLD
-    // hillshade for real relief — so it reads as a physical map, not a copy of Clean relief. No Esri terrain
-    // raster (those loaded a tile at a time on the globe); the hillshade is the reliable Elevation service.
-    const isTopo = (k==="topo");
     addCartoVector(before).then(()=>{
       // Insert the base overlays UNDER the vector's own label layers, so the ENGLISH vector labels always
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
@@ -2885,36 +2880,23 @@ function setGlobeBasemap(k){
       // wedge" — but that wedge is really the space background showing through a gap in the g-sphere fill, now
       // fixed by tessellating the sphere. Holding the raster to z4 only made the z3-4 view BLURRY: a stretched
       // tile where the vector should already be. So hand back at z3.) @2x (512px) tiles so the z<3 base is crisp.
-      // (Clean relief only — TOPO skips this pale CARTO overview so its warm terrain land tone + fills show at
-      //  world scale too, instead of flashing pale.)
-      if(!isTopo && !mlMap.getSource("g-overview")){
+      if(!mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
-      // TERRAIN: hillshade over the base, under the labels. SUBTLE for Clean relief; BOLD for Topographic
-      // (always on there — the relief is what makes it a terrain map).
-      if((layers.shade || isTopo) && !mlMap.getSource("g-shade")){
+      // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
+      if(layers.shade && !mlMap.getSource("g-shade")){
         // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        if(isTopo){
-          // TOPO RELIEF — BOLD, and at EVERY zoom, from ONE multi-zoom hillshade. (The two-layer subtle scheme
-          // below leaned on a fixed-z4 tile that just didn't render on the world-scale globe — the map read
-          // dead flat.) Strong opacity so mountains actually show; this is what makes it a terrain map.
-          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 1.5,0.55, 5,0.72, 9,0.72, 13,0.62],"raster-fade-duration":120}}, belowWater);
-        } else {
-          // CLEAN RELIEF — LIGHT + SUBTLE. Two layers so it's not blurry on the globe:
-          //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 — faint, clean relief.
-          mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
-          mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
-          //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, no seam. Subtle.
-          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
-        }
+        //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 — faint, clean relief.
+        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
+        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
+        //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, no seam. Subtle.
+        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
       }
-      if(isTopo) tuneCartoForTopoVector();   // terrain skin: bluer sea, warmer land, stronger label halos
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
       applyCartoLabelToggle();
@@ -2927,10 +2909,11 @@ function setGlobeBasemap(k){
     mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
     mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
-    if(k==="osmintl"){
-      // OSM tiles carry their own baked labels/borders — nothing to overlay.
+    if(k==="osmintl" || k==="topo"){
+      // These carry their OWN baked terrain relief + labels + roads + borders — a complete, COLOURFUL map.
+      // Nothing to overlay (our vector labels would just double them). This is the colourful topographic look.
     } else {
-      // TOPOGRAPHIC & SATELLITE now COPY the Clean-relief map: the SAME English one-name labels, tuned region
+      // SATELLITE COPIES the Clean-relief map: the SAME English one-name labels, tuned region
       // borders, softened rivers and forced capitals — just over the imagery instead of pale land. skipFills
       // drops the vector land/water fills so the topo relief / satellite photo shows through underneath.
       addCartoVector(before, {skipFills:true}).then(()=>{
@@ -2955,7 +2938,7 @@ function setGlobeBasemap(k){
     // satellite: a fine white line; grows only slightly as you zoom in
     mlMap.setPaintProperty("g-borders","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,0.6, 5,0.9, 9,1.3] : 0.7);
-    const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
+    const showB=(k!=="osmintl" && k!=="topo"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");   // topo/osm carry their own borders
   }
   if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
     mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");
@@ -4138,7 +4121,9 @@ function bodyMinusHeadline(title, text){
 // reader can jump to any outlet. Shown only when there's more than one (a lone source needs no list).
 function sourcesHtml(d){
   let ss = (Array.isArray(d.sources) ? d.sources.slice() : []).filter(s=>s && s.name);
-  ss.sort((a,b)=> (b.hrs||0)-(a.hrs||0));                  // first to report -> first in the list
+  // FIRST = whoever reported EARLIEST, strictly by time. hrs is "hours ago", so the LARGEST hrs is the
+  // earliest; an unknown time (null) is treated as most-recent so it can never steal the "first" badge.
+  ss.sort((a,b)=> ((b.hrs==null?-1:b.hrs) - (a.hrs==null?-1:a.hrs)));
   const seen=new Set(); ss = ss.filter(s=>{ const k=String(s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });  // one row per outlet
   if(ss.length < 2) return "";
   // Compact: a wrapped row of small outlet chips instead of tall full-width rows. The first reporter is
@@ -5032,7 +5017,7 @@ document.getElementById("z-out").onclick=()=>zoomBy(1/1.6);
 document.getElementById("z-reset").onclick=resetView;
 
 // window is fixed to the last 24h; refresh the map every 10 min so stale dots expire and fresh news appears
-setInterval(()=>{ const api=aiBridge(); if(api && api.world_events && !activeEvent && !activeCountry){ loadLive(true); if(getStarred().length) refreshStarred(); } }, 10*60000);
+setInterval(()=>{ const api=aiBridge(); if(api && api.world_events && !activeEvent && !activeCountry){ loadLive(true); if(getStarred().length) refreshStarred(); } }, 5*60000);   // rescan for new news every 5 min
 
 /* ---- IDLE PRELOADER — "crafty loading": while the app sits quiet, quietly warm the things a click will
    need so opening a dot or a country is INSTANT. Runs only when idle (no recent input), one item per

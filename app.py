@@ -859,7 +859,13 @@ _TG_CHATTER = re.compile(
     r"get some (rest|sleep)|rest well|off to (bed|sleep)|calling it a (night|day)|"
     r"we'?re (back|off|signing off|done for)|we are back|"
     r"happy (new year|birthday|holidays|friday|weekend|easter|thanksgiving)|"
-    r"enjoy your (day|evening|weekend|night)|good to be back)\b", re.I)
+    r"enjoy your (day|evening|weekend|night)|good to be back|"
+    # the admin talking about THEMSELVES / off-topic — a personal aside, not a report
+    r"genuinely\s+(just\s+)?wanted|i\s+just\s+wanted\s+to|just\s+wanted\s+to\s+(see|share|show|say|post)|"
+    r"off[-\s]?topic|unrelated\s+(to|but|,)|personal\s+(note|aside|opinion)|"
+    r"not\s+(really\s+)?news\s*(but|,)|this\s+is\s?n'?t\s+news|"
+    r"anyone\s+else\s+(notice|think|feel|see)|can\s+we\s+(just\s+)?(talk about|appreciate)|"
+    r"sorry\s+for\s+the\s+(spam|off[-\s]?topic)|on\s+a\s+personal\s+note)\b", re.I)
 
 
 def _tg_is_chatter(text):
@@ -2107,7 +2113,7 @@ class Api:
             if isinstance(cached.get("clip_owner"), dict):
                 global _CLIP_OWNER
                 _CLIP_OWNER = cached["clip_owner"]
-            if not _fresh(cache, 900):
+            if not _fresh(cache, 240):        # rescan news every ~4 min (was 15) so a 5-min client poll always refreshes
                 _spawn_world_refresh(self, h)
                 cached = dict(cached)
                 cached["stale"] = True
