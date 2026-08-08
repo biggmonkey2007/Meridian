@@ -828,6 +828,9 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 .wire.open{transform:translateX(0)}
 /* when the article overlays the OPEN wire, it takes the wire's exact footprint (full height, same width) */
 #detail.over-wire{top:0;right:0;width:var(--wire-w,392px);height:100vh;height:100dvh;max-height:none;border-radius:0}
+/* No "minimize" in this full-height over-wire panel — minimizing only hid the body and left a black sheet
+   (there's nothing to collapse TO). The × closes the story, revealing the wire that's still open underneath. */
+#detail.over-wire #dmin{display:none}
 /* drag the LEFT edge to resize the wire, within narrow limits (320-480px) */
 .wire-resize{position:absolute;top:0;left:-3px;width:9px;height:100%;cursor:ew-resize;z-index:3}
 .wire-resize::after{content:"";position:absolute;top:50%;left:3px;transform:translateY(-50%);width:3px;height:40px;border-radius:2px;background:#cbd4de;opacity:.75;transition:opacity .15s}
@@ -3877,26 +3880,35 @@ document.addEventListener("click", e=>{
     // Clicking the MEDIA thumbnail plays it. Clicking the post itself FLIES the globe to the matching dot and
     // opens the story — "take me to where this news is". Fall back to the media if no dot matches.
     if(e.target.closest(".wpost-media, .wpost-img")){ showMedia(); return; }
-    const ev=_wireMatchEvent(wp.dataset.cap||"");
+    const ev=_wireMatchEvent(wp.dataset.cap||"", wp.dataset.link||"");
     if(ev){ flyToEvent(ev); selectEvent(ev); }
-    else { showMedia(); }
+    else { showMedia(); }   // no CONFIDENT dot for this post -> don't jump to a look-alike; show its media instead
   }
 });
 // Match a wire post to the map dot for the SAME event by shared distinctive words (the dots are built from
 // the same Telegram feed, deduped). Needs a few uncommon words in common so unrelated posts don't misfire.
 const _WIRE_STOP=new Set("this that with from have they were will been what when your their about after over into more than said says amid says told after around against because during through before between".split(" "));
-function _wireMatchEvent(text){
+function _wireMatchEvent(text, link){
+  // 1) EXACT — the dot was built from THIS Telegram post, or cites it as a source. Same link = certain match.
+  if(link){
+    const byLink=(EVENTS||[]).find(ev=> (ev.url && ev.url===link) ||
+      (Array.isArray(ev.sources) && ev.sources.some(s=> s && s.url===link)));
+    if(byLink) return byLink;
+  }
+  // 2) STRICT words — a few shared "Gaza/Israel/Hamas" words are NOT a match (many dots share them). Require a
+  //    strong overlap AND a clear win over the runner-up, or we don't navigate at all (better than a wrong dot).
   const ws=(String(text||"").toLowerCase().match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w));
-  if(ws.length<3) return null;
+  if(ws.length<4) return null;
   const want=new Set(ws);
-  let best=null, bestScore=0;
+  let best=null, bestScore=0, second=0;
   (EVENTS||[]).forEach(ev=>{
     const et=((ev.title||"")+" "+(ev.sum||"")).toLowerCase();
     const ew=new Set((et.match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w)));
     let c=0; want.forEach(w=>{ if(ew.has(w)) c++; });
-    if(c>bestScore){ bestScore=c; best=ev; }
+    if(c>bestScore){ second=bestScore; bestScore=c; best=ev; }
+    else if(c>second){ second=c; }
   });
-  return bestScore>=3 ? best : null;
+  return (best && bestScore>=5 && bestScore>=0.5*want.size && bestScore>=second+2) ? best : null;
 }
 function flyToEvent(ev){
   if(!ev || !isFinite(+ev.lat) || !isFinite(+ev.lng)) return;
@@ -4631,7 +4643,7 @@ function selectCountry(name){
 function openDetail(){ detail.classList.add("open"); detail.classList.remove("min"); syncDetailOverWire(); if(innerWidth<=1024){ const bf=document.getElementById("briefing"); if(bf) bf.classList.add("collapsed"); setMobar("map"); } }
 // The article overlays the wire, so match the wire's footprint (full height) ONLY while the wire is open,
 // on desktop — else it's the normal floating panel on the map.
-function syncDetailOverWire(){ const w=document.getElementById("wire"); const over = w && w.classList.contains("open") && innerWidth>1024; detail.classList.toggle("over-wire", !!over); }
+function syncDetailOverWire(){ const w=document.getElementById("wire"); const over = w && w.classList.contains("open") && innerWidth>1024; detail.classList.toggle("over-wire", !!over); if(over) detail.classList.remove("min"); }
 function deselectAll(){
   activeEvent=null; activeCountry=null;
   detail.classList.remove("open");
