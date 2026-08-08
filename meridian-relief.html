@@ -1544,7 +1544,7 @@ async function englishCartoStyle(){
 const ESRI_REF   = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const ESRI_ENLBL = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}";
 const ALT_BASES  = {
-  topo:      { tiles:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}", max:13, attr:"Tiles &copy; Esri — Terrain" },
+  topo:      { tiles:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", max:19, attr:"Tiles &copy; Esri — Topographic" },
   osmintl:   { tiles:"https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png", max:18, attr:"&copy; OpenStreetMap contributors, Wikimedia" },
   satellite: { tiles:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", max:18, attr:"Tiles &copy; Esri" }
 };
@@ -2650,9 +2650,11 @@ function cartoTiles(style){ return CARTO_SUB.map(s=>"https://"+s+".basemaps.cart
 function mlBaseSpec(k){
   if(k==="osmintl")   return { tiles:["https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"], max:18 };
   if(k==="satellite") return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], max:18 };
-  // World_Physical_Map only tiles to z8 and has SPOTTY availability — whole tiles came back blank, leaving white
-  // chunks on the globe that never filled, and it blurred badly past z8. World_Terrain_Base is gapless to z13.
-  if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"], max:13 };
+  // World_Physical_Map (z8) and World_Terrain_Base (z13) are secondary Esri layers whose low-zoom tiles load
+  // SLOWLY on the globe — most of the sphere sat empty until you zoomed in. World_Topo_Map is a flagship,
+  // fully-cached service like World_Imagery (satellite), so it fills instantly at every zoom. It carries its
+  // own terrain relief + labels + roads, so topo is rendered self-contained (no vector overlay), like the OSM base.
+  if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"], max:19 };
   // Single CDN subdomain (not a/b/c/d): HTTP/2 multiplexes fine over one host, and it means the tile
   // pre-warmer (which hits "a.basemaps") actually pre-caches the SAME URLs MapLibre requests — so warmed
   // tiles are true cache hits and land before you reach them, instead of the 4-subdomain cache-miss before.
@@ -2714,7 +2716,7 @@ function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f26
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
 function globeBgExpr(k){
-  const hi = (k==="satellite") ? "#0a1622" : (k==="topo" ? "#c8cdba" : "#fafaf8");   // up-close base tone; topo = a muted terrain tone so a not-yet-loaded / dropped tile blends as land, not a white chunk
+  const hi = (k==="satellite") ? "#0a1622" : (k==="topo" ? "#e6e2d4" : "#fafaf8");   // up-close base tone; topo = a muted terrain tone so a not-yet-loaded / dropped tile blends as land, not a white chunk
   // Dark "space" only while the globe is small in view (zoomed way out); by z4 the globe fills the screen,
   // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
   return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
@@ -2739,7 +2741,7 @@ function globeSphereGeo(){
   }
   return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"MultiPolygon",coordinates:polys}}]};
 }
-function polarCapColor(k){ return k==="satellite" ? "#12202e" : (k==="topo" ? "#c8cdba" : "#fafaf8"); }   // the sphere base tone under the tiles; topo = muted terrain so a dropped tile reads as land, not a white chunk
+function polarCapColor(k){ return k==="satellite" ? "#12202e" : (k==="topo" ? "#e6e2d4" : "#fafaf8"); }   // the sphere base tone under the tiles; topo = muted terrain so a dropped tile reads as land, not a white chunk
 // Web-Mercator tiles stop at ±85°, so the globe's poles have NO imagery — the g-sphere fill shows there, and
 // on Satellite that fill is DARK (#12202e), which erased Antarctica and the Arctic ice as a black cap. Paint
 // the two polar caps (±85°→pole) ICE-WHITE, above the sphere but under the imagery, so the ice shows on every
@@ -2904,12 +2906,9 @@ function setGlobeBasemap(k){
     mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
     mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
-    if(layers.shade && k==="topo"){   // extra relief over the physical map (satellite already IS the terrain)
-      mlMap.addSource("g-shade",{type:"raster",tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],tileSize:256,maxzoom:16});
-      mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3.5,0.0, 6,0.3, 13,0.3]}}, before);
-    }
-    if(k==="osmintl"){
-      // OSM tiles carry their own baked labels/borders — nothing to overlay.
+    if(k==="osmintl" || k==="topo"){
+      // These bases carry their OWN baked relief + labels + borders + roads — a complete map. Nothing to
+      // overlay (our vector labels would just double them up).
     } else {
       // TOPOGRAPHIC & SATELLITE now COPY the Clean-relief map: the SAME English one-name labels, tuned region
       // borders, softened rivers and forced capitals — just over the imagery instead of pale land. skipFills
@@ -2933,16 +2932,16 @@ function setGlobeBasemap(k){
     mlMap.setPaintProperty("g-borders","line-color", globeBorderCol());
     mlMap.setPaintProperty("g-borders","line-opacity",
       _sat ? 0.95 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);
-    // satellite: a BOLD line (thin borders vanished on imagery); it grows a little as you zoom in
+    // satellite: a clear but THIN white line; grows only a little as you zoom in
     mlMap.setPaintProperty("g-borders","line-width",
-      _sat ? ["interpolate",["linear"],["zoom"], 2,1.2, 5,1.8, 9,2.6] : 0.7);
-    const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
+      _sat ? ["interpolate",["linear"],["zoom"], 2,0.8, 5,1.1, 9,1.6] : 0.7);
+    const showB=(k!=="osmintl" && k!=="topo"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");   // topo/osm carry their own borders
   }
   if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
     mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");
-    mlMap.setPaintProperty("g-borders-case","line-opacity", _sat ? 0.4 : 0);   // just enough shadow to hold the white line on clouds/snow
+    mlMap.setPaintProperty("g-borders-case","line-opacity", _sat ? 0.38 : 0);   // just enough shadow to hold the white line on clouds/snow
     mlMap.setPaintProperty("g-borders-case","line-width",
-      _sat ? ["interpolate",["linear"],["zoom"], 2,2.6, 5,3.6, 9,5.0] : 0);
+      _sat ? ["interpolate",["linear"],["zoom"], 2,1.8, 5,2.4, 9,3.4] : 0);
   }
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
