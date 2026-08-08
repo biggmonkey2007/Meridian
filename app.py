@@ -1626,6 +1626,37 @@ class Api:
                     best = q
         return best
 
+    def event_for_post(self, text, link=""):
+        """The map dot a live-wire post belongs to — even when that dot was first reported HOURS ago by a
+        different outlet in different words. Uses the SAME gate that files a clip onto a story (_clip_matches:
+        a shared DISTINCTIVE name + word + the SAME country), so it's sharp both ways: it catches the same
+        event under different wording, and it will NOT grab a look-alike that merely shares 'Gaza' or 'Israel'.
+        Returns {title, lat, lng, country} of the matched dot, or {}."""
+        try:
+            text = (text or "").strip()
+            if len(text) < 12:
+                return {}
+            cache = os.path.join(CACHE_DIR, "world_24h.json")
+            if not os.path.exists(cache):
+                return {}
+            events = (json.load(open(cache, encoding="utf-8")) or {}).get("events", []) or []
+
+            def _card(e):
+                return {"title": e.get("title", ""), "lat": e.get("lat"), "lng": e.get("lng"), "country": e.get("country", "")}
+            # 1) EXACT — the dot is built from THIS post, or already cites it as a source
+            if link:
+                for e in events:
+                    if e.get("url") == link or any((s or {}).get("url") == link for s in (e.get("sources") or [])):
+                        return _card(e)
+            # 2) SAME EVENT, different words — the clip matcher (distinctive name + word + same country)
+            for e in events:
+                t = e.get("title") or ""
+                if t and _clip_matches(t, text):
+                    return _card(e)
+            return {}
+        except Exception:
+            return {}
+
     def event_media(self, title, limit=6):
         """Photos & video clips from the Telegram channels that match THIS story, for the media strip."""
         try:

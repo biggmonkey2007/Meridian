@@ -3890,8 +3890,23 @@ document.addEventListener("click", e=>{
     // opens the story — "take me to where this news is". Fall back to the media if no dot matches.
     if(e.target.closest(".wpost-media, .wpost-img")){ showMedia(); return; }
     const ev=_wireMatchEvent(wp.dataset.cap||"", wp.dataset.link||"");
-    if(ev){ flyToEvent(ev); selectEvent(ev); }
-    else { showMedia(); }   // no CONFIDENT dot for this post -> don't jump to a look-alike; show its media instead
+    if(ev){ flyToEvent(ev); selectEvent(ev); return; }
+    // Harder case: the SAME event, first reported HOURS ago by another outlet in different words. Ask the
+    // backend's clip-matcher (distinctive name + word + same country) so a new post lands on the EXISTING dot.
+    (async()=>{
+      const api=aiBridge();
+      if(api && api.event_for_post){
+        try{
+          const m=await api.event_for_post(wp.dataset.cap||"", wp.dataset.link||"");
+          if(m && m.title){
+            const real=(EVENTS||[]).find(x=>x.title===m.title);
+            if(real){ flyToEvent(real); selectEvent(real); return; }
+            if(isFinite(+m.lat) && isFinite(+m.lng)){ flyToEvent({lat:+m.lat, lng:+m.lng}); return; }
+          }
+        }catch(_){}
+      }
+      showMedia();   // genuinely no dot for this post -> just show its media, never jump to a look-alike
+    })();
   }
 });
 // Match a wire post to the map dot for the SAME event by shared distinctive words (the dots are built from
@@ -5393,7 +5408,7 @@ async function loadWire(silent){
       const nm=it.title||it.channel||""; const col=wireColor(it.channel||nm);
       // the poster of an over-size video is still a real frame — show it, and mark the post playable
       const still=it.photo||it.thumb||"";
-      const img=still?`<img class="wpost-img" loading="lazy" src="${esc(still)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:"";
+      const img=still?`<img class="wpost-img" loading="lazy" src="${esc(still)}" alt="" referrerpolicy="no-referrer" onerror="const m=this.closest('.wpost-media'); (m||this).remove()">`:"";
       const badge=it.video?`<span class="wpost-play">▶ ${esc(it.dur||"clip")}</span>`
                  :(it.big?`<span class="wpost-play">▶ ${esc(it.dur||"clip")}</span>`:"");
       // NOT an <a>. It was one big link, so clicking the photo threw you out to Telegram.
