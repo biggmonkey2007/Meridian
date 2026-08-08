@@ -2709,7 +2709,7 @@ function globeEventsGeo(){
 }
 function catColorExpr(){ const x=["match",["get","cat"]]; CAT_ORDER.forEach(c=>{ x.push(c, CAT[c].hex); }); x.push("#888888"); return x; }
 function eventColorExpr(){ return ["case",["==",["get","read"],1], READ_COL, catColorExpr()]; }
-function globeBorderCol(){ return currentBase==="satellite" ? "#ffdf9e" : "#1f2630"; }   // satellite: soft amber reads as a border on imagery (was glaring white)
+function globeBorderCol(){ return currentBase==="satellite" ? "#ffd85e" : "#1f2630"; }   // satellite: a clear gold over its dark casing = an unmistakable border on imagery
 // Globe backdrop: dark "space" only when the whole globe is in view; as you zoom IN (space no longer
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
@@ -2852,11 +2852,15 @@ function setGlobeBasemap(k){
   // aren't a dark hole on satellite. The imagery covers ≤85°, so these bands only show at the very poles.
   mlMap.addSource("g-poles",{type:"geojson",data:polarCapsGeo()});
   mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapFill(k),"fill-antialias":false}}, before);
-  if(k==="clean"){
+  if(k==="clean" || k==="topo"){
     // VECTOR base — the Google-Maps approach. Positron is GPU-rendered geometry, not tile images, so it
     // scales INFINITELY SMOOTH from z3 up with no raster "chunks" to swap, and vector tiles are tiny so
     // panning fills near-instantly. Same Positron look as the raster base we were using. (Its full-canvas
     // background layer is skipped — our dark bg + the sphere fill handle space and the poles.)
+    // TOPOGRAPHIC now rides this SAME gapless vector base + a bold hillshade, instead of an Esri terrain raster
+    // (World_Physical/World_Terrain_Base) whose tiles were spottily cached — that was the white "chunks" that
+    // never filled. Vector never chunks; the hillshade (World_Hillshade, the reliable Elevation service) adds
+    // the relief that makes it read as a terrain map.
     addCartoVector(before).then(()=>{
       // Insert the base overlays UNDER the vector's own label layers, so the ENGLISH vector labels always
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
@@ -2871,8 +2875,14 @@ function setGlobeBasemap(k){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
-      // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
-      if(layers.shade && !mlMap.getSource("g-shade")){
+      // TERRAIN: hillshade over the base, under the labels. SUBTLE for "Clean relief"; BOLD for "Topographic"
+      // (and always on there — the relief IS the point of that basemap).
+      const _topoRelief = (k==="topo");
+      const _sgOp = _topoRelief ? ["interpolate",["linear"],["zoom"], 3,0.5, 5,0.0]
+                                : ["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0];
+      const _szOp = _topoRelief ? ["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.58, 10,0.62, 13,0.5]
+                                : ["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12];
+      if((layers.shade || _topoRelief) && !mlMap.getSource("g-shade")){
         // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
@@ -2883,12 +2893,13 @@ function setGlobeBasemap(k){
         //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 (a z2 tile smeared a whole
         //    continent → the original blur); at z4 + low opacity it reads as faint, clean relief, not a smudge.
         mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
-        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
+        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":_sgOp,"raster-fade-duration":120}}, belowWater);
         //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, loads fast, and this
         //    far in MapLibre picks a consistent tile zoom so there's no seam. Also kept subtle.
         mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
+        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":_szOp,"raster-fade-duration":120}}, belowWater);
       }
+      if(k==="topo") tuneCartoForTopo();     // stronger label halos so names lift off the bold relief
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
       applyCartoLabelToggle();
@@ -2925,11 +2936,21 @@ function setGlobeBasemap(k){
   // world scale (z<3) the vector border is covered by the overview raster, so g-borders still has to draw the
   // outline THERE. So on clean/topo it fades out by ~z3.4: it fills in the far-out globe, then hands off to
   // the vector line and vanishes before any zoomed-in view — no double border where it shows.
+  const _sat = (k==="satellite");
   if(mlMap.getLayer("g-borders")){
     mlMap.setPaintProperty("g-borders","line-color", globeBorderCol());
     mlMap.setPaintProperty("g-borders","line-opacity",
-      k==="satellite" ? 0.6 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);
+      _sat ? 0.95 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);
+    // satellite: a BOLD line (thin borders vanished on imagery); it grows a little as you zoom in
+    mlMap.setPaintProperty("g-borders","line-width",
+      _sat ? ["interpolate",["linear"],["zoom"], 2,1.2, 5,1.8, 9,2.6] : 0.7);
     const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
+  }
+  if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
+    mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");
+    mlMap.setPaintProperty("g-borders-case","line-opacity", _sat ? 0.6 : 0);
+    mlMap.setPaintProperty("g-borders-case","line-width",
+      _sat ? ["interpolate",["linear"],["zoom"], 2,3.0, 5,4.2, 9,6.0] : 0);
   }
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
@@ -3016,6 +3037,9 @@ function updateGlobeOverlayVis(){
 function buildGlobeLayers(){
   if(!mlMap.getSource("g-borders")){
     mlMap.addSource("g-borders",{type:"geojson",data:splitBordersGeo()});
+    // A dark CASING under the border line — only shown on satellite, where a single bright line vanishes over
+    // pale desert or bright cloud. The dark halo separates the border from ANY terrain so it always reads.
+    mlMap.addLayer({id:"g-borders-case",type:"line",source:"g-borders",layout:{"line-cap":"round","line-join":"round","visibility":"none"},paint:{"line-color":"#171008","line-width":3.4,"line-opacity":0,"line-blur":0.5}});
     mlMap.addLayer({id:"g-borders",type:"line",source:"g-borders",paint:{"line-color":globeBorderCol(),"line-width":0.7,"line-opacity":0.16}});
   }
   if(!mlMap.getSource("g-hl-fill")){
