@@ -398,13 +398,12 @@ img.flag-img{object-fit:cover;background:#eef1f5}
    the map's strait/port markers (display:flex, nowrap), which would break the bullet's wrapping. */
 .brief-points li.bp-why .bp-why-lbl{font-weight:800;margin-right:3px}
 /* "Covered by N sources" — every outlet that reported the same merged event, first reporter marked */
-.src-list2{display:flex;flex-direction:column;gap:1px;margin-top:2px}
-.src-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);font-size:12.5px;transition:background .12s}
-a.src-row:hover{background:var(--panel-2)}
-.src-row .src-nm{font-weight:700}
-.src-row .src-when{color:var(--ink-3);font-size:11.5px;font-variant-numeric:tabular-nums}
-.src-row .src-first{color:var(--ink-2);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
-.src-row .src-arr{margin-left:auto;color:var(--ink-3);font-size:13px}
+/* Compact "Covered by" — a tidy wrapped row of outlet chips (was tall full-width rows) */
+.src-head{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.src-chips{display:flex;flex-wrap:wrap;gap:6px}
+.src-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;line-height:1.5;transition:background .12s,border-color .12s}
+a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
+.src-chip .sc-first{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#3d78c9;border-radius:4px;padding:1px 4px}
 .facts{margin:6px 0 2px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .facts li{position:relative;padding-left:17px;font-size:12.5px;line-height:1.45;color:var(--ink)}
 .facts li::before{content:"";position:absolute;left:3px;top:6px;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
@@ -4103,13 +4102,16 @@ function sourcesHtml(d){
   ss.sort((a,b)=> (b.hrs||0)-(a.hrs||0));                  // first to report -> first in the list
   const seen=new Set(); ss = ss.filter(s=>{ const k=String(s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });  // one row per outlet
   if(ss.length < 2) return "";
-  const rows = ss.map((s,i)=>{
+  // Compact: a wrapped row of small outlet chips instead of tall full-width rows. The first reporter is
+  // tagged; each source's exact time rides along in the hover/long-press title so the row stays clean.
+  const chips = ss.map((s,i)=>{
     const when = (s.hrs!=null) ? timeAgo(Date.now()-s.hrs*3600000) : "";
-    const meta = `<span class="src-nm">${esc(s.name)}</span>${when?`<span class="src-when">${esc(when)}</span>`:""}${i===0?`<span class="src-first">first</span>`:""}`;
-    return s.url ? `<a class="src-row" href="${esc(s.url)}" target="_blank" rel="noopener">${meta}<span class="src-arr">↗</span></a>`
-                 : `<div class="src-row">${meta}</div>`;
+    const title = esc(s.name + (when?" · "+when:""));
+    const inner = `${esc(s.name)}${i===0?`<span class="sc-first">first</span>`:""}`;
+    return s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${title}">${inner}</a>`
+                 : `<span class="src-chip" title="${title}">${inner}</span>`;
   }).join("");
-  return `<div class="sec-label">Covered by ${ss.length} sources</div><div class="src-list2">${rows}</div>`;
+  return `<div class="src-head">Covered by ${ss.length} sources</div><div class="src-chips">${chips}</div>`;
 }
 async function renderRealEvent(d){
   try{ stopSpeech(); }catch(e){}      // also resets the button and kills the keepalive
@@ -4286,7 +4288,7 @@ function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
 // touching existing markup (flags, links) and never re-wrapping inside a .gloss. Word-bounded + case-insensitive.
 function wrapTermsIn(root, al, used){
   al.forEach(entry=>{
-    if(used.has(entry.term)) return;
+    if(used.has(entry.a)) return;    // bold each distinct spelling once — so "Ansarullah" AND "Houthi" both light up
     const rx=new RegExp("(^|[^\\w'-])("+_reEsc(entry.a)+")(?![\\w'-])","i");
     const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(n){
@@ -4312,7 +4314,7 @@ function wrapTermsIn(root, al, used){
     frag.appendChild(span);
     if(after) frag.appendChild(document.createTextNode(after));
     node.parentNode.replaceChild(frag, node);
-    used.add(entry.term);
+    used.add(entry.a);
   });
 }
 // ONE shared popup for every glossed term. Mouse: hover shows / leave hides. Touch: tap pins it open (tap
