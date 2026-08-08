@@ -484,6 +484,14 @@ _CREDIT_BRACKET = re.compile(
     r"[\[(][^\])]*(?:/|photo|screengrab|screenshot|video|footage|handout|getty|reuters|"
     r"\bafp\b|\bap\b|\bepa\b|anadolu|\baa\b|file|image|imagery|courtesy|graphic|infographic|"
     r"illustration|archive|social ?media|stringer|\bpool\b)[^\])]*[\])]", re.I)
+# A leading country-FLAG emoji ("🇾🇪 - …") these channels stamp on a post as a country tag. It's decoration,
+# not content — and the story already flies its country's flag in the header — so drop it. Rendered as raw
+# text (not converted to a flag image) the two regional-indicator letters leak in as "ye - ", "il - ".
+_LEAD_FLAG = re.compile(r"^(?:[\U0001F1E6-\U0001F1FF]\s*){1,6}[\s\-–—:|•·]*")
+
+
+def _strip_lead_flag(t):
+    return _LEAD_FLAG.sub("", t or "").lstrip(" \t-–—:|•·")
 
 
 def _end_stop(t):
@@ -539,7 +547,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return _end_stop(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())
+    return _end_stop(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))
 
 
 def _tg_fetch(ch):
@@ -711,7 +719,7 @@ def _sharpen_desc(text, n=460):
     mid-air ('… researchers say' -> '… researchers say.'). RSS descriptions skipped these — only Telegram
     text was cleaned — so wire copy reached the card raw. End-stop BEFORE the clip so a complete short
     description keeps its period; a truly truncated one loses it and the UI adds an ellipsis instead."""
-    t = _CREDIT_BRACKET.sub(" ", _strip_promo(text or ""))
+    t = _strip_lead_flag(_CREDIT_BRACKET.sub(" ", _strip_promo(text or "")))
     t = re.sub(r"\s{2,}", " ", t).strip()
     return _clip(_end_stop(t), n)
 
@@ -1144,6 +1152,21 @@ _GLOSSARY = [
      "the UAE and Bahrain."),
     ("Schengen Area", ("schengen",),
      "A zone of European countries that have abolished passport checks at their shared internal borders."),
+    ("Yemeni National Resistance Forces", ("yemeni national resistance forces", "national resistance forces"),
+     "A Yemeni armed force on the Red Sea coast led by Tareq Saleh, nephew of a former president — UAE-backed "
+     "and fighting the Houthis."),
+    ("pro-Hadi forces", ("pro-hadi", "hadi government"),
+     "Yemeni units loyal to the government of former president Abd-Rabbu Mansour Hadi, the side recognised "
+     "internationally against the Houthis (Hadi handed power to a leadership council in 2022)."),
+    ("Southern Transitional Council (STC)", ("southern transitional council",),
+     "A UAE-backed movement seeking self-rule for south Yemen, at times allied with and at times opposed to "
+     "the internationally recognised government."),
+    ("Tigray People's Liberation Front (TPLF)", ("tigray people's liberation front", "tplf"),
+     "The party governing Ethiopia's northern Tigray region, which fought a 2020–2022 war with the federal government."),
+    ("Al-Aqsa Martyrs' Brigades", ("al-aqsa martyrs", "aqsa martyrs"),
+     "An armed offshoot linked to the Palestinian Fatah movement, active mainly in the occupied West Bank."),
+    ("Kurdistan Regional Government (KRG)", ("kurdistan regional government",),
+     "The self-governing authority of the Kurdish region of northern Iraq."),
 ]
 _GLOSSARY_RE = [(canon, defn, aliases,
                  re.compile(r"(?<![\w'-])(?:" + "|".join(re.escape(a) for a in aliases) + r")(?![\w'-])", re.I))
@@ -1164,6 +1187,36 @@ def _glossary_terms(text, limit=8):
     return out
 
 
+# Beyond the curated list, DETECT capitalized proper-name phrases that end in an organisation word ("Yemeni
+# National Resistance Forces", "Southern Transitional Council") and let the AI define them on the fly — this is
+# what scales the definer past a hand-written list toward "every group a story names". Bounded to real org/group
+# shapes, and the AI is told to answer NONE whenever it isn't sure, so nothing is bolded on a guess.
+_ORG_SUFFIX = (r"(?:Forces|Front|Army|Movement|Militia|Militias|Brigade|Brigades|Battalion|Coalition|Alliance|"
+               r"Council|Cartel|Federation|Guard|Guards|Corps|Command|Faction|Junta|League|Authority|"
+               r"Directorate|Organisation|Organization|Congress|Network)")
+_ORG_PHRASE_RE = re.compile(r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX + r")\b")
+_DEFINE_VER = "t1"   # bump to invalidate cached AI term definitions
+
+
+def _detect_org_phrases(text, covered, limit=4):
+    """Capitalized 'Proper Name + org word' phrases the curated glossary doesn't already cover — candidates for
+    an on-the-fly AI definition. Deduped; any phrase that overlaps a curated alias is dropped."""
+    seen, out = set(), []
+    for m in _ORG_PHRASE_RE.finditer(text or ""):
+        phrase = re.sub(r"\s+", " ", m.group(1)).strip(" ,.;:")
+        phrase = re.sub(r"^(?:The|A|An)\s+", "", phrase)     # a sentence-initial "The" got swept in — drop it
+        low = phrase.lower()
+        if len(phrase.split()) < 2 or low in seen:
+            continue
+        if any(low == c or low in c or c in low for c in covered):
+            continue
+        seen.add(low)
+        out.append(phrase)
+        if len(out) >= limit:
+            break
+    return out
+
+
 class Api:
     """Exposed to the page as window.pywebview.api.*"""
 
@@ -1174,11 +1227,64 @@ class Api:
         return {"ok": True, "ai": bool(load_gemini_key())}
 
     def article_terms(self, title, desc=""):
-        """The groups/bodies this story names, with a fair one-line explainer each — for the 'Who's involved'
-        panel under an article. Curated so a reader meeting 'Ansar Allah' or 'IRGC' cold gets an even-handed
-        definition, never a label. Returns [{term, def}]; empty when the story names none we cover."""
+        """The CURATED groups/bodies this story names, each with a fair, even-handed one-line explainer — the
+        inline definer's fast path (no network). Returns [{term, def, aliases}]; empty when it names none we
+        curate. The AI long tail is article_ai_terms, fetched separately so this stays instant."""
         try:
             return _glossary_terms((title or "") + " . " + (desc or ""))
+        except Exception:
+            return []
+
+    def define_term(self, name):
+        """A neutral one-line definition of a named group/body, for the inline definer's AI long tail. Cached 30
+        days. Returns '' when there's no summarizer, or when the model isn't sure what the name refers to (it is
+        told to answer NONE) — so an unknown name is simply left un-bolded rather than given an invented meaning."""
+        name = re.sub(r"\s+", " ", (name or "").strip())
+        if len(name) < 4 or not _llm_available():
+            return ""
+        cache = os.path.join(CACHE_DIR, "term_" + hashlib.sha1((_DEFINE_VER + "\n" + name.lower()).encode("utf-8")).hexdigest()[:16] + ".json")
+        if _fresh(cache, 30 * 86400):
+            try:
+                return json.load(open(cache, encoding="utf-8")).get("d", "")
+            except Exception:
+                pass
+        system = ("You are a neutral reference work, like an encyclopedia. Define who or what a named group or "
+                  "body is in ONE plain, factual sentence — what kind of organisation it is, where it operates, "
+                  "and its role or main affiliation. Be strictly even-handed: no opinion, no praise, and never a "
+                  "loaded label such as 'terrorist', 'regime' or 'extremist'. If you are not confident what the "
+                  "name refers to, answer with exactly: NONE")
+        prompt = ("Define this name in one neutral sentence for a reader who doesn't know it: \"" + name + "\".\n"
+                  "If you are not sure what it refers to, reply with exactly NONE.")
+        out = re.sub(r"\s+", " ", (_llm_complete(system, prompt, max_tokens=90, temperature=0.2) or "").strip())
+        if len(out) < 15 or out.upper().rstrip(".").startswith("NONE"):
+            out = ""
+        try:
+            json.dump({"d": out}, open(cache, "w", encoding="utf-8"))
+        except Exception:
+            pass
+        return out
+
+    def article_ai_terms(self, title, desc=""):
+        """The DETECTED (non-curated) org/group names in a story, each AI-defined neutrally — the long tail that
+        scales the definer past the hand-written list. Additive to article_terms; slower (a cached AI call per
+        new name), so the client fetches it after the instant curated pass."""
+        try:
+            if not _llm_available():
+                return []
+            text = (title or "") + " . " + (desc or "")
+            covered = set()
+            for t in _glossary_terms(text):
+                for a in t.get("aliases", []):
+                    covered.add(a.lower())
+            phrases = _detect_org_phrases(text, covered)
+            if not phrases:
+                return []
+            out = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                for name, d in zip(phrases, ex.map(self.define_term, phrases)):
+                    if d:
+                        out.append({"term": name, "def": d, "aliases": [name.lower()]})
+            return out
         except Exception:
             return []
 
@@ -2515,8 +2621,8 @@ class Api:
                 u = (ev.get("url") or "").strip()
                 if u.startswith("http") and "t.me/" not in u:
                     self.summarize_event(ev.get("title") or "", u)              # real article -> summarize it
-                elif ev.get("tg") and len((ev.get("sum") or "")) >= 180:
-                    _summarize(ev.get("title") or "", ev.get("sum") or "")       # substantial pure-TG post
+                elif ev.get("tg") and len((ev.get("sum") or "")) >= 120:
+                    _summarize(ev.get("title") or "", ev.get("sum") or "")       # any post with a real body -> AI-rewrite it (copyright-free)
                 # THE PICTURE. A story that shipped without its own image needs a story_photo lookup at click
                 # time (1-5s — the black-hero wait). Resolve it HERE so its underlying person/place lookups are
                 # cached; the client's prefetch then returns instantly and the hero paints the moment you click.

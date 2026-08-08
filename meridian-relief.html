@@ -4191,7 +4191,7 @@ async function renderRealEvent(d){
              if(bodyEl) bodyEl.innerHTML=`<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
            if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
-    d._terms=undefined;                 // body text changed -> re-scan and re-bold the glossed terms
+    d._terms=undefined; d._aiTerms=undefined;   // body text changed -> re-scan and re-bold the glossed terms
     annotateDetailTerms(d);
   };
   if(d.tg && (!d.url || /t\.me\//.test(d.url))){
@@ -4202,7 +4202,7 @@ async function renderRealEvent(d){
     if(d.summary){ showBrief(d.summary, dek); }
     else {
       if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
-      if(api && api.summarize_event && (d.sum||"").length>=180){
+      if(api && api.summarize_event && (d.sum||"").length>=120){
         Promise.resolve(api.summarize_event(d.title||"", "", d.sum)).then(r=>{
           if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
         }).catch(()=>{});
@@ -4269,19 +4269,34 @@ function noteMedia(d, n){
 async function annotateDetailTerms(d){
   const api=aiBridge();
   if(!api || !api.article_terms) return;
+  const used=new Set();   // shared across both passes so a word is bolded once; curated runs first and wins
+  const wrap=(list)=>{
+    if(!list || !list.length) return;
+    // flat (alias -> definition), longest alias first so "Islamic Revolutionary Guard Corps" beats a bare
+    // "Islamic"; each distinct spelling is bolded only on its first mention.
+    const al=[];
+    list.forEach(t=> (t.aliases||[]).forEach(a=> al.push({a:a, term:t.term, def:t.def})));
+    al.sort((x,y)=> y.a.length-x.a.length);
+    ["re-lead-"+d.id, "re-body-"+d.id].forEach(id=>{ const el=document.getElementById(id); if(el) wrapTermsIn(el, al, used); });
+  };
+  // 1) CURATED terms — instant, no network, guaranteed even-handed.
   let terms=d._terms;
   if(terms===undefined){
     try{ terms=await api.article_terms(d.title||"", (d.sum||"")+" "+(d.summary||"")) || []; }catch(e){ terms=[]; }
     d._terms=terms;
   }
-  if(activeEvent!==d.id || !terms.length) return;
-  // one flat list of (alias -> definition), longest alias first so "Islamic Revolutionary Guard Corps" wins
-  // over a bare "Islamic" fragment; each canonical term is bolded only ONCE (its first mention).
-  const al=[];
-  terms.forEach(t=> (t.aliases||[]).forEach(a=> al.push({a:a, term:t.term, def:t.def})));
-  al.sort((x,y)=> y.a.length-x.a.length);
-  const used=new Set();
-  ["re-lead-"+d.id, "re-body-"+d.id].forEach(id=>{ const el=document.getElementById(id); if(el) wrapTermsIn(el, al, used); });
+  if(activeEvent!==d.id) return;
+  wrap(terms);
+  // 2) AI LONG TAIL — org/group names the curated list misses, defined neutrally on the fly (slower; additive).
+  if(api.article_ai_terms){
+    let ai=d._aiTerms;
+    if(ai===undefined){
+      d._aiTerms=null;
+      try{ ai=await api.article_ai_terms(d.title||"", (d.sum||"")+" "+(d.summary||"")) || []; }catch(e){ ai=[]; }
+      d._aiTerms=ai;
+    }
+    if(activeEvent===d.id) wrap(ai||[]);
+  }
 }
 function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
 // Walk the TEXT NODES of a rendered block and wrap the first mention of each term in a .gloss span — never

@@ -1654,12 +1654,14 @@ def main():
     # RSS descriptions bypass _tg_clean — _sharpen_desc gives them the SAME treatment (the shipped bug)
     _r1 = app._sharpen_desc("Chinese AI startup Moonshot's flagship model bypassed a UK safety test, researchers say")
     _r2 = app._sharpen_desc("Migrants begin returning to Morocco on July 31, 2026. [Abu Adem Muhammed – Anadolu Agency]")
+    _f1 = app._tg_clean("\U0001F1FE\U0001F1EA - Additional scenes from the clashes in southwest Yemen show heavy fire")
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
                  and not _c4.endswith(".")                              # a bare speaker label is left alone
                  and _r1.endswith("say.")                               # RSS desc gets an end stop too
-                 and "[" not in _r2 and _r2.endswith("2026."))          # RSS credit bracket stripped
+                 and "[" not in _r2 and _r2.endswith("2026.")           # RSS credit bracket stripped
+                 and _f1.startswith("Additional"))                      # leading country-flag emoji tag stripped
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
@@ -1673,10 +1675,15 @@ def main():
     _g1 = app._glossary_terms("Houthis attack a ship in the Red Sea as the IRGC vows to respond")
     _g2 = app._glossary_terms("AP publishes a new map of the region")
     _terms1 = [t["term"] for t in _g1]
+    # AI long tail: capitalized 'Proper Name + org word' phrases are DETECTED (then AI-defined); lowercase
+    # 'government forces' and a bare word are not.
+    _det = app._detect_org_phrases("The Southern Popular Resistance Army held while Yemeni government forces regrouped.", set())
     _gloss_ok = (len(_g1) == 2 and "Houthi" in _terms1[0]
                  and "Revolutionary Guard" in _terms1[1]
                  and "terrorist" not in _g1[0]["def"].lower()          # fair definition, never a label
-                 and _g2 == [])                                         # no false-fire on 'AP'/'map'
+                 and _g2 == []                                          # no false-fire on 'AP'/'map'
+                 and "Southern Popular Resistance Army" in _det         # org phrase detected for the AI tail
+                 and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
     ran[0] += 1
     if not _gloss_ok:
         fails.append(("glossary", "term-detect", "Houthis+IRGC, fair defs, no false-fire",
