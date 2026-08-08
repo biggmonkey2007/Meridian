@@ -2650,11 +2650,10 @@ function cartoTiles(style){ return CARTO_SUB.map(s=>"https://"+s+".basemaps.cart
 function mlBaseSpec(k){
   if(k==="osmintl")   return { tiles:["https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"], max:18 };
   if(k==="satellite") return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], max:18 };
-  // World_Physical_Map (z8) and World_Terrain_Base (z13) are secondary Esri layers whose low-zoom tiles load
-  // SLOWLY on the globe — most of the sphere sat empty until you zoomed in. World_Topo_Map is a flagship,
-  // fully-cached service like World_Imagery (satellite), so it fills instantly at every zoom. It carries its
-  // own terrain relief + labels + roads, so topo is rendered self-contained (no vector overlay), like the OSM base.
-  if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"], max:19 };
+  // NatGeo_World_Map: Esri's National Geographic style — a richer, cleaner COLOURED terrain map (saturated
+  // greens/tans, shaded relief, restrained labels) than the pale, busy World_Topo_Map. Flagship-cached like
+  // World_Imagery, so it fills instantly at every zoom. Self-contained (its own relief + labels), like the OSM base.
+  if(k==="topo")      return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}"], max:16 };
   // Single CDN subdomain (not a/b/c/d): HTTP/2 multiplexes fine over one host, and it means the tile
   // pre-warmer (which hits "a.basemaps") actually pre-caches the SAME URLs MapLibre requests — so warmed
   // tiles are true cache hits and land before you reach them, instead of the 4-subdomain cache-miss before.
@@ -2712,6 +2711,10 @@ function globeEventsGeo(){
 function catColorExpr(){ const x=["match",["get","cat"]]; CAT_ORDER.forEach(c=>{ x.push(c, CAT[c].hex); }); x.push("#888888"); return x; }
 function eventColorExpr(){ return ["case",["==",["get","read"],1], READ_COL, catColorExpr()]; }
 function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f2630"; }   // satellite: white line over a soft dark casing — the Google-Maps satellite border
+// The ring around each news dot. WHITE glared on the busy satellite/topo maps ("everything outlined in
+// white"); a dark ring reads as a clean edge there and vanishes into dark areas where the bright dot pops on
+// its own. The pale Clean-relief map still wants white so the dots separate from the light land.
+function dotStroke(){ return (currentBase==="satellite" || currentBase==="topo") ? "rgba(10,15,22,0.55)" : "#ffffff"; }
 // Globe backdrop: dark "space" only when the whole globe is in view; as you zoom IN (space no longer
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
@@ -2946,6 +2949,7 @@ function setGlobeBasemap(k){
     mlMap.setPaintProperty("g-borders-case","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,1.8, 5,2.4, 9,3.4] : 0);
   }
+  if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // dark dot ring on busy maps, white on Clean relief
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
   _worldWarmed = false;
@@ -3048,7 +3052,7 @@ function buildGlobeLayers(){
   if(!mlMap.getSource("g-events")){
     mlMap.addSource("g-events",{type:"geojson",data:globeEventsGeo()});
     mlMap.addLayer({id:"g-pulse",type:"circle",source:"g-events",paint:{ "circle-radius":5, "circle-color":eventColorExpr(), "circle-opacity":["case",["==",["get","read"],1],0,0.4], "circle-stroke-width":0 }});
-    mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["case",["==",["get","read"],1],["*",["get","r"],0.5],["get","r"]], "circle-color":eventColorExpr(), "circle-stroke-width":["case",["==",["get","read"],1],1.0,1.7], "circle-stroke-color":"#ffffff" }});   // a READ dot shrinks to half size (+thinner ring) so it recedes and takes less of the map
+    mlMap.addLayer({id:"g-events",type:"circle",source:"g-events",paint:{ "circle-radius":["case",["==",["get","read"],1],["*",["get","r"],0.5],["get","r"]], "circle-color":eventColorExpr(), "circle-stroke-width":["case",["==",["get","read"],1],1.0,1.7], "circle-stroke-color":dotStroke() }});   // a READ dot shrinks to half size (+thinner ring) so it recedes and takes less of the map
   }
   addGlobeOverlays();
   startGlobePulse();
@@ -3866,12 +3870,40 @@ document.addEventListener("click", e=>{
   // straight out to Telegram. Everything it holds is already here; show it here.
   const wp=e.target.closest(".wpost");
   if(wp){ e.preventDefault();
-    if(!wp.dataset.img && !wp.dataset.video) return;
-    openMedia({ img:wp.dataset.img||"", video:wp.dataset.video||"", dur:wp.dataset.dur||"",
+    const hasMedia = wp.dataset.img || wp.dataset.video;
+    const showMedia=()=>{ if(hasMedia) openMedia({ img:wp.dataset.img||"", video:wp.dataset.video||"", dur:wp.dataset.dur||"",
                 cap:wp.dataset.cap||"", channel:wp.dataset.ch||"", link:wp.dataset.link||"",
-                note: (wp.dataset.big==="1" ? BLOCKED_NOTE : "") });
+                note: (wp.dataset.big==="1" ? BLOCKED_NOTE : "") }); };
+    // Clicking the MEDIA thumbnail plays it. Clicking the post itself FLIES the globe to the matching dot and
+    // opens the story — "take me to where this news is". Fall back to the media if no dot matches.
+    if(e.target.closest(".wpost-media, .wpost-img")){ showMedia(); return; }
+    const ev=_wireMatchEvent(wp.dataset.cap||"");
+    if(ev){ flyToEvent(ev); selectEvent(ev); }
+    else { showMedia(); }
   }
 });
+// Match a wire post to the map dot for the SAME event by shared distinctive words (the dots are built from
+// the same Telegram feed, deduped). Needs a few uncommon words in common so unrelated posts don't misfire.
+const _WIRE_STOP=new Set("this that with from have they were will been what when your their about after over into more than said says amid says told after around against because during through before between".split(" "));
+function _wireMatchEvent(text){
+  const ws=(String(text||"").toLowerCase().match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w));
+  if(ws.length<3) return null;
+  const want=new Set(ws);
+  let best=null, bestScore=0;
+  (EVENTS||[]).forEach(ev=>{
+    const et=((ev.title||"")+" "+(ev.sum||"")).toLowerCase();
+    const ew=new Set((et.match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w)));
+    let c=0; want.forEach(w=>{ if(ew.has(w)) c++; });
+    if(c>bestScore){ bestScore=c; best=ev; }
+  });
+  return bestScore>=3 ? best : null;
+}
+function flyToEvent(ev){
+  if(!ev || !isFinite(+ev.lat) || !isFinite(+ev.lng)) return;
+  const p=(typeof _insetPad==="function") ? _insetPad() : undefined;   // keep the dot clear of the open wire panel
+  if(globeMode && mlMap){ mlMap.flyTo({ center:[+ev.lng, +ev.lat], zoom:Math.max(mlMap.getZoom(), 3.4), duration:900, padding:p }); }
+  else if(typeof map!=="undefined" && map){ map.flyTo([+ev.lat, +ev.lng], Math.max(map.getZoom(), 4), { duration:0.9 }); }
+}
 function heroFromWire(d, url, credit){
   const hero=document.getElementById("hero-"+d.id); if(!hero) return;
   // A REAL photo of the event may ALWAYS replace a file photo or a map — the wire lookup is slow and

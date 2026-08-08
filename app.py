@@ -5730,8 +5730,91 @@ def _subject_country(title, desc=""):
     return None
 
 
+_LEADER_ROLE = (r"(prime[\s-]?minister|premier|president|chancellor|foreign\s+minister|"
+                r"supreme\s+leader|crown\s+prince|defen[cs]e\s+minister|monarch)")
+_LEADER_POSS = re.compile(r"\b([A-Z][A-Za-z.\-]+)['’]s\s+(?:new\s+|acting\s+|interim\s+)?" + _LEADER_ROLE, re.I)
+_LEADER_DEM  = re.compile(r"\b([A-Z][a-z]+)\s+(?:new\s+|acting\s+|interim\s+)?" + _LEADER_ROLE, re.I)
+_LEADER_OF   = re.compile(_LEADER_ROLE + r"\s+of\s+(?:the\s+)?([A-Z][A-Za-z]+(?:\s[A-Z][a-z]+){0,2})", re.I)
+_LEADER_VER  = "l1"
+
+
+def _leader_name(country, role):
+    """The current holder of a national office, named by the LLM and CACHED. Returns '' when unsure — and the
+    caller runs the name through _person_card, which only yields a face for a REAL, verifiable office-holder,
+    so a wrong guess simply shows nothing rather than a wrong person."""
+    country = (country or "").strip()
+    role = (role or "").strip().lower()
+    if not country or not role or country not in COUNTRY_COORDS or not _llm_available():
+        return ""
+    cache = os.path.join(CACHE_DIR, "leader_" + hashlib.sha1((_LEADER_VER + "|" + country.lower() + "|" + role).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 7 * 86400):        # leaders change — a shorter TTL than most caches
+        try:
+            return json.load(open(cache, encoding="utf-8")).get("n", "")
+        except Exception:
+            pass
+    role_q = {"premier": "prime minister", "pm": "prime minister"}.get(role, role)
+    system = ("You name current national office-holders. Reply with ONLY the person's full name and nothing "
+              "else. If you are not certain, or the office is vacant, reply exactly NONE.")
+    prompt = "Who currently holds the office of " + role_q + " of " + country + "? Full name only, or NONE."
+    out = re.sub(r"\s+", " ", (_llm_complete(system, prompt, max_tokens=24, temperature=0) or "").strip()).strip(".")
+    if len(out) < 3 or out.upper().startswith("NONE") or len(out.split()) > 5 or any(c.isdigit() for c in out):
+        out = ""
+    try:
+        json.dump({"n": out}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
+
+
+def _leader_from_title(title, desc=""):
+    """A story that names an OFFICE but not the person ('Iraq's premier says…') still has a face. Detect the
+    office + country and resolve who it is, so the reader sees WHO is speaking. One face max."""
+    text = (title or "") + ". " + (desc or "")[:200]
+    found = None
+    m = _LEADER_POSS.search(text)
+    if m:
+        found = (m.group(1), m.group(2))                        # "Iraq's premier" -> (Iraq, premier)
+    if not found:
+        m = _LEADER_OF.search(text)
+        if m:
+            found = (m.group(2), m.group(1))                    # "premier of Iraq"
+    if not found:
+        m = _LEADER_DEM.search(text)
+        if m and m.group(1).lower() in DEMONYMS:
+            found = (DEMONYMS[m.group(1).lower()], m.group(2))  # "Iraqi premier" -> (Iraq, premier)
+    if not found:
+        return []
+    country = _leader_country(found[0])   # case-insensitive regex over-captures ("France meets allies") -> salvage the real country
+    if not country:
+        return []
+    name = _leader_name(country, found[1])
+    return [(name, False)] if name else []
+
+
+def _leader_country(s):
+    """Pull a real country name out of a (possibly over-captured) string: try its leading 1-3 words against
+    the gazetteer, country aliases, and demonyms."""
+    parts = re.findall(r"[A-Za-z'’.\-]+", s or "")
+    for n in (3, 2, 1):
+        cand = " ".join(parts[:n]).strip()
+        if not cand:
+            continue
+        if cand in COUNTRY_COORDS:
+            return cand
+        if cand.title() in COUNTRY_COORDS:
+            return cand.title()
+        low = cand.lower()
+        if low in DEMONYMS:
+            return DEMONYMS[low]
+        if low in COUNTRY_ALIASES and COUNTRY_ALIASES[low] in COUNTRY_COORDS:
+            return COUNTRY_ALIASES[low]
+    return ""
+
+
 def _story_people(title, desc=""):
     picks = _name_candidates(title, desc)
+    if not picks:
+        picks = _leader_from_title(title, desc)   # no NAME in the story -> resolve the office-holder, verified below
     if not picks:
         return []
     try:
