@@ -2722,7 +2722,7 @@ function dotStroke(){ return (currentBase==="satellite" || currentBase==="topo")
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
 function globeBgExpr(k){
-  const hi = (k==="satellite") ? "#0a1622" : (k==="topo" ? "#e2ddc8" : "#fafaf8");   // up-close base tone; topo = a muted terrain tone so a not-yet-loaded / dropped tile blends as land, not a white chunk
+  const hi = (k==="satellite") ? "#0a1622" : (k==="topo" ? "#d2e1ba" : "#fafaf8");   // up-close base tone; topo = a muted terrain tone so a not-yet-loaded / dropped tile blends as land, not a white chunk
   // Dark "space" only while the globe is small in view (zoomed way out); by z4 the globe fills the screen,
   // so the backdrop is the map's own tone and any still-loading tile reads pale, never black.
   return ["interpolate",["linear"],["zoom"], 2.6,"#0a0f18", 4, hi];
@@ -2747,7 +2747,7 @@ function globeSphereGeo(){
   }
   return {type:"FeatureCollection",features:[{type:"Feature",properties:{},geometry:{type:"MultiPolygon",coordinates:polys}}]};
 }
-function polarCapColor(k){ return k==="satellite" ? "#12202e" : (k==="topo" ? "#e2ddc8" : "#fafaf8"); }   // the sphere base tone under the tiles; topo = muted terrain so a dropped tile reads as land, not a white chunk
+function polarCapColor(k){ return k==="satellite" ? "#12202e" : (k==="topo" ? "#d2e1ba" : "#fafaf8"); }   // the sphere base tone under the tiles; topo = muted terrain so a dropped tile reads as land, not a white chunk
 // Web-Mercator tiles stop at ±85°, so the globe's poles have NO imagery — the g-sphere fill shows there, and
 // on Satellite that fill is DARK (#12202e), which erased Antarctica and the Arctic ice as a black cap. Paint
 // the two polar caps (±85°→pole) ICE-WHITE, above the sphere but under the imagery, so the ice shows on every
@@ -2769,7 +2769,7 @@ function polarCapsGeo(){
   cap(85,89.9); cap(-85,-89.9);
   return {type:"FeatureCollection",features:feats};
 }
-function polarCapFill(k){ return k==="satellite" ? "#223644" : (k==="topo" ? "#e2ddc8" : "#fafaf8"); }   // satellite pole = a dark ice-water tone that blends into the imagery (a bright cap read as a white HOLE); topo matches its land tone
+function polarCapFill(k){ return k==="satellite" ? "#223644" : (k==="topo" ? "#e9f0dc" : "#fafaf8"); }   // satellite pole = a dark ice-water tone that blends into the imagery (a bright cap read as a white HOLE); topo matches its land tone
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2871,11 +2871,15 @@ function setGlobeBasemap(k){
   // aren't a dark hole on satellite. The imagery covers ≤85°, so these bands only show at the very poles.
   mlMap.addSource("g-poles",{type:"geojson",data:polarCapsGeo()});
   mlMap.addLayer({id:"g-poles",type:"fill",source:"g-poles",paint:{"fill-color":polarCapFill(k),"fill-antialias":false}}, before);
-  if(k==="clean"){
+  if(k==="clean" || k==="topo"){
     // VECTOR base — the Google-Maps approach. Positron is GPU-rendered geometry, not tile images, so it
     // scales INFINITELY SMOOTH from z3 up with no raster "chunks" to swap, and vector tiles are tiny so
-    // panning fills near-instantly. Same Positron look as the raster base we were using. (Its full-canvas
-    // background layer is skipped — our dark bg + the sphere fill handle space and the poles.)
+    // panning fills near-instantly. (Its full-canvas background layer is skipped — our dark bg + the sphere
+    // fill handle space and the poles.)
+    // TOPOGRAPHIC is Clean relief, COLOURED IN + TOPO'd: the same crisp ENGLISH vector labels, but green land,
+    // blue sea, and a STRONG hillshade so elevation reads clearly (mountains dark, plains flat). All vector +
+    // the reliable Elevation hillshade, so it's sharp and loads instantly — no muddy raster tiles.
+    const isTopo = (k==="topo");
     addCartoVector(before).then(()=>{
       // Insert the base overlays UNDER the vector's own label layers, so the ENGLISH vector labels always
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
@@ -2886,23 +2890,29 @@ function setGlobeBasemap(k){
       // wedge" — but that wedge is really the space background showing through a gap in the g-sphere fill, now
       // fixed by tessellating the sphere. Holding the raster to z4 only made the z3-4 view BLURRY: a stretched
       // tile where the vector should already be. So hand back at z3.) @2x (512px) tiles so the z<3 base is crisp.
-      if(!mlMap.getSource("g-overview")){
+      // Clean relief only — TOPO skips this pale CARTO overview so its green land + blue sea show at world scale.
+      if(!isTopo && !mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
         mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
-      // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
-      if(layers.shade && !mlMap.getSource("g-shade")){
-        // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
-        // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
-        // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
+      // TERRAIN: hillshade over the base, under the labels. SUBTLE for Clean relief; STRONG for Topographic so
+      // elevation reads clearly. Composited UNDER the WATER fill so only LAND is shaded (the sea stays blue).
+      if((layers.shade || isTopo) && !mlMap.getSource("g-shade")){
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 — faint, clean relief.
-        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
-        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
-        //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, no seam. Subtle.
-        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
+        if(isTopo){
+          // ONE bold multi-zoom hillshade that renders at every zoom (mountains dark, plains flat) — the topography.
+          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 1.5,0.55, 5,0.72, 9,0.72, 13,0.6],"raster-fade-duration":120}}, belowWater);
+        } else {
+          //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 — faint, clean relief.
+          mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
+          mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
+          //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, no seam. Subtle.
+          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
+        }
       }
+      if(isTopo) tuneCartoForTopoVector();   // colour it in: green land, blue sea, forests, stronger label halos
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
       applyCartoLabelToggle();
@@ -2915,9 +2925,8 @@ function setGlobeBasemap(k){
     mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:6,paint:{"raster-fade-duration":0}}, before);
     mlMap.addSource("g-base",{type:"raster",tiles:b.tiles,tileSize:256,maxzoom:b.max,attribution:"&copy; Esri, CARTO, OpenStreetMap"});
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
-    if(k==="osmintl" || k==="topo"){
-      // These carry their OWN baked terrain relief + labels + roads + borders — a complete, COLOURFUL map.
-      // Nothing to overlay (our vector labels would just double them). This is the colourful topographic look.
+    if(k==="osmintl"){
+      // OSM tiles carry their own baked labels/borders — nothing to overlay.
     } else {
       // SATELLITE COPIES the Clean-relief map: the SAME English one-name labels, tuned region
       // borders, softened rivers and forced capitals — just over the imagery instead of pale land. skipFills
@@ -2944,7 +2953,7 @@ function setGlobeBasemap(k){
     // satellite: a fine white line; grows only slightly as you zoom in
     mlMap.setPaintProperty("g-borders","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,0.6, 5,0.9, 9,1.3] : 0.7);
-    const showB=(k!=="osmintl" && k!=="topo"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");   // topo/osm carry their own borders
+    const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
   }
   if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
     mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");

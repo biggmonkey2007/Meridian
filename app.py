@@ -865,7 +865,13 @@ _TG_CHATTER = re.compile(
     r"off[-\s]?topic|unrelated\s+(to|but|,)|personal\s+(note|aside|opinion)|"
     r"not\s+(really\s+)?news\s*(but|,)|this\s+is\s?n'?t\s+news|"
     r"anyone\s+else\s+(notice|think|feel|see)|can\s+we\s+(just\s+)?(talk about|appreciate)|"
-    r"sorry\s+for\s+the\s+(spam|off[-\s]?topic)|on\s+a\s+personal\s+note)\b", re.I)
+    r"sorry\s+for\s+the\s+(spam|off[-\s]?topic)|on\s+a\s+personal\s+note|"
+    # casual first-person OPINION — the admin editorialising, not reporting ("I really thought…", "fair enough tbh")
+    r"\btbh\b|\bngl\b|\bimo\b|\bimho\b|\bsmh\b|\blmao\b|\blol\b|"
+    r"fair\s+enough|not\s+gonna\s+lie|hot\s+take|unpopular\s+opinion|"
+    r"i\s+really\s+(thought|think|reckon|figured|hoped|expected)|if\s+you\s+ask\s+me|"
+    r"just\s+my\s+(opinion|two\s+cents|thoughts)|call\s+me\s+(crazy|cynical)|personally[,\s]+i\b|"
+    r"in\s+my\s+(honest\s+)?opinion|let'?s\s+be\s+(honest|real))\b", re.I)
 
 
 def _tg_is_chatter(text):
