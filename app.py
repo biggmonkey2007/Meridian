@@ -484,14 +484,21 @@ _CREDIT_BRACKET = re.compile(
     r"[\[(][^\])]*(?:/|photo|screengrab|screenshot|video|footage|handout|getty|reuters|"
     r"\bafp\b|\bap\b|\bepa\b|anadolu|\baa\b|file|image|imagery|courtesy|graphic|infographic|"
     r"illustration|archive|social ?media|stringer|\bpool\b)[^\])]*[\])]", re.I)
-# A leading country-FLAG emoji ("🇾🇪 - …") these channels stamp on a post as a country tag. It's decoration,
-# not content — and the story already flies its country's flag in the header — so drop it. Rendered as raw
-# text (not converted to a flag image) the two regional-indicator letters leak in as "ye - ", "il - ".
-_LEAD_FLAG = re.compile(r"^(?:[\U0001F1E6-\U0001F1FF]\s*){1,6}[\s\-–—:|•·]*")
+# The decorative tag these channels stamp on the FRONT of a post: a country-flag emoji ("🇾🇪 - …"), any other
+# emoji/symbol ("🤝", "⚡", "🔴"), and/or a short country code ("SA — ", "IL/US — "). It's decoration, not
+# content — the story already flies its country's flag in the header — so strip it. Rendered as raw text a
+# flag's two regional-indicator letters leak in as "ye - ", and "🤝 SA —" leaves "SA —" behind.
+_LEAD_FLAG  = re.compile(r"^(?:[\U0001F1E6-\U0001F1FF]\s*){1,6}[\s\-–—:|•·]*")
+_LEAD_EMOJI = re.compile(r"^(?:[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣]\s*)+")
+_LEAD_CC    = re.compile(r"^[A-Z]{2,3}(?:[ /][A-Z]{2,3}){0,3}\s*[-–—:|•·]\s+")   # a country code + dash the emoji tag left
 
 
 def _strip_lead_flag(t):
-    return _LEAD_FLAG.sub("", t or "").lstrip(" \t-–—:|•·")
+    t = t or ""
+    stripped = _LEAD_EMOJI.sub("", _LEAD_FLAG.sub("", t)).lstrip(" \t")
+    if stripped != t:                       # an emoji/flag tag was removed -> a trailing country code is part of it
+        stripped = _LEAD_CC.sub("", stripped)
+    return stripped.lstrip(" \t-–—:|•·")
 
 
 def _end_stop(t):
@@ -1217,6 +1224,36 @@ def _detect_org_phrases(text, covered, limit=4):
     return out
 
 
+# A PERMANENT, growing database of learned term definitions, kept in DATA_DIR so it SURVIVES a cache clear —
+# a name the AI defines once is ours forever and never costs a second call. Curated _GLOSSARY always wins;
+# this is the accumulated long tail "in our pocket". Loaded once; appended under a lock (define_term runs in a
+# thread pool). Over time the most-seen entries can be promoted by hand into the curated list above.
+_LEARNED_PATH = os.path.join(DATA_DIR, "learned_terms.json")
+_LEARNED_LOCK = threading.Lock()
+try:
+    _LEARNED = json.load(open(_LEARNED_PATH, encoding="utf-8")) if os.path.exists(_LEARNED_PATH) else {}
+    if not isinstance(_LEARNED, dict):
+        _LEARNED = {}
+except Exception:
+    _LEARNED = {}
+
+
+def _learn_term(name, definition):
+    key = re.sub(r"\s+", " ", (name or "").strip()).lower()
+    if not key or not definition:
+        return
+    with _LEARNED_LOCK:
+        if _LEARNED.get(key) == definition:
+            return
+        _LEARNED[key] = definition
+        try:
+            tmp = _LEARNED_PATH + ".tmp"
+            json.dump(_LEARNED, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+            os.replace(tmp, _LEARNED_PATH)
+        except Exception:
+            pass
+
+
 class Api:
     """Exposed to the page as window.pywebview.api.*"""
 
@@ -1242,8 +1279,11 @@ class Api:
         name = re.sub(r"\s+", " ", (name or "").strip())
         if len(name) < 4 or not _llm_available():
             return ""
+        learned = _LEARNED.get(name.lower())
+        if learned:
+            return learned                       # permanent DB — already in our pocket, no call
         cache = os.path.join(CACHE_DIR, "term_" + hashlib.sha1((_DEFINE_VER + "\n" + name.lower()).encode("utf-8")).hexdigest()[:16] + ".json")
-        if _fresh(cache, 30 * 86400):
+        if _fresh(cache, 30 * 86400):            # short-term cache also remembers a NONE, so we don't re-ask
             try:
                 return json.load(open(cache, encoding="utf-8")).get("d", "")
             except Exception:
@@ -1262,6 +1302,8 @@ class Api:
             json.dump({"d": out}, open(cache, "w", encoding="utf-8"))
         except Exception:
             pass
+        if out:
+            _learn_term(name, out)               # keep it forever in the permanent database
         return out
 
     def article_ai_terms(self, title, desc=""):
@@ -1527,7 +1569,7 @@ class Api:
                 if not mkey or mkey in seen_media:
                     continue                 # the same file, already on the wall
                 seen_media.add(mkey)
-                cap = _tg_headline(p.get("text") or "") or (p.get("text") or "").strip()
+                cap = _strip_lead_flag(_tg_headline(p.get("text") or "") or (p.get("text") or "").strip())
                 items.append({
                     "channel": chan,
                     "avatar": p.get("avatar") or "",

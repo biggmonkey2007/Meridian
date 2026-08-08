@@ -1655,13 +1655,17 @@ def main():
     _r1 = app._sharpen_desc("Chinese AI startup Moonshot's flagship model bypassed a UK safety test, researchers say")
     _r2 = app._sharpen_desc("Migrants begin returning to Morocco on July 31, 2026. [Abu Adem Muhammed – Anadolu Agency]")
     _f1 = app._tg_clean("\U0001F1FE\U0001F1EA - Additional scenes from the clashes in southwest Yemen show heavy fire")
+    _f2 = app._strip_lead_flag("\U0001F91D SA — Video: the Crown Prince meets the President")   # emoji + country code tag
+    _f3 = app._strip_lead_flag("US - based firm expands abroad")                                     # NOT a tag (no emoji) -> untouched
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
                  and not _c4.endswith(".")                              # a bare speaker label is left alone
                  and _r1.endswith("say.")                               # RSS desc gets an end stop too
                  and "[" not in _r2 and _r2.endswith("2026.")           # RSS credit bracket stripped
-                 and _f1.startswith("Additional"))                      # leading country-flag emoji tag stripped
+                 and _f1.startswith("Additional")                       # leading country-flag emoji tag stripped
+                 and _f2.startswith("Video:")                           # emoji + "SA —" country-code tag stripped
+                 and _f3.startswith("US - based"))                      # a real "US - " (no emoji) is left alone
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
