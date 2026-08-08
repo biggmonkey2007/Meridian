@@ -2862,16 +2862,14 @@ function setGlobeBasemap(k){
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
       const firstSym = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
       const belowLabels = firstSym || (mlMap.getLayer("g-borders") ? "g-borders" : undefined);
-      // At WORLD SCALE MapLibre's globe mis-renders some vector FILLS (a dark wedge streaking across the sphere),
-      // so cover them with the always-resident clean RASTER (instant zoom-out, artifact-free); vector fills take
-      // over from z4 up. The wedge was still showing at the z3 boundary (raster gone, sphere still small), so the
-      // raster now holds to z4 — the @2x tile stays crisp that far out and the vector base is a seamless match.
-      // Use the @2x (512px) tiles: at globe zoom a 256px tile is stretched over a whole continent and reads
-      // BLURRY — the persistent "why is the globe soft" complaint. The retina tile doubles the resolution so
-      // the base is crisp; the vector borders/labels and hillshade sit sharp on top.
+      // The always-resident clean RASTER gives an instant, artifact-free base while zoomed way out; the crisp,
+      // resolution-independent VECTOR takes over from z3 up. (This used to hold to z4 to mask the globe "dark
+      // wedge" — but that wedge is really the space background showing through a gap in the g-sphere fill, now
+      // fixed by tessellating the sphere. Holding the raster to z4 only made the z3-4 view BLURRY: a stretched
+      // tile where the vector should already be. So hand back at z3.) @2x (512px) tiles so the z<3 base is crisp.
       if(!mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
-        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:4,paint:{"raster-fade-duration":0}}, belowLabels);
+        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
       }
       // TERRAIN: subtle hillshade over the base, under the labels — keeps "Clean relief" its relief.
       if(layers.shade && !mlMap.getSource("g-shade")){
