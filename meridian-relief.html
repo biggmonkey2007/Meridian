@@ -2763,7 +2763,7 @@ function polarCapsGeo(){
   cap(85,89.9); cap(-85,-89.9);
   return {type:"FeatureCollection",features:feats};
 }
-function polarCapFill(k){ return k==="satellite" ? "#e8edf1" : "#fafaf8"; }   // ice/snow at the poles (satellite); matches the sphere elsewhere so there's no seam
+function polarCapFill(k){ return k==="satellite" ? "#223644" : (k==="topo" ? "#e2ddc8" : "#fafaf8"); }   // satellite pole = a dark ice-water tone that blends into the imagery (a bright cap read as a white HOLE); topo matches its land tone
 function globeEl(){ let g=document.getElementById("globe"); if(!g){ g=document.createElement("div"); g.id="globe"; (document.getElementById("stage")||document.body).appendChild(g); } return g; }
 function sizeGlobe(){ if(mlMap){ try{ mlMap.resize(); }catch(e){} } }
 async function ensureGlobeLib(){ if(typeof maplibregl!=="undefined") return true; await loadCss(ML_CSS); try{ await loadFirst(ML_JS); }catch(e){} return typeof maplibregl!=="undefined"; }
@@ -2823,9 +2823,9 @@ function tuneCartoForTopo(){
     const l = mlMap.getLayer(id); if(!l || l.type!=="symbol") return;
     try{
       if(mlMap.getLayoutProperty(id,"text-field")===undefined) return;   // icon-only layer — nothing to recolor
-      mlMap.setPaintProperty(id,"text-halo-color","rgba(255,255,255,0.9)");
-      mlMap.setPaintProperty(id,"text-halo-width",1.9);
-      mlMap.setPaintProperty(id,"text-halo-blur",0.2);
+      mlMap.setPaintProperty(id,"text-halo-color","rgba(255,255,255,0.92)");
+      mlMap.setPaintProperty(id,"text-halo-width",1.2);   // a TIGHT crisp cushion, not a fat blurry halo
+      mlMap.setPaintProperty(id,"text-halo-blur",0.1);
       if(id==="place_state")            mlMap.setPaintProperty(id,"text-color","#515b67");   // regions were the faintest (#77848f)
       else if(/place_country/.test(id)) mlMap.setPaintProperty(id,"text-color","#3c4550");
       else if(/watername/.test(id))     mlMap.setPaintProperty(id,"text-color","#5a7189");
@@ -2837,8 +2837,10 @@ function tuneCartoForTopo(){
 // fill), softened rivers, and Topo's stronger label halos. The land colour + relief come from the sphere +
 // bold hillshade; here we just tint the water and lift the labels.
 function tuneCartoForTopoVector(){
-  ["water","water_shadow","water_pattern","ocean"].forEach(id=>{ try{ if(mlMap.getLayer(id)) mlMap.setPaintProperty(id,"fill-color","#a9cfe3"); }catch(e){} });
-  try{ if(mlMap.getLayer("waterway")) mlMap.setPaintProperty("waterway","line-color","#8fbcd6"); }catch(e){}
+  ["water","water_shadow","water_pattern","ocean"].forEach(id=>{ try{ if(mlMap.getLayer(id)) mlMap.setPaintProperty(id,"fill-color","#a7cbe0"); }catch(e){} });
+  try{ if(mlMap.getLayer("waterway")) mlMap.setPaintProperty("waterway","line-color","#88b6d4"); }catch(e){}
+  // forests/parks a soft terrain green so land isn't a flat tan — reads as vegetation over the relief
+  ["landcover_wood","landcover","landuse_wood","park","landcover_grass"].forEach(id=>{ try{ if(mlMap.getLayer(id)){ mlMap.setPaintProperty(id,"fill-color","#b9c79b"); mlMap.setPaintProperty(id,"fill-opacity",0.55); } }catch(e){} });
   tuneCartoForTopo();
 }
 // "Place labels" toggle: hide/show the vector overlay's own name layers (all modes go through here now, so
@@ -2891,26 +2893,26 @@ function setGlobeBasemap(k){
       }
       // TERRAIN: hillshade over the base, under the labels. SUBTLE for Clean relief; BOLD for Topographic
       // (always on there — the relief is what makes it a terrain map).
-      const _sgOp = isTopo ? ["interpolate",["linear"],["zoom"], 3,0.34, 5,0.0]
-                           : ["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0];
-      const _szOp = isTopo ? ["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.55, 10,0.6, 13,0.5]
-                           : ["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12];
       if((layers.shade || isTopo) && !mlMap.getSource("g-shade")){
         // Composite the hillshade UNDER the WATER fill so it only shades LAND. ESRI's hillshade paints the
         // ocean flat grey, which otherwise reads as a dark patch over open sea (the "southern sphere" artifact)
         // — below the water fill (and below the z<3 raster overview) the sea stays water-coloured.
         const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
-        // TERRAIN RELIEF — LIGHT + SUBTLE. Just the cheap (~8KB) CDN raster hillshade at LOW opacity: enough to
-        // hint at mountains, not a bold relief. (A DEM hillshade was razor-sharp but its ~80KB tiles were heavy
-        // and laggy to zoom into — overkill for a subtle backdrop.) Two layers so it's not blurry on the globe:
-        //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 (a z2 tile smeared a whole
-        //    continent → the original blur); at z4 + low opacity it reads as faint, clean relief, not a smudge.
-        mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
-        mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":_sgOp,"raster-fade-duration":120}}, belowWater);
-        //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, loads fast, and this
-        //    far in MapLibre picks a consistent tile zoom so there's no seam. Also kept subtle.
-        mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
-        mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":_szOp,"raster-fade-duration":120}}, belowWater);
+        if(isTopo){
+          // TOPO RELIEF — BOLD, and at EVERY zoom, from ONE multi-zoom hillshade. (The two-layer subtle scheme
+          // below leaned on a fixed-z4 tile that just didn't render on the world-scale globe — the map read
+          // dead flat.) Strong opacity so mountains actually show; this is what makes it a terrain map.
+          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 1.5,0.55, 5,0.72, 9,0.72, 13,0.62],"raster-fade-duration":120}}, belowWater);
+        } else {
+          // CLEAN RELIEF — LIGHT + SUBTLE. Two layers so it's not blurry on the globe:
+          //  • GLOBE (z<5): ONE fixed zoom (min==max) so it can't seam. Pinned to z4 — faint, clean relief.
+          mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
+          mlMap.addLayer({id:"g-shade-globe",type:"raster",source:"g-shade-globe",maxzoom:6,paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 3,0.24, 5,0.0],"raster-fade-duration":120}}, belowWater);
+          //  • ZOOMED IN (z>4): the normal multi-zoom raster fades in — sharp at close range, no seam. Subtle.
+          mlMap.addSource("g-shade",{type:"raster",tiles:[HILLSHADE],tileSize:256,maxzoom:13});
+          mlMap.addLayer({id:"g-shade",type:"raster",source:"g-shade",paint:{"raster-opacity":["interpolate",["linear"],["zoom"], 4.5,0.0, 6,0.26, 10,0.3, 13,0.12],"raster-fade-duration":120}}, belowWater);
+        }
       }
       if(isTopo) tuneCartoForTopoVector();   // terrain skin: bluer sea, warmer land, stronger label halos
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
