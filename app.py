@@ -170,7 +170,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
 _DATA_VER = "d3"
-_SUM_PROMPT_VER = "10"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "11"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
 
@@ -293,6 +293,28 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None):
         return ""
 
 
+_END_PUNCT = ".!?\"'’”)]…"   # a brief that ends on one of these reads as a finished thought
+
+
+def _finish_brief(s):
+    """Guarantee a brief ends whole — never mid-word/mid-sentence (the model can stop at the token cap). Only
+    the LAST line can be cut, so we mend just that: if it holds a sentence-ender, trim to it; if it has none,
+    it's a dangling fragment (an incomplete final bullet) -> drop that one line and keep the complete lines
+    above it. We keep the trim only when a real brief survives, so a short whole brief is never gutted."""
+    s = (s or "").rstrip()
+    if not s or s[-1] in _END_PUNCT:
+        return s
+    lines = s.split("\n")
+    last = lines[-1]
+    m = list(re.finditer(r"[.!?][\"'’”)\]]*", last))
+    if m:
+        lines[-1] = last[:m[-1].end()].rstrip()     # cut the dangling fragment off the final line
+    else:
+        lines = lines[:-1]                           # whole final line is an incomplete fragment -> drop it
+    out = "\n".join(lines).rstrip()
+    return out if len(out) >= 15 else s
+
+
 def _summarize(title, text):
     """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
     copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
@@ -366,7 +388,7 @@ def _summarize(title, text):
               "'illegal sand extraction erodes a beach' -> local. This SCOPE line is metadata, not part of the "
               "brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    s = _llm_complete(system, prompt, max_tokens=380, temperature=0.3)
+    s = _llm_complete(system, prompt, max_tokens=480, temperature=0.3)   # headroom so a brief rarely hits the cap
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
@@ -388,6 +410,7 @@ def _summarize(title, text):
         scope = _sc if _sc in ("global", "regional", "national", "local") else ""
     s = re.sub(r"(?im)^\s*(WHERE|SCOPE):.*$", "", s).strip()   # strip both metadata lines from the brief
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    s = _finish_brief(s)                                        # never leave a brief cut off mid-sentence
     if where or scope:
         try:
             json.dump({"p": where, "sc": scope}, open(_aiwhere_path(title), "w", encoding="utf-8"))
@@ -3959,7 +3982,7 @@ def _domain_name(domain):
 # user-editable muted_sources.txt (one entry per line, # comments) in DATA_DIR — if that file exists it
 # REPLACES the default, so the user can add or clear mutes without a code change.
 _MUTED_FILE = os.path.join(DATA_DIR, "muted_sources.txt")
-_MUTED_DEFAULT = ("theguardian.com",)
+_MUTED_DEFAULT = ("theguardian.com", "thegatewaypundit.com", "gateway pundit")
 _MUTED_POOL = {"t": 0.0, "set": None}
 
 

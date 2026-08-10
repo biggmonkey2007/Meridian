@@ -1499,13 +1499,36 @@ def main():
     print("\n=== SOURCE MUTE (a hidden outlet never reaches the map) ===")
     _mute_ok = (app._is_muted("theguardian.com", "The Guardian", "https://www.theguardian.com/world/x")
                 and app._is_muted("", "", "https://amp.theguardian.com/x")
+                and app._is_muted("thegatewaypundit.com", "The Gateway Pundit", "https://www.thegatewaypundit.com/2026/x")
+                and app._is_muted("", "The Gateway Pundit", "")
                 and not app._is_muted("bbc.co.uk", "BBC", "https://bbc.co.uk/x")
                 and not app._is_muted("news.antiwar.com", "Antiwar.com", ""))
     ran[0] += 1
     if not _mute_ok:
         fails.append(("mute", "guardian", "guardian hidden, others kept", str(_mute_ok),
                       "a muted source must be filtered on domain/name/url, and only that source"))
-    print(f"  {'ok ' if _mute_ok else 'FAIL'} guardian muted; bbc/antiwar kept; mutes={sorted(app._muted_sources())}")
+    print(f"  {'ok ' if _mute_ok else 'FAIL'} guardian+gateway-pundit muted; bbc/antiwar kept; mutes={sorted(app._muted_sources())}")
+
+    # FINISH THE BRIEF — a summary must never end mid-sentence. _finish_brief trims a dangling tail back to the
+    # last full sentence, but leaves an already-complete brief (and a short whole one) untouched.
+    print("\n=== FINISH BRIEF (no summary ends mid-sentence) ===")
+    _fb_cases = [
+        # (input, expected)
+        ("Floods hit the valley. Thousands fled as the river",  "Floods hit the valley."),   # trim dangling tail
+        ("A dam broke overnight, forcing evacuations.",         "A dam broke overnight, forcing evacuations."),  # already whole
+        ('The minister said the deal was "done."',              'The minister said the deal was "done."'),  # closes on quote
+        ("Talks collapsed and the",                              "Talks collapsed and the"),   # nothing full yet -> leave as-is
+        ("Aid arrived Monday.\n- Scale: 3,000 homes lost\n- Cost: still being",
+         "Aid arrived Monday.\n- Scale: 3,000 homes lost"),     # drop the incomplete final bullet
+    ]
+    _fb_ok = True
+    for _inp, _exp in _fb_cases:
+        _got = app._finish_brief(_inp)
+        ran[0] += 1
+        if _got != _exp:
+            _fb_ok = False
+            fails.append(("finish_brief", _inp[:40], _exp, _got, "a brief must end on a complete sentence"))
+    print(f"  {'ok ' if _fb_ok else 'FAIL'} briefs end whole (mid-sentence tails trimmed, complete ones kept)")
 
     # SAME-EVENT MERGE — three outlets covering one event become ONE dot that cites them all (first
     # reporter as the primary), while a genuinely different same-country event stays separate.
@@ -1720,7 +1743,8 @@ def main():
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
-             + 2)   # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
+             + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
+             + 5)   # + finish-brief (a summary never ends mid-sentence: 5 cases)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

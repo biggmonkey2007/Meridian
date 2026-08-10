@@ -1288,6 +1288,10 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
 function leadText(s){ s=String(s||"").trim(); if(!s) return s; if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1); return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
+// When a source teaser has to STAND IN for the brief (no AI summary produced), trim it back to its last full
+// sentence so it reads finished, not cut mid-word. Mirrors the backend _finish_brief.
+function finishText(s){ s=String(s||"").trim(); if(!s) return s; if(/[.!?"'’”)\]…]$/.test(s)) return s;
+  const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s; }
 // Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
 //   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
 //   only when the stakes aren't obvious — a final "Why it matters:" line that we fold into the SAME
@@ -4347,7 +4351,7 @@ async function renderRealEvent(d){
     // A PURE Telegram post: the post text IS the story (no article page to scrape). Show the post as the lead;
     // if it's substantial, replace it with OUR summary once ready. (A TG event that links to a real article
     // falls through to the article branch below and is summarized from the article.)
-    const dek=bodyMinusHeadline(d.title, d.sum);
+    const dek=finishText(bodyMinusHeadline(d.title, d.sum));
     if(d.summary){ showBrief(d.summary, dek); }
     else {
       if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
@@ -4366,14 +4370,17 @@ async function renderRealEvent(d){
       const desc=(meta && (meta.desc||meta.description))||"";
       const paras=(meta && meta.paragraphs)||[];   // used only to FIND people below — never displayed verbatim
       // the dek (article's own blurb) is fair use as a lead; a body paragraph is not, so it never falls back to paras.
-      const dek=bodyMinusHeadline(d.title, d.sum||desc||"");
+      const dek=finishText(bodyMinusHeadline(d.title, d.sum||desc||""));
       // COPYRIGHT-SAFE: we never republish the source's article body. OUR original summary is the single body;
       // the dek only leads while it generates, or stands alone if no summary is produced.
       if(d.summary){ showBrief(d.summary, dek); }
       else {
         if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
-        if(api.summarize_event && (paras.length || desc)){
-          Promise.resolve(api.summarize_event(d.title||"", "", (paras.slice(0,10).join(" ")||desc))).then(r=>{
+        // Summarize from the scraped body, else the article blurb, else the story's OWN feed text — so even a
+        // blocked or empty scrape still produces OUR complete brief instead of leaving the clipped teaser up.
+        const stext=(paras.slice(0,10).join(" ")||desc||d.sum||"").trim();
+        if(api.summarize_event && stext.length>=60){
+          Promise.resolve(api.summarize_event(d.title||"", "", stext)).then(r=>{
             if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
           }).catch(()=>{});
         }
