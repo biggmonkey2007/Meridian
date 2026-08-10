@@ -172,6 +172,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 _DATA_VER = "d3"
 _SUM_PROMPT_VER = "11"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
+_PORT_VER = "p1"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
 
 def _aiwhere_path(title):
@@ -2191,6 +2192,43 @@ class Api:
         except Exception as ex:
             return {"error": str(ex)}
 
+    def port_profile(self, name, country=""):
+        """A concise, factual profile of a seaport for the click popup: type, when it opened, operator, annual
+        throughput, approximate daily vessel calls, strategic significance, recent developments and the waters
+        it sits on. Grounded on Google Search via Gemini when a key is set (real figures + recent news), else
+        the open LLM for the stable facts. Cached 7 days, so throughput/vessel figures refresh about weekly.
+        Always returns a dict with name/country + a live-tracker URL, even with no LLM — the popup still opens."""
+        name = re.sub(r"\s+", " ", (name or "").strip())
+        country = re.sub(r"\s+", " ", (country or "").strip())
+        base = {"name": name, "country": country}
+        if len(name) < 2:
+            return base
+        cache = os.path.join(CACHE_DIR, "port_" + hashlib.sha1(
+            (_PORT_VER + "\n" + name.lower() + "\n" + country.lower()).encode("utf-8")).hexdigest()[:16] + ".json")
+        if _fresh(cache, 7 * 86400):
+            try:
+                return json.load(open(cache, encoding="utf-8"))
+            except Exception:
+                pass
+        where = name + (", " + country if country else "")
+        data = None
+        try:
+            key = load_gemini_key()
+        except Exception:
+            key = ""
+        if key:
+            data = _port_profile_gemini(where, key)      # grounded -> real figures + recent developments
+        if data is None and _llm_available():
+            data = _port_profile_llm(where)              # open model -> stable facts, figures only if known
+        out = dict(base)
+        if data:
+            out.update(data)
+        try:
+            json.dump(out, open(cache, "w", encoding="utf-8"))
+        except Exception:
+            pass
+        return out
+
     def world_events(self, hours=24):
         """Real, geolocated world news for the map — GDELT DOC 2.0 (free, no key). Cached 15 min.
         Returns {"events":[{title,cat,lat,lng,place,country,hrs,source,domain,url,image}], "generated":ts}."""
@@ -2943,6 +2981,71 @@ def _analyze_headline(title, name):
         speaker = True
     qm = _QUOTE.search(title)
     return speaker, (qm.group(1).strip() if qm else "")
+
+
+def _port_prompt(where):
+    """One prompt shared by the grounded (Gemini) and open-LLM port-profile fetchers. Asks for a compact,
+    factual JSON — and to leave a field EMPTY rather than invent a figure, so we never show a made-up stat."""
+    return (
+        "Give a concise, factual profile of the seaport \"" + where + "\" as a JSON object with EXACTLY these "
+        "string keys (use \"\" for any you are not confident about — never guess a number):\n"
+        "- type: the kind of port in a few words (e.g. \"Container & transshipment\", \"Oil/LNG terminal\", "
+        "\"Naval base\", \"Bulk cargo\").\n"
+        "- opened: when the modern port was established or opened (a year or short phrase).\n"
+        "- operator: the main operating company or port authority.\n"
+        "- throughput: latest annual throughput with unit and year (e.g. \"~24.7M TEU (2023)\" or \"~90M tonnes/yr\").\n"
+        "- ships_per_day: approximate vessel calls PER DAY (a number or short range) — derive it from public "
+        "annual vessel-call figures if needed.\n"
+        "- significance: ONE sentence on why this port matters (trade lane, largest in its region, chokepoint access).\n"
+        "- recent: ONE sentence on a development in the last year or two (a new terminal, expansion, automation, "
+        "or notable incident) — or \"\" if nothing notable.\n"
+        "- waters: the sea, gulf, strait or route it sits on (e.g. \"Strait of Malacca\").\n"
+        "Use only real, publicly reported facts. Output ONLY the minified JSON object, no markdown fences."
+    )
+
+
+def _port_json(text):
+    """Pull the JSON object out of an LLM/Gemini reply and keep only the expected string fields."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        return None
+    try:
+        raw = json.loads(m.group(0))
+    except Exception:
+        return None
+    keys = ("type", "opened", "operator", "throughput", "ships_per_day", "significance", "recent", "waters")
+    out = {k: re.sub(r"\s+", " ", str(raw.get(k, "") or "")).strip() for k in keys}
+    return out if any(out.values()) else None
+
+
+def _port_profile_gemini(where, key):
+    """Grounded profile via Gemini + Google Search — real public throughput/vessel figures and recent news."""
+    try:
+        url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+               + GEMINI_MODEL + ":generateContent?key=" + urllib.parse.quote(key))
+        body = json.dumps({
+            "contents": [{"parts": [{"text": _port_prompt(where)}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900},
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=55) as r:
+            j = json.loads(r.read().decode("utf-8"))
+        return _port_json(j["candidates"][0]["content"]["parts"][0]["text"])
+    except Exception:
+        return None
+
+
+def _port_profile_llm(where):
+    """Fallback profile from the open model (no live web) — stable facts (type/opened/significance/waters);
+    it is told to leave figures blank if unsure, so we don't show invented throughput numbers."""
+    system = ("You are a neutral maritime reference. Answer only with real, publicly known facts about a named "
+              "seaport, as strict JSON. If you are unsure of a figure, use an empty string — never invent one.")
+    return _port_json(_llm_complete(system, _port_prompt(where), max_tokens=500, temperature=0.2))
 
 
 def _stmt_prompt(country):

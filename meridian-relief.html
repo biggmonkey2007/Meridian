@@ -386,6 +386,28 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 #gloss-pop .gp-d{color:var(--ink-2)}
 #gloss-pop::after{content:"";position:absolute;left:var(--ax,50%);top:100%;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--panel)}
 #gloss-pop.below::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:var(--panel)}
+/* Seaport profile popup — opens when a port anchor is clicked (like the country panel, but for the port). */
+#port-pop{position:fixed;z-index:3200;width:min(300px,88vw);max-height:min(72vh,540px);overflow-y:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:13px;box-shadow:0 14px 44px rgba(10,16,24,.34);padding:13px 14px 12px;opacity:0;transform:translateY(4px) scale(.985);transition:opacity .14s ease,transform .14s ease;pointer-events:none}
+#port-pop.show{opacity:1;transform:none;pointer-events:auto}
+#port-pop .pp-x{position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;background:var(--chip);border-radius:7px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
+#port-pop .pp-x:hover{background:var(--line);color:var(--ink)}
+#port-pop .pp-head{display:flex;align-items:center;gap:9px;margin-bottom:9px;padding-right:26px}
+#port-pop .pp-anchor{font-size:20px;color:#0d5860;flex:0 0 auto;line-height:1}
+#port-pop .pp-name{font-family:var(--serif);font-weight:700;font-size:16px;line-height:1.15}
+#port-pop .pp-co{font-size:11.5px;color:var(--ink-2);margin-top:2px;display:flex;align-items:center;gap:5px}
+#port-pop .pp-co .flag{width:15px;height:11px;border-radius:2px;object-fit:cover;flex:none;box-shadow:0 0 0 .5px rgba(0,0,0,.15)}
+#port-pop .pp-body{font-size:12.5px;line-height:1.5}
+#port-pop .pp-row{display:flex;gap:9px;padding:4px 0;border-top:1px solid var(--line)}
+#port-pop .pp-row:first-child{border-top:none;padding-top:2px}
+#port-pop .pp-k{flex:0 0 78px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:9.5px;padding-top:2px}
+#port-pop .pp-v{flex:1;color:var(--ink);font-weight:500}
+#port-pop .pp-sig{margin-top:9px;color:var(--ink);font-size:12.5px;line-height:1.52}
+#port-pop .pp-recent{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--ink-2);font-size:12px;line-height:1.5}
+#port-pop .pp-recent b{color:var(--ink-2);font-weight:700}
+#port-pop .pp-live{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;padding:9px;border-radius:9px;background:#0d5860;color:#fff;font-weight:700;font-size:12px;text-decoration:none}
+#port-pop .pp-live:hover{background:#0a4a52}
+#port-pop .pp-load,#port-pop .pp-none{color:var(--ink-2);font-size:12px;display:flex;align-items:center;gap:8px;padding:6px 0}
+#port-pop .pp-none{color:var(--ink-3)}
 .brief-lede{font-size:14px;line-height:1.6;color:#2b333c;margin:0 0 11px}
 .brief-lede:last-child{margin-bottom:0}
 .brief-points{list-style:none;margin:0;padding:0}
@@ -3085,7 +3107,7 @@ function startGlobePulse(){
 }
 function stopGlobePulse(){ if(_gPulseRAF){ cancelAnimationFrame(_gPulseRAF); _gPulseRAF=null; } }
 function straitsGeoGL(){ return {type:"FeatureCollection",features:(typeof STRAIT_DEFS!=="undefined"?STRAIT_DEFS:[]).map(s=>({type:"Feature",geometry:{type:"Point",coordinates:[s.lng,s.lat]},properties:{name:s.name}}))}; }
-function portsGeoGL(){ const feats=[]; if(typeof PORTS!=="undefined") Object.keys(PORTS).forEach(cn=>PORTS[cn].forEach(p=>feats.push({type:"Feature",geometry:{type:"Point",coordinates:[p[2],p[1]]},properties:{name:p[0]}}))); return {type:"FeatureCollection",features:feats}; }
+function portsGeoGL(){ const feats=[]; if(typeof PORTS!=="undefined") Object.keys(PORTS).forEach(cn=>PORTS[cn].forEach(p=>feats.push({type:"Feature",geometry:{type:"Point",coordinates:[p[2],p[1]]},properties:{name:p[0],country:cn}}))); return {type:"FeatureCollection",features:feats}; }
 function makeAnchorIcon(){
   const R=2, sz=28, cv=document.createElement("canvas"); cv.width=cv.height=sz*R; const ctx=cv.getContext("2d"); ctx.scale(R,R);   // 2x -> crisp on retina
   ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="19px 'Segoe UI Symbol','Segoe UI Emoji','Apple Color Emoji',sans-serif";
@@ -3198,11 +3220,18 @@ async function showMap(proj){          // proj: "globe" | "flat"
     mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const pick=fs.find(f=>+((f.properties||{}).read)===0)||fs[0]; const ev=EVENTS.find(x=>x.id===pick.properties.id); if(ev){ selectEvent(ev); return; } } }
+      // A port anchor -> its profile popup. queryRenderedFeatures only returns VISIBLE features, so a hidden
+      // ports layer never fires. A small box around the point makes the little anchor easy to hit.
+      if(mlMap.getLayer("g-ports-pt")){ const box=[[e.point.x-8,e.point.y-8],[e.point.x+8,e.point.y+8]]; const ps=mlMap.queryRenderedFeatures(box,{layers:["g-ports-pt"]}); if(ps && ps.length){ const pr=ps[0].properties||{}; const g=(ps[0].geometry&&ps[0].geometry.coordinates)||[e.lngLat.lng,e.lngLat.lat]; openPort(pr.name||"", pr.country||"", g[0], g[1], e.point.x, e.point.y); return; } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
     });
-    mlMap.on("mousemove",(e)=>{ if(!mlMap.getLayer("g-events")) return; const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); const over=(fs&&fs.length); mlMap.getCanvas().style.cursor=over?"pointer":"";
+    mlMap.on("mousemove",(e)=>{
+      const fs = mlMap.getLayer("g-events") ? mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}) : [];
+      const overDot = fs && fs.length;
+      const overPort = !overDot && mlMap.getLayer("g-ports-pt") && mlMap.queryRenderedFeatures([[e.point.x-6,e.point.y-6],[e.point.x+6,e.point.y+6]],{layers:["g-ports-pt"]}).length;
+      mlMap.getCanvas().style.cursor = (overDot||overPort) ? "pointer" : "";
       // Hover = intent to click: warm the dot the cursor settles on so its photo + story are ready instantly.
-      if(over){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ clearTimeout(_hoverWarmT); _hoverWarmT=setTimeout(()=>{ try{ warmPhoto(ev); warmStory(ev); }catch(_){} }, 90); } } });
+      if(overDot){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ clearTimeout(_hoverWarmT); _hoverWarmT=setTimeout(()=>{ try{ warmPhoto(ev); warmStory(ev); }catch(_){} }, 90); } } });
   } else {
     setTimeout(()=>{ try{ mlMap.resize(); }catch(e){} }, 30);
     if(mlLoaded){ applyProj(); updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); startGlobePulse(); }
@@ -4818,6 +4847,57 @@ function flagifyText(str){
 }
 function flagImg(iso){ if(!iso) return ""; const c=iso.toLowerCase(); if(FLAGS[c]) return FLAGS[c]; return '<img class="flag flag-img" loading="lazy" decoding="async" src="https://flagcdn.com/'+c+'.svg" alt="" onerror="this.style.display=\'none\'">'; }
 function shortCountry(n){ return n==="United States of America"?"the United States":n; }
+// A clicked seaport -> a profile popup (the country-panel idea, for a port): type, when it opened, operator,
+// annual throughput, approx ships/day, why it matters + a recent development, plus a one-tap link to a live
+// ship tracker (MarineTraffic centred on the port). The facts are AI-generated + cached weekly on the backend.
+const openPort = (function(){
+  let el=null, token=0, bound=false;
+  function ensure(){
+    if(el) return el;
+    el=document.createElement("div"); el.id="port-pop"; document.body.appendChild(el);
+    if(!bound){ bound=true;
+      document.addEventListener("keydown", e=>{ if(e.key==="Escape" && el && el.classList.contains("show")){ e.stopPropagation(); hide(); } });
+      document.addEventListener("mousedown", e=>{ if(el && el.classList.contains("show") && !el.contains(e.target)) hide(); }, true);
+    }
+    return el;
+  }
+  function hide(){ if(el){ el.classList.remove("show"); token++; } }
+  function place(sx,sy){ const w=el.offsetWidth||300, h=el.offsetHeight||220;
+    let x=(sx==null)?(innerWidth/2-w/2):(sx+16), y=(sy==null)?90:(sy-12);
+    if(sx!=null && x+w>innerWidth-10) x=sx-w-16;                 // flip to the other side of the anchor if it'd overflow
+    x=Math.max(10,Math.min(x,innerWidth-w-10)); y=Math.max(10,Math.min(y,innerHeight-h-10));
+    el.style.left=x+"px"; el.style.top=y+"px";
+  }
+  function rows(d){
+    const r=[]; const add=(k,v)=>{ if(v) r.push(`<div class="pp-row"><span class="pp-k">${k}</span><span class="pp-v">${esc(v)}</span></div>`); };
+    add("Type",d.type); add("Opened",d.opened); add("Operator",d.operator); add("Throughput",d.throughput); add("Ships/day",d.ships_per_day);
+    let html=r.join("");
+    if(d.significance) html+=`<div class="pp-sig">${esc(d.significance)}</div>`;
+    if(d.recent) html+=`<div class="pp-recent"><b>Recent:</b> ${esc(d.recent)}</div>`;
+    if(!r.length && !d.significance && !d.recent) html=`<div class="pp-none">No profile is available for this port yet.</div>`;
+    return html;
+  }
+  return function(name, country, lng, lat, sx, sy){
+    if(!name) return;
+    ensure(); const my=++token;
+    const track=`https://www.marinetraffic.com/en/ais/home/centerx:${(+lng).toFixed(3)}/centery:${(+lat).toFixed(3)}/zoom:12`;
+    const coLine=(extra)=>`${flagImg((typeof ISO2!=="undefined"&&ISO2[country])||"")}<span>${esc(shortCountry(country||""))}${extra?" · "+esc(extra):""}</span>`;
+    el.innerHTML=`<button class="pp-x" aria-label="Close">×</button>
+      <div class="pp-head"><span class="pp-anchor">&#9875;</span><div><div class="pp-name">${esc(name)}</div><div class="pp-co" id="pp-co">${coLine("")}</div></div></div>
+      <div class="pp-body" id="pp-body"><div class="pp-load"><span class="spin"></span> Loading port profile…</div></div>
+      <a class="pp-live" href="${esc(track)}" target="_blank" rel="noopener">&#9875; See live ships &#8599;</a>`;
+    el.querySelector(".pp-x").onclick=hide;
+    el.classList.add("show"); place(sx,sy);
+    const api=aiBridge();
+    const body=el.querySelector("#pp-body");
+    if(!(api && api.port_profile)){ body.innerHTML=`<div class="pp-none">Port profiles need the desktop app.</div>`; return; }
+    Promise.resolve(api.port_profile(name, country||"")).then(d=>{
+      if(my!==token) return; d=d||{};
+      if(d.waters){ const co=el.querySelector("#pp-co"); if(co) co.innerHTML=coLine(d.waters); }
+      body.innerHTML=rows(d); place(sx,sy);
+    }).catch(()=>{ if(my===token) body.innerHTML=`<div class="pp-none">Couldn't load this port's profile.</div>`; });
+  };
+})();
 
 /* ----------------------------- BRIEFING ----------------------------- */
 const briefScope=document.getElementById("brief-scope");

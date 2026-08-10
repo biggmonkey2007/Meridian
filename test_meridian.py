@@ -1514,6 +1514,21 @@ def main():
                       "a muted source must be filtered on domain/name/url, and only that source"))
     print(f"  {'ok ' if _mute_ok else 'FAIL'} guardian+gateway-pundit muted; bbc/antiwar kept; mutes={sorted(app._muted_sources())}")
 
+    # PORT PROFILE — the JSON extractor keeps only the expected string fields (ignoring junk / markdown fences)
+    # and returns None on non-JSON, so a bad model reply degrades to "no profile" instead of crashing the popup.
+    print("\n=== PORT PROFILE (json extractor) ===")
+    _pj = app._port_json('```json\n{"type":"Container & transshipment","opened":"2007","throughput":"~5M TEU (2023)","ships_per_day":"~40","junk":123,"significance":"Major hub"}\n```')
+    _port_ok = (isinstance(_pj, dict) and _pj.get("type") == "Container & transshipment"
+                and _pj.get("opened") == "2007" and "junk" not in _pj
+                and set(_pj.keys()) <= {"type", "opened", "operator", "throughput", "ships_per_day", "significance", "recent", "waters"}
+                and app._port_json("no json here at all") is None
+                and app._port_json('{"nothing":"useful"}') is None)   # no expected field -> None
+    ran[0] += 1
+    if not _port_ok:
+        fails.append(("port", "json", "clean fields, None on junk", str(_pj),
+                      "port_json must keep only the expected string fields and reject non-JSON"))
+    print(f"  {'ok ' if _port_ok else 'FAIL'} port json -> {_pj}")
+
     # FINISH THE BRIEF — a summary must never end mid-sentence. _finish_brief trims a dangling tail back to the
     # last full sentence, but leaves an already-complete brief (and a short whole one) untouched.
     print("\n=== FINISH BRIEF (no summary ends mid-sentence) ===")
@@ -1763,7 +1778,8 @@ def main():
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 5)   # + finish-brief (a summary never ends mid-sentence: 5 cases)
+             + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
+             + 1)   # + port-profile json extractor
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
