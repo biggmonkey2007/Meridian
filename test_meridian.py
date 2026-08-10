@@ -1699,6 +1699,10 @@ def main():
     _v1 = app._strip_lead_flag("President Trump via Truth Social: I see that Iran is asking for reparations.")
     _v2 = app._sharpen_desc("Netanyahu via Telegram: Our forces are ready for any scenario.")
     _v3 = app._strip_lead_flag("A report on climate change: the data is clear.")   # 'on <topic>:' is not a platform -> kept
+    # A speaker's "Name: quote" opener becomes reported speech; a topic label ('Gaza:', 'BREAKING:') is left alone.
+    _s1 = app._fix_speaker_colon("Former Israeli PM Naftali Bennett: Qatar is defeating Israel.")
+    _s2 = app._fix_speaker_colon("Trump to Axios: We are low-keying it with Iran.")   # outlet dropped, opener lowered
+    _s3 = app._fix_speaker_colon("Gaza: 20 killed in an overnight strike.")           # topic label, not a speaker
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
@@ -1710,7 +1714,10 @@ def main():
                  and _f3.startswith("US - based")                       # a real "US - " (no emoji) is left alone
                  and _v1.startswith("I see that")                        # "President Trump via Truth Social:" stamp dropped
                  and _v2.startswith("Our forces")                       # "Netanyahu via Telegram:" stamp dropped in an RSS desc too
-                 and _v3.startswith("A report on climate"))             # ordinary 'on <topic>:' prose is untouched
+                 and _v3.startswith("A report on climate")              # ordinary 'on <topic>:' prose is untouched
+                 and _s1 == "Former Israeli PM Naftali Bennett says Qatar is defeating Israel."  # colon -> reported speech
+                 and _s2 == "Trump says we are low-keying it with Iran."  # "to Axios" outlet dropped, "We"->"we"
+                 and _s3 == "Gaza: 20 killed in an overnight strike.")   # a topic label is NOT a speaker -> untouched
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",

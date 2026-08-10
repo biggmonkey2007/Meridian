@@ -115,7 +115,7 @@ header{
 
 /* ---------- Map ---------- */
 #stage{position:absolute;inset:54px 0 0 0}
-#map{width:100%;height:100%;display:block;background:var(--ocean);cursor:grab;touch-action:none}
+#map{width:100%;height:100%;display:block;background:var(--ocean);cursor:default;touch-action:none}
 #map.grabbing{cursor:grabbing}
 .country{fill:var(--land);stroke:var(--border);stroke-width:.8;vector-effect:non-scaling-stroke;transition:fill .15s ease}
 .country:hover{fill:#F0F5FB}
@@ -506,9 +506,15 @@ body.topo-active .zoomers{bottom:130px}
 }
 
 /* ===== MapLibre relief basemap overrides ===== */
-#map{position:absolute;inset:0;width:100%;height:100%;background:#e9edf1;cursor:grab;z-index:0;isolation:isolate}
-#globe{position:absolute;inset:0;width:100%;height:100%;background:radial-gradient(120% 120% at 60% 35%,#1b2740 0%,#0a0e17 60%,#05070c 100%);z-index:0;isolation:isolate;display:none;cursor:grab}
+#map{position:absolute;inset:0;width:100%;height:100%;background:#e9edf1;cursor:default;z-index:0;isolation:isolate}
+#globe{position:absolute;inset:0;width:100%;height:100%;background:radial-gradient(120% 120% at 60% 35%,#1b2740 0%,#0a0e17 60%,#05070c 100%);z-index:0;isolation:isolate;display:none;cursor:default}
 #globe canvas{display:block}
+/* Default cursor is the normal arrow; it becomes the "grabbing" hand ONLY while a drag/pan is in progress
+   (MapLibre's :active). Overrides MapLibre's own CSS, which otherwise shows the open "grab" hand at rest. */
+.maplibregl-canvas-container.maplibregl-interactive,
+.maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas{cursor:default}
+.maplibregl-canvas-container.maplibregl-interactive:active,
+.maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas:active{cursor:grabbing}
 #globe .maplibregl-ctrl-attrib{background:rgba(10,15,24,.6)}
 #globe .maplibregl-ctrl-attrib a{color:#9fb0c4}
 /* flags in the 24h briefing list */
@@ -883,7 +889,9 @@ body.topo-active .zoomers{bottom:130px}
 .react-pop.show{display:flex}
 .react-pop button{border:none;background:transparent;font-size:21px;line-height:1;width:34px;height:34px;border-radius:50%;cursor:pointer;transition:transform .1s ease,background .12s;padding:0}
 .react-pop button:hover{background:var(--chip);transform:scale(1.25)}
-.wpost-react{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:2px 9px;background:var(--chip);border:1px solid var(--line);border-radius:12px;font-size:13.5px;line-height:1.35;cursor:pointer;user-select:none}
+/* Its own line, hugging the LEFT (width:fit-content makes the flex box block-level + shrink to content) so a
+   reaction always starts at the left and grows rightward — never floating wherever the media above it ended. */
+.wpost-react{display:flex;width:fit-content;align-items:center;gap:4px;margin-top:7px;margin-right:auto;padding:2px 9px;background:var(--chip);border:1px solid var(--line);border-radius:12px;font-size:13.5px;line-height:1.35;cursor:pointer;user-select:none}
 .wpost-react:hover{border-color:var(--ink-3)}
 .wpost-img{margin-top:8px;border-radius:9px;max-width:100%;display:block;max-height:200px;object-fit:cover}
 @media (max-width:520px){.wire{width:100vw;max-width:100vw;min-width:0}}
@@ -4252,22 +4260,25 @@ function bodyMinusHeadline(title, text){
   }
   return full;
 }
-// When several outlets covered the SAME event, the dot is merged (backend _merge_same_event) and carries
-// them all in d.sources. List them under the story — first reporter marked — so nothing is hidden and the
-// reader can jump to any outlet. Shown only when there's more than one (a lone source needs no list).
-function sourcesHtml(d){
+// Deduped list of the outlets that covered this event, EARLIEST first (the first reporter leads). hrs is
+// "hours ago", so the largest hrs is earliest; an unknown time sorts last. One row per outlet.
+function eventSources(d){
   let ss = (Array.isArray(d.sources) ? d.sources.slice() : []).filter(s=>s && s.name);
-  // FIRST = whoever reported EARLIEST, strictly by time. hrs is "hours ago", so the LARGEST hrs is the
-  // earliest; an unknown time (null) is treated as most-recent so it can never steal the "first" badge.
   ss.sort((a,b)=> ((b.hrs==null?-1:b.hrs) - (a.hrs==null?-1:a.hrs)));
-  const seen=new Set(); ss = ss.filter(s=>{ const k=String(s.name).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });  // one row per outlet
+  const seen=new Set();
+  return ss.filter(s=>{ const k=String(s.name).trim().toLowerCase(); if(!k||seen.has(k)) return false; seen.add(k); return true; });
+}
+// When several outlets covered the SAME event, the dot is merged (backend _merge_same_event) and carries
+// them all in d.sources. List them under the story so nothing is hidden and the reader can jump to any
+// outlet. The FIRST spot is the first reporter (no badge needed — the position says it). Shown only when
+// there's more than one; the sole source is already named in the "Read the original at X" button.
+function sourcesHtml(d){
+  const ss = eventSources(d);
   if(ss.length < 2) return "";
-  // Compact: a wrapped row of small outlet chips instead of tall full-width rows. The first reporter is
-  // tagged; each source's exact time rides along in the hover/long-press title so the row stays clean.
-  const chips = ss.map((s,i)=>{
+  const chips = ss.map((s)=>{
     const when = (s.hrs!=null) ? timeAgo(Date.now()-s.hrs*3600000) : "";
     const title = esc(s.name + (when?" · "+when:""));
-    const inner = `${esc(s.name)}${i===0?`<span class="sc-first">first</span>`:""}`;
+    const inner = esc(s.name);
     return s.url ? `<a class="src-chip" href="${esc(s.url)}" target="_blank" rel="noopener" title="${title}">${inner}</a>`
                  : `<span class="src-chip" title="${title}">${inner}</span>`;
   }).join("");
@@ -4276,6 +4287,9 @@ function sourcesHtml(d){
 async function renderRealEvent(d){
   try{ stopSpeech(); }catch(e){}      // also resets the button and kills the keepalive
   const src = d.source || d.domain || (d.src&&d.src[0]) || "the source";
+  // When the "Covered by" chips are shown, the primary source already appears there (first) — so the read
+  // button drops "at <source>" to avoid citing the same outlet twice. A lone source keeps its name here.
+  const _multiSrc = eventSources(d).length >= 2;
   const involvedHtml = (d.involved||[d.country]).filter(Boolean).map(c=>`<span class="evt-co">${flagImg(ISO2[c]||"")}${esc(coName(c))}</span>`).join("");
   dBody.innerHTML=`
     ${heroBanner(d)}
@@ -4302,7 +4316,7 @@ async function renderRealEvent(d){
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
-    <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:11px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
+    <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:11px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original${_multiSrc?"":` at ${esc(src)}`} <span style="font-size:15px">↗</span></a>
   `;
   openDetail();
   dBody.scrollTop=0;

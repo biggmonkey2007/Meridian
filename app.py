@@ -326,7 +326,7 @@ def _summarize(title, text):
     cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
-            return json.load(open(cache, encoding="utf-8")).get("s", "")
+            return _fix_speaker_colon(json.load(open(cache, encoding="utf-8")).get("s", ""))
         except Exception:
             pass
     system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write clean, original, "
@@ -411,6 +411,7 @@ def _summarize(title, text):
     s = re.sub(r"(?im)^\s*(WHERE|SCOPE):.*$", "", s).strip()   # strip both metadata lines from the brief
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     s = _finish_brief(s)                                        # never leave a brief cut off mid-sentence
+    s = _fix_speaker_colon(s)                                   # "Bennett: Qatar is…" -> "Bennett says Qatar is…"
     if where or scope:
         try:
             json.dump({"p": where, "sc": scope}, open(_aiwhere_path(title), "w", encoding="utf-8"))
@@ -534,6 +535,47 @@ def _strip_lead_flag(t):
     return stripped
 
 
+# Role words that mark the text before a colon as a SPEAKER's label, not a topic tag. A statement that opens
+# "Former Israeli PM Naftali Bennett: Qatar is…" reads as a raw label; turning the colon into reported speech
+# ("… Bennett says Qatar is…") is cleaner while keeping the quote verbatim.
+_TITLE_WORDS = {"pm", "president", "minister", "secretary", "chancellor", "premier", "spokesman",
+                "spokeswoman", "spokesperson", "ambassador", "envoy", "general", "chief", "leader",
+                "official", "officials", "senator", "governor", "mayor", "king", "queen", "prince",
+                "pope", "ayatollah", "chairman", "chairwoman", "commander", "ceo", "director", "diplomat",
+                "adviser", "advisor", "aide", "representative", "congressman", "congresswoman", "lawmaker",
+                "judge", "justice", "admiral", "colonel", "captain", "sheikh", "emir", "sultan", "premier"}
+_SPEAKER_COLON = re.compile(r"^\s*([^:\n]{2,70}?)\s*:\s+(?=[\"'“(\w])")
+_TO_OUTLET = re.compile(r"\s+to\s+[A-Z][\w'’&.\-]*(?:\s+[A-Z][\w'’&.\-]*){0,2}$")   # "Trump TO AXIOS" -> the outlet
+# A quote that begins with one of these reads better lowercased after "says" ("says we will…"); a proper noun
+# ("says Qatar is…") is not here, so it keeps its capital. "I" is deliberately absent — it stays capitalised.
+_COMMON_LOWER = {"we", "our", "they", "their", "them", "it", "its", "this", "that", "there", "he", "she",
+                 "you", "your", "his", "her", "my", "the", "a", "an", "but", "and", "so", "if", "as", "at"}
+
+
+def _fix_speaker_colon(text):
+    """A verbatim statement that opens 'Speaker Title Name: <quote>' reads as a raw label. Turn the colon into
+    natural reported speech — 'Speaker Title Name says <quote>' — keeping the quote itself verbatim. Fires only
+    when the pre-colon attribution is short AND is a speaker: it names a ROLE (PM/President/Minister/Spokesman…)
+    or a KNOWN official. So 'BREAKING:', 'Gaza:', 'Note:' and a plain topic label are left alone."""
+    m = _SPEAKER_COLON.match(text or "")
+    if not m:
+        return text
+    attrib = m.group(1).strip()
+    if not re.search(r"[A-Za-z0-9]$", attrib):        # attribution must end on a word (a name), not punctuation
+        return text
+    words = re.findall(r"[A-Za-z]+", attrib.lower())
+    if not (1 <= len(words) <= 9):
+        return text
+    if not (any(w in _TITLE_WORDS for w in words) or _onrecord_statement_country(text) is not None):
+        return text
+    attrib = _TO_OUTLET.sub("", attrib).strip() or attrib     # "Trump to Axios" -> "Trump" (outlet is the Source)
+    rest = text[m.end():]
+    lead = re.match(r"[A-Za-z]+", rest)
+    if lead and lead.group(0).lower() in _COMMON_LOWER:       # lowercase a common opener; proper nouns keep caps
+        rest = rest[0].lower() + rest[1:]
+    return attrib + " says " + rest
+
+
 def _end_stop(t):
     """Give a wire line a terminal full stop when it ends mid-air. Many channel posts ship a headline with
     no end punctuation ('… settlers attack civilians in Nablus and Bethlehem'); a lone period reads far
@@ -587,7 +629,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return _end_stop(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))
+    return _end_stop(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())))
 
 
 def _tg_fetch(ch):
@@ -761,6 +803,7 @@ def _sharpen_desc(text, n=460):
     description keeps its period; a truly truncated one loses it and the UI adds an ellipsis instead."""
     t = _strip_lead_flag(_CREDIT_BRACKET.sub(" ", _strip_promo(text or "")))
     t = re.sub(r"\s{2,}", " ", t).strip()
+    t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     return _clip(_end_stop(t), n)
 
 
