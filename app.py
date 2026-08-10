@@ -4525,6 +4525,10 @@ WORLD_FEEDS = [
     # Reuters killed its own public RSS in 2020, so pull its wire via a Google-News site filter. Reuters also
     # arrives through GDELT; the same-event merge folds any overlap into one dot (whichever reported first).
     ("https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en", "United Kingdom"),
+    # AP — the other gold-standard wire legacy media pay for; no reliable public RSS, so same Google-News path.
+    ("https://news.google.com/rss/search?q=site:apnews.com+when:1d&hl=en-US&gl=US&ceid=US:en", "United States of America"),
+    # PBS NewsHour — non-profit public broadcast, fact-checked, no clickbait (joins NPR below).
+    ("https://www.pbs.org/newshour/feeds/rss/headlines", "United States of America"),
     ("https://news.antiwar.com/feed/", "United States of America"),
     ("https://feeds.bbci.co.uk/news/world/rss.xml", "United Kingdom"),
     ("https://www.theguardian.com/world/rss", "United Kingdom"),

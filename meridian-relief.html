@@ -1564,9 +1564,16 @@ function tuneVectorStyle(style){
     if(l.id==="boundary_country_outline"){
       l.paint = Object.assign({}, l.paint, {"line-color":"#f3efed", "line-opacity":0.5});
     }
-    // Body-of-water names (seas/oceans) read too faint — darken ~15% so "Baltic Sea" etc. are legible.
-    if(l.id==="watername_ocean" || l.id==="watername_sea"){
-      l.paint = Object.assign({}, l.paint, {"text-color":"#909ba3"});
+    // Body-of-water names (seas/oceans/lakes). Positron labels each water body ONCE, near its centre, and only
+    // within a narrow native zoom band — so when you pan or zoom into part of a sea its name is off-screen and
+    // it's hard to find. Widen the band (appear earlier at z2, and never cap out) and darken/halo them so
+    // "Baltic Sea", "Persian Gulf" etc. stay legible across zooms. Line-placed names (straits, big rivers)
+    // also get a tighter symbol-spacing so the name repeats along the feature instead of showing just once.
+    if(l["source-layer"]==="water_name" || /^watername/.test(l.id)){
+      l.minzoom = 2;
+      if(l.maxzoom!==undefined) delete l.maxzoom;
+      l.layout = Object.assign({}, l.layout, {"symbol-spacing":300, "text-max-width":7});
+      l.paint  = Object.assign({}, l.paint,  {"text-color":"#8a97a0","text-halo-color":"#ffffff","text-halo-width":1.2,"text-halo-blur":0.3,"text-opacity":1});
     }
   });
   return style;
