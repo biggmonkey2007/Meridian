@@ -439,7 +439,7 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
    (theme-aware panel) with the map's own hypsometric ramp as the bar. */
 #elev-legend{position:fixed;right:14px;bottom:14px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
 /* On the Topographic map the elevation scale takes the bottom-right corner and the zoom buttons sit above it */
-body.topo-active .zoomers{bottom:146px}
+body.topo-active .zoomers{bottom:130px}
 #elev-legend .el-cap{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
 #elev-legend .el-body{display:flex;gap:5px;align-items:stretch}
 #elev-legend .el-bar{width:9px;height:76px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(20,30,40,.14);background:linear-gradient(to top,#84a862 0%,#c7c886 11.5%,#d3bd83 21%,#c39f72 35%,#a9855f 50%,#8f7358 65%,#c2b6ab 81%,#f3f3f3 100%)}
@@ -2918,28 +2918,24 @@ function setGlobeBasemap(k){
       }
       const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
       if(isTopo){
-        // TRUE TOPOGRAPHY — colour by ELEVATION LEVELS off a real DEM (AWS Terrarium), plus a crisp DEM
-        // hillshade. GPU-rendered from the elevation model, so it's razor-sharp at every zoom: green lowlands
-        // -> tan uplands -> brown mountains -> snow peaks, with the relief carved in. Our English labels + the
-        // blue vector sea sit on top. (No pre-rendered terrain raster — those were slow, muddy or chunky.)
+        // TRUE TOPOGRAPHY — colour by ELEVATION LEVELS off a real DEM (AWS Terrarium): green lowlands -> tan
+        // uplands -> brown mountains -> snow peaks, GPU-rendered so the levels are clean and sharp. ONE pass
+        // (color-relief) — the separate DEM hillshade was dropped: it doubled the per-tile GPU work AND its
+        // fine ridge texture was the "over-detailed" busyness. Smooth hypsometric bands read the topography
+        // clearly and cheaply. Our English labels + the blue vector sea sit on top.
         if(!mlMap.getSource("g-dem")){
-          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:512,maxzoom:10});   // 512px tiles + cap z10 = ~1/4 the tile requests (the biggest cost is fetching+decoding each DEM tile). Over-zooms cleanly; relief stays smooth.
+          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:512,maxzoom:9});   // 512px tiles + cap z9 = ~1/4 the tiles AND coarser/smoother -> far less fetch+decode lag. Over-zooms cleanly.
         }
-        // color-relief = hypsometric tint by height. New in MapLibre v5.6; guard it, and the DEM hillshade
-        // below still gives clean relief if this engine build lacks it.
+        // color-relief = hypsometric tint by height. New in MapLibre v5.6; guard it (falls back to green land).
         try{
           if(!mlMap.getLayer("g-relief")) mlMap.addLayer({id:"g-relief",type:"color-relief",source:"g-dem",paint:{
-            "color-relief-opacity":0.9,
+            "color-relief-opacity":0.95,
             "color-relief-color":["interpolate",["linear"],["elevation"],
               -400,"#6f9a55", 1,"#84a862", 250,"#a9c078", 600,"#c7c886", 1100,"#d3bd83",
               1800,"#c39f72", 2600,"#a9855f", 3400,"#8f7358", 4200,"#c2b6ab", 5200,"#f3f3f3"]
           }}, belowWater);
         }catch(_){}
-        try{
-          if(!mlMap.getLayer("g-hillshade")) mlMap.addLayer({id:"g-hillshade",type:"hillshade",source:"g-dem",paint:{
-            "hillshade-exaggeration":0.55,"hillshade-shadow-color":"rgba(52,44,30,0.55)","hillshade-highlight-color":"rgba(255,255,250,0.4)","hillshade-accent-color":"rgba(90,80,60,0.25)"}}, belowWater);
-        }catch(_){}
-        tuneCartoForTopoVector();   // blue vector sea + stronger label halos over the relief
+        tuneCartoForTopoVector();   // blue vector sea + stronger label halos over the levels
       } else if(layers.shade && !mlMap.getSource("g-shade")){
         // CLEAN RELIEF — subtle hillshade. GLOBE (z<5): one fixed z4 tile so it can't seam; ZOOMED IN: multi-zoom.
         mlMap.addSource("g-shade-globe",{type:"raster",tiles:[HILLSHADE],tileSize:256,minzoom:4,maxzoom:4});
@@ -2997,6 +2993,7 @@ function setGlobeBasemap(k){
   }
   if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // soft-white dot ring on satellite, white elsewhere
   { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } document.body.classList.toggle("topo-active", k==="topo"); }   // elevation scale bottom-right, zoom buttons lift above it — Topographic only
+  try{ mlMap.setMaxZoom(k==="topo" ? 11 : 16); if(mlMap.getZoom() > (k==="topo"?11:16)) mlMap.setZoom(k==="topo"?11:16); }catch(e){}   // cap how far Topographic zooms — the DEM detail (and the lag) doesn't need to go past ~city scale
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
   _worldWarmed = false;
