@@ -4876,7 +4876,7 @@ const openPort = (function(){
     let html="";
     if(d.rank) html+=`<div class="pp-rank">${esc(d.rank)}</div>`;    // the "cool" ranking/superlative, up top
     const r=[]; const add=(k,v)=>{ if(v) r.push(`<div class="pp-row"><span class="pp-k">${k}</span><span class="pp-v">${esc(v)}</span></div>`); };
-    add("Type",d.type); add("Opened",d.opened); add("Operator",d.operator); add("Throughput",d.throughput); add("Ships/day",d.ships_per_day);
+    add("Type",d.type); add("Founded",d.opened); add("Operator",d.operator); add("Throughput",d.throughput); add("Berths",d.berths); add("Ships/day",d.ships_per_day);
     html+=r.join("");
     if(d.significance) html+=`<div class="pp-sig">${esc(d.significance)}</div>`;
     if(d.recent) html+=`<div class="pp-recent"><b>Recent:</b> ${esc(d.recent)}</div>`;

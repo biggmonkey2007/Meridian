@@ -1529,11 +1529,30 @@ def main():
                 and app._port_json('{"nothing":"useful"}') is None      # no expected field -> None
                 and "Middle East" in _pb.get("rank", "") and _pb.get("waters") and _pb.get("type")   # curated -> ranking + waters
                 and _pb2.get("type") and _pb2.get("significance"))       # unknown -> still a usable baseline
+    # INFOBOX FACTS — real basic facts (founded/type/operator/throughput/berths) parsed from a Wikipedia
+    # infobox, de-wikified: {{Start date}} -> year, [[link|text]] -> text, a bare-year "throughput" dropped.
+    _wt = ("{{Infobox port\n| name = Port of Testville\n| opened = {{Start date|1965}}\n"
+           "| type = [[Container port]]\n| operated = [[DP World|DP World Ltd]]\n"
+           "| containervolume = 13.7 million TEU (2021) up 1.9% year-on-year<ref>x</ref>\n"
+           "| berths = 67\n}}\nLead paragraph text here.")
+    _if = app._port_infobox_facts(_wt)
+    _if_junk = app._port_infobox_facts("{{Infobox port\n| containervolume = (2025)\n| name = X\n}}")
+    _if_ok = (_if.get("opened") == "1965" and _if.get("type") == "Container port"
+              and _if.get("operator") == "DP World Ltd"
+              and _if.get("throughput") == "13.7 million TEU (2021)"     # tail + ref trimmed
+              and _if.get("berths") == "67"
+              and "throughput" not in _if_junk                            # a bare year is not a throughput
+              and app._infobox_map("no infobox here") == {})
     ran[0] += 1
     if not _port_ok:
         fails.append(("port", "json+baseline", "clean fields + baseline for every port", str([_pj, _pb, _pb2]),
                       "port_json keeps expected fields; _port_baseline always yields content"))
     print(f"  {'ok ' if _port_ok else 'FAIL'} port json + baseline (Jebel Ali rank='{_pb.get('rank','')[:32]}')")
+    ran[0] += 1
+    if not _if_ok:
+        fails.append(("port", "infobox", "founded/type/operator/throughput/berths parsed + cleaned", str([_if, _if_junk]),
+                      "the Wikipedia infobox parser must de-wikify basic facts and reject junk figures"))
+    print(f"  {'ok ' if _if_ok else 'FAIL'} infobox facts -> {_if}")
 
     # FINISH THE BRIEF — a summary must never end mid-sentence. _finish_brief trims a dangling tail back to the
     # last full sentence, but leaves an already-complete brief (and a short whole one) untouched.
@@ -1785,7 +1804,8 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
              + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
-             + 1)   # + port-profile json extractor
+             + 1    # + port-profile json extractor
+             + 1)   # + port infobox facts parser
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

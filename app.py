@@ -172,7 +172,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 _DATA_VER = "d3"
 _SUM_PROMPT_VER = "11"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
-_PORT_VER = "p1"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
+_PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
 
 def _aiwhere_path(title):
@@ -2210,19 +2210,23 @@ class Api:
                 return json.load(open(cache, encoding="utf-8"))
             except Exception:
                 pass
-        # CURATED BASELINE — always present, so every port has real content even with no LLM key at all.
+        # LAYER 1 — WIKIPEDIA: a real photo + cited basic facts (founded/type/operator/throughput/berths) from
+        # the port's own article. This is the public info the user asked for, and it covers nearly every port.
         out = dict(base)
-        out.update(_port_baseline(name, country))
         try:
-            pic = _port_photo(name, country)             # a real photo from Wikipedia (its page, else the city)
-            if pic.get("url"):
-                out["photo"] = pic["url"]
-                if pic.get("title"):
-                    out["photo_title"] = pic["title"]
+            wiki = _port_wiki(name, country)
+            for k, v in wiki.items():
+                if v:
+                    out[k] = v
         except Exception:
             pass
-        # AI ENRICHMENT — only when a live key exists: adds opened/operator/throughput/ships_per_day/recent and
-        # a richer significance ON TOP of the baseline, never overriding the curated ranking/type/waters.
+        # LAYER 2 — CURATED BASELINE: the "cool" ranking/superlative + waters (+ a default type/role line),
+        # filling any gap Wikipedia left. Guarantees every port has content even if its article had no infobox.
+        for k, v in _port_baseline(name, country).items():
+            if v and not out.get(k):
+                out[k] = v
+        # LAYER 3 — AI ENRICHMENT (only when a live key exists): ships/day, recent developments, a richer
+        # significance — filling remaining gaps, never overriding the cited Wikipedia facts or curated ranking.
         where = name + (", " + country if country else "")
         data = None
         try:
@@ -2235,7 +2239,7 @@ class Api:
             data = _port_profile_llm(where)              # open model -> stable facts, figures only if known
         if data:
             for k, v in data.items():
-                if v and not out.get(k):                 # fill gaps only; keep the curated baseline
+                if v and not out.get(k):
                     out[k] = v
         try:
             json.dump(out, open(cache, "w", encoding="utf-8"))
@@ -3156,38 +3160,152 @@ def _port_baseline(name, country):
     return out
 
 
-def _port_photo(name, country):
-    """A photo of the port from Wikipedia — its own page ('Port of X' / 'X Port'), else the city page. Cached
-    30 days and self-healing the stored thumbnail, like place_photo. Returns {url,title} or {}."""
-    name = (name or "").strip()
-    country = (country or "").strip()
-    cache = os.path.join(CACHE_DIR, "portpic_" + (_slug(name + "|" + country) or "none") + ".json")
-    if _fresh(cache, 30 * 86400):
-        try:
-            cached = json.load(open(cache, encoding="utf-8"))
-            if cached.get("url"):
-                cached["url"] = _wiki_thumb(cached["url"], 1280)
-            return cached
-        except Exception:
-            pass
-    city = re.sub(r"\s*\([^)]*\)", "", name).split("/")[0].split(",")[0].strip()   # "Mumbai (JNPT)"->Mumbai, "New York/NJ"->New York
-    qs = []
-    for q in ["Port of " + city, city + " Port", "Port of " + name, city]:
-        if q and q not in qs:
-            qs.append(q)
+def _wiki_wikitext(title):
+    """Lead-section wikitext (which contains the infobox) of a Wikipedia article, or '' — for basic facts."""
+    try:
+        url = ("https://en.wikipedia.org/w/api.php?format=json&action=parse&prop=wikitext&section=0&redirects=1&page="
+               + urllib.parse.quote((title or "").replace(" ", "_")))
+        j = json.loads(_http_get(url, 15))
+        return (((j.get("parse") or {}).get("wikitext") or {}).get("*")) or ""
+    except Exception:
+        return ""
+
+
+def _wt_clean(v):
+    """De-wikify an infobox value to plain text: drop refs/comments, unwrap common templates and [[links]]."""
+    v = v or ""
+    v = re.sub(r"<!--.*?-->", "", v, flags=re.S)
+    v = re.sub(r"<ref[^>]*/>", "", v, flags=re.I)
+    v = re.sub(r"<ref[^>]*>.*?</ref>", "", v, flags=re.S | re.I)
+    v = re.sub(r"\{\{\s*convert\s*\|([^{}]*)\}\}", lambda m: " ".join(m.group(1).split("|")[:2]), v, flags=re.I)
+    v = re.sub(r"\{\{\s*(?:nowrap|nobr|nobreak|nobold|small|abbr)\s*\|([^{}]*)\}\}", r"\1", v, flags=re.I)
+    # a date template ({{Start date|1965}}, {{Start date and age|1834|...}}) -> its year, so 'opened' survives
+    v = re.sub(r"\{\{\s*(?:start[ _]?date(?:[ _]and[ _]age)?|date)\s*\|([^{}]*)\}\}",
+               lambda m: (re.findall(r"\d{3,4}", m.group(1)) or [" "])[0], v, flags=re.I)
+    for _ in range(3):                        # collapse remaining / one level of nested templates
+        v = re.sub(r"\{\{[^{}]*\}\}", " ", v)
+    v = re.sub(r"\[\[[^\]|]*\|([^\]]*)\]\]", r"\1", v)
+    v = re.sub(r"\[\[([^\]]*)\]\]", r"\1", v)
+    v = re.sub(r"\[https?://\S+\s+([^\]]*)\]", r"\1", v)
+    v = re.sub(r"\[https?://\S+\]", "", v)
+    v = re.sub(r"'{2,}", "", v)
+    v = re.sub(r"<[^>]+>", " ", v)
+    return re.sub(r"\s+", " ", v).strip(" ,;|·—-")
+
+
+def _infobox_map(wt):
+    """{normalized_field: raw_value} from the first {{Infobox …}} block, brace/bracket-depth aware so a '|'
+    inside a nested {{convert|…}} or [[link|text]] doesn't split a field."""
+    m = re.search(r"\{\{\s*Infobox\b", wt, re.I)
+    if not m:
+        return {}
+    i = m.start(); depth = 0; j = i
+    while j < len(wt) - 1:
+        two = wt[j:j+2]
+        if two == "{{":
+            depth += 1; j += 2; continue
+        if two == "}}":
+            depth -= 1; j += 2
+            if depth == 0:
+                break
+            continue
+        j += 1
+    body = wt[i+2:max(i+2, j-2)]
+    parts, cur, dc, db = [], "", 0, 0
+    k = 0
+    while k < len(body):
+        two = body[k:k+2]
+        if two == "{{": dc += 1; cur += two; k += 2; continue
+        if two == "}}": dc -= 1; cur += two; k += 2; continue
+        if two == "[[": db += 1; cur += two; k += 2; continue
+        if two == "]]": db -= 1; cur += two; k += 2; continue
+        ch = body[k]
+        if ch == "|" and dc <= 0 and db <= 0:
+            parts.append(cur); cur = ""; k += 1; continue
+        cur += ch; k += 1
+    parts.append(cur)
     out = {}
-    for q in qs:
-        j = _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(q.replace(" ", "_")))
+    for p in parts:
+        if "=" in p:
+            key, val = p.split("=", 1)
+            key = re.sub(r"\s+", "", key).lower()
+            if key:
+                out[key] = val.strip()
+    return out
+
+
+def _port_infobox_facts(wt):
+    """Basic port facts from the article's Infobox: opened/founded, type, operator, throughput, berths."""
+    f = _infobox_map(wt)
+    if not f:
+        return {}
+
+    def g(*keys):
+        for k in keys:
+            if f.get(k, "").strip():
+                c = _wt_clean(f[k])
+                if c:
+                    return c
+        return ""
+    out = {}
+    opened = g("opened", "built", "founded", "completed", "established", "constructionstartdate", "beganoperations")
+    if opened:
+        yr = re.search(r"\b(?:1[0-9]{3}|20[0-9]{2})\b", opened)
+        out["opened"] = yr.group(0) if (yr and len(opened) > 20) else opened[:48]
+    typ = g("type")
+    if typ:
+        out["type"] = typ[:48]
+    op = g("operated", "operator", "owner", "manager", "managedby", "portauthority")
+    if op:
+        out["operator"] = op[:70]
+    val = g("containervolume", "annualcontainervolume") or g("cargotonnage", "annualcargotonnage", "annualtonnage")
+    if val:
+        val = re.split(r"\s+(?:up|down|increase|decrease)\b", val, 1, flags=re.I)[0].strip(" ,;")
+        # keep only a real figure (a number + a unit), so junk like a bare "(2025)" year is dropped
+        if re.search(r"\d", val) and re.search(r"(TEU|tonne|\bton|cargo|million|billion|\bMT\b|\bm\b)", val, re.I):
+            out["throughput"] = val[:60]
+    berths = g("berths", "wharfs", "piers", "quays")
+    if berths and re.search(r"\d", berths):
+        out["berths"] = berths[:40]
+    return out
+
+
+def _port_wiki(name, country):
+    """Photo + basic facts for a port from Wikipedia, in one page resolution: the port's own article
+    ('Port of X' / 'X Port'), falling back to the city for a photo. Returns any subset of
+    {photo,photo_title,opened,type,operator,throughput,berths} — real, cited public data, no LLM."""
+    def _summary(t):
+        return _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote((t or "").replace(" ", "_")))
+    city = re.sub(r"\s*\([^)]*\)", "", name).split("/")[0].split(",")[0].strip()   # "Mumbai (JNPT)"->Mumbai, "New York/NJ"->New York
+    titles = []
+    for t in ["Port of " + city, city + " Port", "Port of " + name, name + " Port"]:
+        if t and t not in titles:
+            titles.append(t)
+    out, ptitle, pimg = {}, "", ""
+    for t in titles:
+        j = _summary(t)
         if not j or j.get("type") == "disambiguation":
             continue
+        ptitle = j.get("title") or t
         src = ((j.get("originalimage") or {}).get("source") or (j.get("thumbnail") or {}).get("source") or "")
         if src and _good_img(src):
-            out = {"url": _wiki_thumb(src, 1280), "title": j.get("title") or q}
+            pimg = src
+        facts = _port_infobox_facts(_wiki_wikitext(ptitle))
+        if facts:
+            out.update(facts)
+        if out or pimg:
             break
-    try:
-        json.dump(out, open(cache, "w", encoding="utf-8"))
-    except Exception:
-        pass
+    if not pimg and city:                          # a photo from the city page if the port article had none
+        j = _summary(city)
+        if j and j.get("type") != "disambiguation":
+            src = ((j.get("originalimage") or {}).get("source") or (j.get("thumbnail") or {}).get("source") or "")
+            if src and _good_img(src):
+                pimg = src
+                ptitle = ptitle or (j.get("title") or city)
+    if pimg:
+        out["photo"] = _wiki_thumb(pimg, 1280)
+        if ptitle:
+            out["photo_title"] = ptitle
     return out
 
 
