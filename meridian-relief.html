@@ -2862,11 +2862,17 @@ function tuneCartoForTopoVector(){
   try{ if(mlMap.getLayer("waterway")) mlMap.setPaintProperty("waterway","line-color","#88b6d4"); }catch(e){}
   // forests/parks a soft terrain green so land isn't a flat tan — reads as vegetation over the relief
   ["landcover_wood","landcover","landuse_wood","park","landcover_grass"].forEach(id=>{ try{ if(mlMap.getLayer(id)){ mlMap.setPaintProperty(id,"fill-color","#b9c79b"); mlMap.setPaintProperty(id,"fill-opacity",0.55); } }catch(e){} });
-  // REGION/BORDER lines kept but made semi-transparent so they trace the countries without fighting the
-  // elevation colours underneath — country borders faint, sub-national fainter, over a soft dark ink.
+  // REGION/BORDER lines: a CLEAN, thin, semi-transparent line that traces the countries without fighting the
+  // elevation colours. Kill any dash (it read as a thick "furry" line zoomed in), round the joins, cap the
+  // width so it stays fine at every zoom, and use a soft grey rather than near-black ink.
   _gCartoIds.forEach(id=>{ const l=mlMap.getLayer(id); if(l && l.type==="line" && /boundary|admin/.test(id)){ try{
-    mlMap.setPaintProperty(id,"line-color","#3a4048");
-    mlMap.setPaintProperty(id,"line-opacity", /country|_0|_1\b/.test(id) ? 0.42 : 0.22);
+    const country=/country|_0|_1\b/.test(id);
+    mlMap.setPaintProperty(id,"line-color","#5c636d");
+    mlMap.setPaintProperty(id,"line-opacity", country ? 0.5 : 0.28);
+    mlMap.setPaintProperty(id,"line-blur",0);
+    mlMap.setPaintProperty(id,"line-width",["interpolate",["linear"],["zoom"], 3,0.5, 7,0.8, 12,1.1]);
+    mlMap.setLayoutProperty(id,"line-cap","round"); mlMap.setLayoutProperty(id,"line-join","round");
+    try{ mlMap.setPaintProperty(id,"line-dasharray",[1,0]); }catch(_){}   // solid — no dashes to read as furry
   }catch(e){} } });
   tuneCartoForTopo();
 }
@@ -2983,7 +2989,7 @@ function setGlobeBasemap(k){
     // satellite: a FINE, restrained white line; barely grows as you zoom in
     mlMap.setPaintProperty("g-borders","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,0.5, 5,0.75, 9,1.05] : 0.7);
-    const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
+    const showB=(k!=="osmintl" && k!=="topo"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");   // topo: hide the coarse outline (it looked furry zoomed in); the clean vector border is the line, all zooms
   }
   if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
     mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");
@@ -3127,7 +3133,7 @@ async function showMap(proj){          // proj: "globe" | "flat"
     g.style.background = (mlProj==="globe") ? "" : flatBg;     // "" restores the CSS dark-space gradient for the globe
   };
   if(!mlMap){
-    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sprite:CARTO_SPRITE, sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom: mlProj==="globe"?1.5:2.4, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:mlProj==="globe", renderWorldCopies:false, maxTileCacheSize:2048, fadeDuration:300 });   // fade labels in/out on zoom instead of popping (rasters keep their own fade:0)
+    mlMap = new maplibregl.Map({ container:"globe", style:{ version:8, glyphs:"https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf", sprite:CARTO_SPRITE, sources:{}, layers:[{id:"bg",type:"background",paint:{"background-color":globeBgExpr(currentBase)}}] }, center:[14,22], zoom: mlProj==="globe"?1.5:2.4, minZoom:0.3, maxZoom:16, attributionControl:false, dragRotate:mlProj==="globe", renderWorldCopies:false, maxTileCacheSize:6000, fadeDuration:300 });   // big tile cache so a fast zoom in/out reuses the tiles it just had instead of unloading to the bare background (the topo DEM "flash")
     try{ mlMap.touchZoomRotate.disableRotation(); }catch(e){}
     try{ mlMap.scrollZoom.setWheelZoomRate(1/121); mlMap.scrollZoom.setZoomRate(1/61); }catch(e){}   // ~10% gentler zoom
     mlMap.on("error", ()=>{});
@@ -3207,7 +3213,11 @@ function renderLayers(){
   if(sel) sel.onchange = ()=> setBasemap(sel.value);
   host.querySelectorAll("[data-lyr]").forEach(n=> n.onclick = ()=> toggleLayer(n.dataset.lyr));
 }
-function setBasemap(k){ currentBase = k; applyBasemap(); if(globeMode) applyGlobeStyle(); }
+function setBasemap(k){ currentBase = k; applyBasemap(); if(globeMode) applyGlobeStyle();
+  // Elevation scale + its layout belong to Topographic ONLY — toggle here too so it can never linger on Clean
+  // relief or Satellite (flat OR globe), whatever render path a base switch takes.
+  { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } document.body.classList.toggle("topo-active", k==="topo"); }
+}
 function toggleLayer(k){
   layers[k] = !layers[k];
   const n = document.querySelector('[data-lyr="'+k+'"]');

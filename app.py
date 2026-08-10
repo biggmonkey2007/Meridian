@@ -4446,6 +4446,9 @@ def _seendate_hours(s):
 # These give REAL publisher URLs, so article_detail() resolves photos + paragraphs.
 # Each entry: (feed url, home country for headlines with no detectable place).
 WORLD_FEEDS = [
+    # Reuters killed its own public RSS in 2020, so pull its wire via a Google-News site filter. Reuters also
+    # arrives through GDELT; the same-event merge folds any overlap into one dot (whichever reported first).
+    ("https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en", "United Kingdom"),
     ("https://news.antiwar.com/feed/", "United States of America"),
     ("https://feeds.bbci.co.uk/news/world/rss.xml", "United Kingdom"),
     ("https://www.theguardian.com/world/rss", "United Kingdom"),
