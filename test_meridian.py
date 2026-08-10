@@ -203,6 +203,11 @@ GEO_CASES = [
      "...but a leader VISITING a place is AT that place (going-verbs are not deliberation)"),
     ("Rubio says the US is ready to help end the war in Ukraine", "", "United States",
      "a US official's STATEMENT about a foreign country is at their seat, even when the topic is 'located'"),
+    ("Trump to Axios: \"We are low-keying it\" with Iran", "", "United States",
+     "SHIPPED BUG: a leader's on-record COLON statement (no say-verb) dotted the topic, Iran — it's a "
+     "Washington story, and now shares the seat with the other coverage so the two merge into one dot"),
+    ("Trump: We will not allow Iran to build a bomb", "", "United States",
+     "a bare 'Leader: <quote about a foreign country>' is a statement at their seat, not the foreign topic"),
     ("Netanyahu says Israel will respond to any attack", "", "Israel",
      "...but the official's OWN country is never overridden away from itself"),
     ("Israeli shelling targets southern Lebanon despite the US-mediated framework", "", "Lebanon",
@@ -1690,6 +1695,10 @@ def main():
     _f1 = app._tg_clean("\U0001F1FE\U0001F1EA - Additional scenes from the clashes in southwest Yemen show heavy fire")
     _f2 = app._strip_lead_flag("\U0001F91D SA — Video: the Crown Prince meets the President")   # emoji + country code tag
     _f3 = app._strip_lead_flag("US - based firm expands abroad")                                     # NOT a tag (no emoji) -> untouched
+    # A reposter's "Name via Platform:" attribution stamp is dropped; ordinary prose with 'via'/'on' is kept.
+    _v1 = app._strip_lead_flag("President Trump via Truth Social: I see that Iran is asking for reparations.")
+    _v2 = app._sharpen_desc("Netanyahu via Telegram: Our forces are ready for any scenario.")
+    _v3 = app._strip_lead_flag("A report on climate change: the data is clear.")   # 'on <topic>:' is not a platform -> kept
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
@@ -1698,7 +1707,10 @@ def main():
                  and "[" not in _r2 and _r2.endswith("2026.")           # RSS credit bracket stripped
                  and _f1.startswith("Additional")                       # leading country-flag emoji tag stripped
                  and _f2.startswith("Video:")                           # emoji + "SA —" country-code tag stripped
-                 and _f3.startswith("US - based"))                      # a real "US - " (no emoji) is left alone
+                 and _f3.startswith("US - based")                       # a real "US - " (no emoji) is left alone
+                 and _v1.startswith("I see that")                        # "President Trump via Truth Social:" stamp dropped
+                 and _v2.startswith("Our forces")                       # "Netanyahu via Telegram:" stamp dropped in an RSS desc too
+                 and _v3.startswith("A report on climate"))             # ordinary 'on <topic>:' prose is untouched
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",

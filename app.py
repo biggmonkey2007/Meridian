@@ -514,6 +514,14 @@ _CREDIT_BRACKET = re.compile(
 _LEAD_FLAG  = re.compile(r"^(?:[\U0001F1E6-\U0001F1FF]\s*){1,6}[\s\-–—:|•·]*")
 _LEAD_EMOJI = re.compile(r"^(?:[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣]\s*)+")
 _LEAD_CC    = re.compile(r"^[A-Z]{2,3}(?:[ /][A-Z]{2,3}){0,3}\s*[-–—:|•·]\s+")   # a country code + dash the emoji tag left
+# A reposter's attribution STAMP on the front of a quoted statement — "President Trump via Truth Social:",
+# "Donald Trump on Truth Social —", "Netanyahu via Telegram:". The header already names the source and the
+# speaker, so this preface is just clutter in the body. Strip a leading "<name/title> via|on <platform>:".
+# Anchored to a KNOWN platform after via/on, so ordinary prose ("A report on climate change:") is untouched.
+_LEAD_VIA = re.compile(
+    r"^\s*['\"“”]?[A-Z][^:>\n]{0,60}?\s(?:via|on)\s+"
+    r"(?i:truth\s*social|telegram|twitter|facebook|instagram|threads|rumble|gab|parler|weibo|tiktok|youtube|x)"
+    r"\s*[:\-–—]\s+")
 
 
 def _strip_lead_flag(t):
@@ -521,7 +529,9 @@ def _strip_lead_flag(t):
     stripped = _LEAD_EMOJI.sub("", _LEAD_FLAG.sub("", t)).lstrip(" \t")
     if stripped != t:                       # an emoji/flag tag was removed -> a trailing country code is part of it
         stripped = _LEAD_CC.sub("", stripped)
-    return stripped.lstrip(" \t-–—:|•·")
+    stripped = stripped.lstrip(" \t-–—:|•·")
+    stripped = _LEAD_VIA.sub("", stripped)  # drop a reposter's "Name via Platform:" attribution stamp
+    return stripped
 
 
 def _end_stop(t):
@@ -6030,6 +6040,32 @@ def _deliberation_country(words):
     return None
 
 
+# A leader making an ON-THE-RECORD statement, marked by a COLON — "Trump: We'll act", "Trump to Axios: We
+# are low-keying it with Iran", "Rubio to Fox: ..." — is news at THEIR seat; the foreign country in the
+# quote is only the topic. This is the interview/quote shape the say-verb sets miss: there is no verb, just
+# the colon. Requires the leader at the very START, so a quoted foreign country ("...says: Iran will pay")
+# can't trigger it. The name run is bounded (1-4 words) and an optional "to <Outlet>" may sit before the colon.
+_ONREC_STMT = re.compile(r"^\s*([A-Za-z][\w.'’-]+(?:\s+[A-Za-z][\w.'’-]+){0,3}?)(?:\s+to\s+[A-Za-z][\w.'’&-]+)?\s*:")
+
+
+def _onrecord_statement_country(title):
+    """A national leader named at the very start of a headline, then a colon (optionally 'to <Outlet>:'), is
+    making an attributed statement — news at their OWN seat, not the foreign country the quote is about.
+    'Trump to Axios: ...with Iran' -> United States. Officials (people) only, so a country label before a
+    colon ('Iran: ...') never fires here. Returns their country, or None."""
+    m = _ONREC_STMT.match(title or "")
+    if not m:
+        return None
+    toks = m.group(1).lower().split()
+    for size in range(len(toks), 0, -1):          # longest leading name run first, then the surname alone
+        co = _OFFICIAL_COUNTRY.get(" ".join(toks[:size]))
+        if co:
+            return co
+    if toks:
+        return _OFFICIAL_COUNTRY.get(toks[-1])
+    return None
+
+
 # A STATE ORGAN, not a place. Deliberately narrow: "officials"/"authorities" are NOT here, because
 # "Israeli officials say Gaza strikes will continue" is news about Gaza.
 _STATE_BODIES = {"ministry", "ministries", "department", "government", "cabinet", "presidency",
@@ -6848,6 +6884,13 @@ def _geolocate(title, sourcecountry, desc="", url=""):
             if dc and dc in COUNTRY_COORDS and dc != best[5]:
                 la, ln = COUNTRY_COORDS[dc]
                 return la, ln, _co_short(dc), dc
+            # A leader's on-record COLON statement ("Trump to Axios: ...with Iran") is news at their seat —
+            # returns the SAME country point as a say-verb statement, so the two coverages of one statement
+            # share a place and dedup-merge into one dot instead of scattering to the foreign topic.
+            oc = _onrecord_statement_country(title)
+            if oc and oc in COUNTRY_COORDS and oc != best[5]:
+                la, ln = COUNTRY_COORDS[oc]
+                return la, ln, _co_short(oc), oc
         if not located and not _is_facility(best) and best[1] in ("country", "demonym"):
             # A named official SPEAKING/TESTIFYING is news in their OWN country — the country they name is
             # the topic. "Hegseth testifies on Iran" / "..., says Defense Secretary Hegseth" -> United States.

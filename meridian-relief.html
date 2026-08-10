@@ -399,7 +399,7 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .brief-points li.bp-why .bp-why-lbl{font-weight:800;margin-right:3px}
 /* "Covered by N sources" — every outlet that reported the same merged event, first reporter marked */
 /* Compact "Covered by" — a tidy wrapped row of outlet chips (was tall full-width rows) */
-.src-head{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.src-head{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:11px 0 7px;padding-top:10px;border-top:1px solid var(--line)}
 .src-chips{display:flex;flex-wrap:wrap;gap:6px}
 .src-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;line-height:1.5;transition:background .12s,border-color .12s}
 a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
@@ -438,6 +438,9 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 /* Elevation scale — sits just above the zoom controls, only on the Topographic basemap. Matches the UI chrome
    (theme-aware panel) with the map's own hypsometric ramp as the bar. */
 #elev-legend{position:fixed;right:14px;bottom:14px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+/* The ID rule above sets display:flex, which (higher specificity) would defeat the plain [hidden] rule and
+   keep the key permanently visible — sitting ON TOP of the zoom buttons. This makes `hidden` actually hide. */
+#elev-legend[hidden]{display:none}
 /* On the Topographic map the elevation scale takes the bottom-right corner and the zoom buttons sit above it */
 body.topo-active .zoomers{bottom:130px}
 #elev-legend .el-cap{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
@@ -836,7 +839,10 @@ body.topo-active .zoomers{bottom:130px}
 .wire{position:fixed;top:0;right:0;width:var(--wire-w,392px);min-width:320px;max-width:480px;height:100vh;background:var(--panel);color:var(--ink);z-index:1400;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(20,30,45,.13);transform:translateX(102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-left:1px solid var(--line)}
 .wire.open{transform:translateX(0)}
 /* when the article overlays the OPEN wire, it takes the wire's exact footprint (full height, same width) */
-#detail.over-wire{top:0;right:0;width:var(--wire-w,392px);height:100vh;height:100dvh;max-height:none;border-radius:0}
+/* Docked over the wire, the story is a POP-UP card: as tall as its content (never the full column of empty
+   space below it), capped at the viewport and scrolling only if the story is long. Rounded bottom-left so it
+   reads as a card floating over the feed, not a full-height sheet. */
+#detail.over-wire{top:0;right:0;width:var(--wire-w,392px);height:auto;max-height:100dvh;border-radius:0 0 0 14px}
 /* No "minimize" in this full-height over-wire panel — minimizing only hid the body and left a black sheet
    (there's nothing to collapse TO). The × closes the story, revealing the wire that's still open underneath. */
 #detail.over-wire #dmin{display:none}
@@ -921,6 +927,7 @@ body.topo-active .zoomers{bottom:130px}
 
 /* ---- clips & photos attached to a story ---- */
 .ev-media{margin-top:18px}
+.ev-media:empty{margin-top:0}   /* no wire photos -> don't reserve the 18px gap above the source/read section */
 /* Force clip videos' NATIVE controls (and the browser's buffering spinner) to the dark variant, so the
    loading throbber renders light on the dark video instead of a hard-to-see dark circle. */
 video{color-scheme:dark}
@@ -4295,7 +4302,7 @@ async function renderRealEvent(d){
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
-    <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
+    <a id="re-read-${d.id}" href="${esc(d.url)}" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:11px;padding:12px 13px;border-radius:10px;background:#22303c;color:#fff;font-weight:700;font-size:12.5px;text-decoration:none;box-shadow:0 2px 8px rgba(34,48,60,.18)">Read the original at ${esc(src)} <span style="font-size:15px">↗</span></a>
   `;
   openDetail();
   dBody.scrollTop=0;
