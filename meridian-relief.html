@@ -1731,9 +1731,9 @@ async function startMap(){
 let _baseMaxZ = 19;
 function warmTemplates(){
   const out = [];
-  if(currentBase === "clean") out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png");
-  else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }
-  if(currentBase !== "satellite") out.push(_HILLSHADE_TPL);                       // clean + topo relief = cheap ESRI raster hillshade
+  if(currentBase === "clean"){ out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"); out.push(_HILLSHADE_TPL); }
+  else if(currentBase === "topo"){ out.push(DEM_TILES); }                          // topo RENDERS the elevation DEM (color-relief) — warm THOSE tiles, not a base raster
+  else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }   // satellite / osm imagery
   return out;
 }
 const _HILLSHADE_TPL = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
@@ -1745,7 +1745,7 @@ function _runWarm(){
   if(_warmRun) return; _warmRun = true;
   (function step(){
     let n = 0;
-    while(_warmQ.length && n < 24){ const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} img.src = _warmQ.shift(); n++; }   // low-priority over HTTP/2 (single host) multiplexes without starving MapLibre's active tiles; higher throughput = the prefetch ring fills before you reach it
+    while(_warmQ.length && n < 24){ const u = _warmQ.shift(); const img = new Image(); img.decoding = "async"; try{ img.fetchPriority = "low"; }catch(e){} if(/terrarium|elevation-tiles/.test(u)) img.crossOrigin = "anonymous"; img.src = u; n++; }   // DEM tiles must match MapLibre's CORS fetch or the browser caches them separately (prewarm wasted); rest are plain imagery. low-priority over HTTP/2 multiplexes without starving active tiles
     if(_warmSeen.size > 40000) _warmSeen.clear();
     if(_warmQ.length) setTimeout(step, 90); else _warmRun = false;
   })();
@@ -1757,7 +1757,7 @@ function warmWorldBaseline(){
   for(let z = 0; z <= 4; z++){
     const span = 1 << z;
     for(let x = 0; x < span; x++) for(let y = 0; y < span; y++){
-      tpls.forEach(t=>{ if(t === _HILLSHADE_TPL){ if(z > 4) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade only to z4; imagery only to the base's own maxzoom
+      tpls.forEach(t=>{ if(t === _HILLSHADE_TPL){ if(z > 4) return; } else if(t === DEM_TILES){ if(z > 9) return; } else if(z > _baseMaxZ) return; _enqWarm(_tplUrl(t, x, y, z)); });   // shade to z4; DEM to z9; imagery to the base's own maxzoom
     }
   }
   _runWarm();
@@ -1819,7 +1819,7 @@ function warmGlobeView(){
     for(let x = x0; x <= x1; x++) for(let y = y0; y <= y1; y++){
       if(y < 0 || y >= span) continue;
       const xx = ((x % span) + span) % span;
-      tpls.forEach(t=>{ if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
+      tpls.forEach(t=>{ if(t === DEM_TILES){ if(zz > 9) return; } else if(t !== _HILLSHADE_TPL && zz > _baseMaxZ) return; _enqWarm(_tplUrl(t, xx, y, zz)); });
     }
   });
   _runWarm();
@@ -2876,6 +2876,19 @@ function tuneCartoForTopoVector(){
   }catch(e){} } });
   tuneCartoForTopo();
 }
+// LABEL TIERS (all maps): small-place names (towns/villages/minor) a touch smaller + fainter to declutter;
+// administrative regions (state/oblast/province) a touch bolder. Multiplicative on the Positron defaults, and
+// each vector load re-adds those defaults, so it never compounds. Called once per base load.
+function tuneLabelTiers(){
+  _gCartoIds.forEach(id=>{ const l=mlMap.getLayer(id); if(!l || l.type!=="symbol") return; try{
+    if(/place_(town|village|hamlet|suburb|neighbou?rhood|quarter|islet)/.test(id)){
+      const sz=mlMap.getLayoutProperty(id,"text-size"); if(sz!=null) mlMap.setLayoutProperty(id,"text-size",["*",sz,0.9]);   // ~1 size smaller
+      const op=mlMap.getPaintProperty(id,"text-opacity"); mlMap.setPaintProperty(id,"text-opacity", op!=null ? ["*",op,0.9] : 0.9);   // -10%
+    } else if(/place_(state|region|province|county|district)/.test(id)){
+      const op=mlMap.getPaintProperty(id,"text-opacity"); mlMap.setPaintProperty(id,"text-opacity", op!=null ? ["min",1,["*",op,1.1]] : 1);   // +10%
+    }
+  }catch(e){} });
+}
 // "Place labels" toggle: hide/show the vector overlay's own name layers (all modes go through here now, so
 // the toggle finally works on the clean map too, not just the old raster-label bases).
 function applyCartoLabelToggle(){
@@ -2930,7 +2943,7 @@ function setGlobeBasemap(k){
         // fine ridge texture was the "over-detailed" busyness. Smooth hypsometric bands read the topography
         // clearly and cheaply. Our English labels + the blue vector sea sit on top.
         if(!mlMap.getSource("g-dem")){
-          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:512,maxzoom:9});   // 512px tiles + cap z9 = ~1/4 the tiles AND coarser/smoother -> far less fetch+decode lag. Over-zooms cleanly.
+          mlMap.addSource("g-dem",{type:"raster-dem",tiles:[DEM_TILES],encoding:"terrarium",tileSize:256,maxzoom:9});   // native 256px so the tile prefetcher's XYZ coords match (auto-load on switch); cap z9 + the big cache keep it light
         }
         // color-relief = hypsometric tint by height. New in MapLibre v5.6; guard it (falls back to green land).
         try{
@@ -2951,6 +2964,7 @@ function setGlobeBasemap(k){
       }
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
+      tuneLabelTiers();
       applyCartoLabelToggle();
     }).catch(()=>{});
   } else {
@@ -2970,6 +2984,7 @@ function setGlobeBasemap(k){
       addCartoVector(before, {skipFills:true}).then(()=>{
         if(k==="satellite") tuneCartoForSatellite();
         else if(k==="topo") tuneCartoForTopo();
+        tuneLabelTiers();
         applyCartoLabelToggle();
       }).catch(()=>{});
     }
