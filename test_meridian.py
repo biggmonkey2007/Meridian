@@ -1518,16 +1518,22 @@ def main():
     # and returns None on non-JSON, so a bad model reply degrades to "no profile" instead of crashing the popup.
     print("\n=== PORT PROFILE (json extractor) ===")
     _pj = app._port_json('```json\n{"type":"Container & transshipment","opened":"2007","throughput":"~5M TEU (2023)","ships_per_day":"~40","junk":123,"significance":"Major hub"}\n```')
+    # BASELINE — every port gets real content with ZERO LLM: a curated port has a ranking + waters; an unknown
+    # port still gets a type + a plain role line, so the popup never says "no profile available".
+    _pb = app._port_baseline("Jebel Ali", "United Arab Emirates")
+    _pb2 = app._port_baseline("Some Tiny Harbour", "Fakeland")
     _port_ok = (isinstance(_pj, dict) and _pj.get("type") == "Container & transshipment"
                 and _pj.get("opened") == "2007" and "junk" not in _pj
                 and set(_pj.keys()) <= {"type", "opened", "operator", "throughput", "ships_per_day", "significance", "recent", "waters"}
                 and app._port_json("no json here at all") is None
-                and app._port_json('{"nothing":"useful"}') is None)   # no expected field -> None
+                and app._port_json('{"nothing":"useful"}') is None      # no expected field -> None
+                and "Middle East" in _pb.get("rank", "") and _pb.get("waters") and _pb.get("type")   # curated -> ranking + waters
+                and _pb2.get("type") and _pb2.get("significance"))       # unknown -> still a usable baseline
     ran[0] += 1
     if not _port_ok:
-        fails.append(("port", "json", "clean fields, None on junk", str(_pj),
-                      "port_json must keep only the expected string fields and reject non-JSON"))
-    print(f"  {'ok ' if _port_ok else 'FAIL'} port json -> {_pj}")
+        fails.append(("port", "json+baseline", "clean fields + baseline for every port", str([_pj, _pb, _pb2]),
+                      "port_json keeps expected fields; _port_baseline always yields content"))
+    print(f"  {'ok ' if _port_ok else 'FAIL'} port json + baseline (Jebel Ali rank='{_pb.get('rank','')[:32]}')")
 
     # FINISH THE BRIEF — a summary must never end mid-sentence. _finish_brief trims a dangling tail back to the
     # last full sentence, but leaves an already-complete brief (and a short whole one) untouched.

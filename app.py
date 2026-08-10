@@ -2210,6 +2210,19 @@ class Api:
                 return json.load(open(cache, encoding="utf-8"))
             except Exception:
                 pass
+        # CURATED BASELINE — always present, so every port has real content even with no LLM key at all.
+        out = dict(base)
+        out.update(_port_baseline(name, country))
+        try:
+            pic = _port_photo(name, country)             # a real photo from Wikipedia (its page, else the city)
+            if pic.get("url"):
+                out["photo"] = pic["url"]
+                if pic.get("title"):
+                    out["photo_title"] = pic["title"]
+        except Exception:
+            pass
+        # AI ENRICHMENT — only when a live key exists: adds opened/operator/throughput/ships_per_day/recent and
+        # a richer significance ON TOP of the baseline, never overriding the curated ranking/type/waters.
         where = name + (", " + country if country else "")
         data = None
         try:
@@ -2220,9 +2233,10 @@ class Api:
             data = _port_profile_gemini(where, key)      # grounded -> real figures + recent developments
         if data is None and _llm_available():
             data = _port_profile_llm(where)              # open model -> stable facts, figures only if known
-        out = dict(base)
         if data:
-            out.update(data)
+            for k, v in data.items():
+                if v and not out.get(k):                 # fill gaps only; keep the curated baseline
+                    out[k] = v
         try:
             json.dump(out, open(cache, "w", encoding="utf-8"))
         except Exception:
@@ -3046,6 +3060,135 @@ def _port_profile_llm(where):
     system = ("You are a neutral maritime reference. Answer only with real, publicly known facts about a named "
               "seaport, as strict JSON. If you are unsure of a figure, use an empty string — never invent one.")
     return _port_json(_llm_complete(system, _port_prompt(where), max_tokens=500, temperature=0.2))
+
+
+# Curated, ALWAYS-available baseline so EVERY port has a profile even with no LLM key: a "cool" ranking/
+# superlative and the waters it sits on. Well-established facts (2023 container-throughput standings + stable
+# regional superlatives); the AI pass only ADDS figures/news on top and never overrides these. Keys must match
+# the port names in PORTS (frontend). (name -> (ranking line, waters))
+_PORT_INFO = {
+    "Shanghai": ("The world's #1 busiest container port.", "East China Sea"),
+    "Port of Singapore": ("The world's #2 port and its busiest transshipment hub.", "Singapore Strait"),
+    "Ningbo": ("Among the world's top three container ports by volume.", "East China Sea"),
+    "Shenzhen": ("One of the world's top five container ports.", "Pearl River Delta / South China Sea"),
+    "Qingdao": ("A top-five global container port.", "Yellow Sea"),
+    "Guangzhou": ("A top-ten global container port.", "Pearl River Delta"),
+    "Busan": ("South Korea's largest port and a top-ten global transshipment hub.", "Korea Strait"),
+    "Tianjin": ("Northern China's largest port; a top-ten global container port.", "Bohai Sea"),
+    "Hong Kong": ("A top-ten global container port and historic free port.", "South China Sea"),
+    "Rotterdam": ("Europe's largest and busiest port.", "North Sea"),
+    "Antwerp": ("Europe's #2 port (Antwerp-Bruges).", "North Sea / Scheldt"),
+    "Hamburg": ("Germany's largest port and Europe's #3.", "North Sea / Elbe"),
+    "Jebel Ali": ("The largest and busiest port in the Middle East.", "Persian Gulf"),
+    "Khalifa Port": ("Abu Dhabi's flagship deep-water port, among the world's fastest-growing.", "Persian Gulf"),
+    "Los Angeles": ("The busiest container port in the United States.", "San Pedro Bay / Pacific"),
+    "Long Beach": ("One of the two busiest US container ports, beside neighboring LA.", "San Pedro Bay / Pacific"),
+    "New York/NJ": ("The busiest port on the US East Coast.", "New York Harbor / Atlantic"),
+    "Savannah": ("One of the busiest and fastest-growing US container ports.", "Atlantic"),
+    "Houston": ("The busiest US port by total tonnage.", "Gulf of Mexico"),
+    "Santos": ("Latin America's largest and busiest port.", "South Atlantic"),
+    "Colombo": ("South Asia's main transshipment hub.", "Indian Ocean"),
+    "Piraeus": ("Greece's largest port and a major Mediterranean gateway.", "Aegean Sea / Mediterranean"),
+    "Tanger Med": ("Africa's largest container port.", "Strait of Gibraltar"),
+    "Durban": ("The busiest port in sub-Saharan Africa.", "Indian Ocean"),
+    "Port Klang": ("Malaysia's largest port and a top-15 global container hub.", "Strait of Malacca"),
+    "Tanjung Pelepas": ("A major Malaysian transshipment hub.", "Strait of Malacca"),
+    "Kaohsiung": ("Taiwan's largest port.", "Taiwan Strait / South China Sea"),
+    "Laem Chabang": ("Thailand's largest and busiest port.", "Gulf of Thailand"),
+    "Tanjung Priok": ("Indonesia's largest and busiest port, serving Jakarta.", "Java Sea"),
+    "Mundra": ("India's largest commercial port by cargo volume.", "Gulf of Kutch / Arabian Sea"),
+    "Mumbai (JNPT)": ("India's largest container port (Nhava Sheva).", "Arabian Sea"),
+    "Valencia": ("Spain's busiest container port and a Mediterranean leader.", "Mediterranean Sea"),
+    "Algeciras": ("A leading Mediterranean transshipment hub, by the Strait of Gibraltar.", "Strait of Gibraltar"),
+    "Felixstowe": ("The United Kingdom's busiest container port.", "North Sea"),
+    "London Gateway": ("A major deep-water container port on the Thames.", "Thames / North Sea"),
+    "Le Havre": ("One of France's largest ports, at the mouth of the Seine.", "English Channel"),
+    "Marseille": ("France's largest port (Marseille-Fos).", "Mediterranean Sea"),
+    "Gioia Tauro": ("Italy's largest transshipment container port.", "Mediterranean Sea"),
+    "Genoa": ("Italy's busiest port.", "Ligurian Sea / Mediterranean"),
+    "Vancouver": ("Canada's largest port.", "Pacific"),
+    "Manzanillo": ("Mexico's busiest port.", "Pacific"),
+    "Lázaro Cárdenas": ("A major Mexican Pacific container port.", "Pacific"),
+    "Cartagena": ("A leading transshipment hub in the Caribbean.", "Caribbean Sea"),
+    "Callao": ("Peru's largest and busiest port.", "Pacific"),
+    "Buenos Aires": ("Argentina's busiest port.", "Río de la Plata"),
+    "Salalah": ("A major Indian Ocean transshipment hub in Oman.", "Arabian Sea"),
+    "Jeddah": ("Saudi Arabia's largest and busiest port.", "Red Sea"),
+    "Dammam": ("Saudi Arabia's main Persian Gulf port.", "Persian Gulf"),
+    "Hamad Port": ("Qatar's main port, a large modern greenfield build.", "Persian Gulf"),
+    "Novorossiysk": ("Russia's largest port, on the Black Sea.", "Black Sea"),
+    "St Petersburg": ("Russia's largest Baltic port.", "Baltic Sea / Gulf of Finland"),
+    "Vladivostok": ("Russia's main Pacific port.", "Sea of Japan"),
+    "Mombasa": ("East Africa's largest port.", "Indian Ocean"),
+    "Lagos (Apapa)": ("Nigeria's busiest port.", "Gulf of Guinea / Atlantic"),
+    "Karachi": ("Pakistan's largest and busiest port.", "Arabian Sea"),
+    "Chittagong": ("Bangladesh's largest and busiest port.", "Bay of Bengal"),
+    "Colón": ("A major transshipment hub at the Caribbean end of the Panama Canal.", "Caribbean Sea / Panama Canal"),
+    "Balboa": ("A major port at the Pacific end of the Panama Canal.", "Pacific / Panama Canal"),
+    "Port Said": ("A key port at the Mediterranean mouth of the Suez Canal.", "Mediterranean / Suez Canal"),
+    "Melbourne": ("Australia's busiest container port.", "Port Phillip Bay"),
+    "Port Botany": ("Sydney's main container port, among Australia's busiest.", "Botany Bay / Tasman Sea"),
+    "Gdańsk": ("Poland's largest port and a fast-growing Baltic hub.", "Baltic Sea"),
+    "Gothenburg": ("Scandinavia's largest port.", "Kattegat / North Sea"),
+    "Odessa": ("Ukraine's largest and busiest port.", "Black Sea"),
+    "Constanța": ("Romania's largest port and the biggest on the Black Sea.", "Black Sea"),
+    "Haifa": ("One of Israel's two main ports.", "Mediterranean Sea"),
+    "Ashdod": ("One of Israel's two main ports.", "Mediterranean Sea"),
+    "Djibouti": ("A strategic Red Sea / Gulf of Aden port and regional transshipment hub.", "Gulf of Aden"),
+    "Tauranga": ("New Zealand's largest port.", "Bay of Plenty / Pacific"),
+    "Bandar Abbas": ("Iran's largest and most important port.", "Strait of Hormuz / Persian Gulf"),
+    "Gwadar": ("A deep-water port on the Arabian Sea, central to China's Belt and Road.", "Arabian Sea"),
+    "Aden": ("A historic port on one of the world's busiest shipping lanes.", "Gulf of Aden / Bab-el-Mandeb"),
+}
+
+
+def _port_baseline(name, country):
+    """The zero-LLM profile shown for EVERY port: its type, a ranking/superlative (or a plain role line) and
+    the waters it sits on. Guarantees the popup always has real content, even with no AI key."""
+    out = {"type": "Container & general-cargo port"}
+    info = _PORT_INFO.get(name)
+    if info:
+        out["rank"] = info[0]
+        if info[1]:
+            out["waters"] = info[1]
+    elif country:
+        out["significance"] = "A commercial seaport of " + _co_short(country) + "."
+    return out
+
+
+def _port_photo(name, country):
+    """A photo of the port from Wikipedia — its own page ('Port of X' / 'X Port'), else the city page. Cached
+    30 days and self-healing the stored thumbnail, like place_photo. Returns {url,title} or {}."""
+    name = (name or "").strip()
+    country = (country or "").strip()
+    cache = os.path.join(CACHE_DIR, "portpic_" + (_slug(name + "|" + country) or "none") + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            cached = json.load(open(cache, encoding="utf-8"))
+            if cached.get("url"):
+                cached["url"] = _wiki_thumb(cached["url"], 1280)
+            return cached
+        except Exception:
+            pass
+    city = re.sub(r"\s*\([^)]*\)", "", name).split("/")[0].split(",")[0].strip()   # "Mumbai (JNPT)"->Mumbai, "New York/NJ"->New York
+    qs = []
+    for q in ["Port of " + city, city + " Port", "Port of " + name, city]:
+        if q and q not in qs:
+            qs.append(q)
+    out = {}
+    for q in qs:
+        j = _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(q.replace(" ", "_")))
+        if not j or j.get("type") == "disambiguation":
+            continue
+        src = ((j.get("originalimage") or {}).get("source") or (j.get("thumbnail") or {}).get("source") or "")
+        if src and _good_img(src):
+            out = {"url": _wiki_thumb(src, 1280), "title": j.get("title") or q}
+            break
+    try:
+        json.dump(out, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
 
 
 def _stmt_prompt(country):
