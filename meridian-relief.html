@@ -437,7 +437,9 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 .zoomers button:hover{background:var(--panel-2);color:var(--ink)}
 /* Elevation scale — sits just above the zoom controls, only on the Topographic basemap. Matches the UI chrome
    (theme-aware panel) with the map's own hypsometric ramp as the bar. */
-#elev-legend{position:fixed;right:14px;bottom:132px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+#elev-legend{position:fixed;right:14px;bottom:14px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+/* On the Topographic map the elevation scale takes the bottom-right corner and the zoom buttons sit above it */
+body.topo-active .zoomers{bottom:146px}
 #elev-legend .el-cap{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
 #elev-legend .el-body{display:flex;gap:5px;align-items:stretch}
 #elev-legend .el-bar{width:9px;height:76px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(20,30,40,.14);background:linear-gradient(to top,#84a862 0%,#c7c886 11.5%,#d3bd83 21%,#c39f72 35%,#a9855f 50%,#8f7358 65%,#c2b6ab 81%,#f3f3f3 100%)}
@@ -2860,6 +2862,12 @@ function tuneCartoForTopoVector(){
   try{ if(mlMap.getLayer("waterway")) mlMap.setPaintProperty("waterway","line-color","#88b6d4"); }catch(e){}
   // forests/parks a soft terrain green so land isn't a flat tan — reads as vegetation over the relief
   ["landcover_wood","landcover","landuse_wood","park","landcover_grass"].forEach(id=>{ try{ if(mlMap.getLayer(id)){ mlMap.setPaintProperty(id,"fill-color","#b9c79b"); mlMap.setPaintProperty(id,"fill-opacity",0.55); } }catch(e){} });
+  // REGION/BORDER lines kept but made semi-transparent so they trace the countries without fighting the
+  // elevation colours underneath — country borders faint, sub-national fainter, over a soft dark ink.
+  _gCartoIds.forEach(id=>{ const l=mlMap.getLayer(id); if(l && l.type==="line" && /boundary|admin/.test(id)){ try{
+    mlMap.setPaintProperty(id,"line-color","#3a4048");
+    mlMap.setPaintProperty(id,"line-opacity", /country|_0|_1\b/.test(id) ? 0.42 : 0.22);
+  }catch(e){} } });
   tuneCartoForTopo();
 }
 // "Place labels" toggle: hide/show the vector overlay's own name layers (all modes go through here now, so
@@ -2915,7 +2923,7 @@ function setGlobeBasemap(k){
         // -> tan uplands -> brown mountains -> snow peaks, with the relief carved in. Our English labels + the
         // blue vector sea sit on top. (No pre-rendered terrain raster — those were slow, muddy or chunky.)
         if(!mlMap.getSource("g-dem")){
-          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:11});   // cap at z11: ~20m detail, far fewer tiles -> much less lag; the DEM over-zooms cleanly past that
+          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:512,maxzoom:10});   // 512px tiles + cap z10 = ~1/4 the tile requests (the biggest cost is fetching+decoding each DEM tile). Over-zooms cleanly; relief stays smooth.
         }
         // color-relief = hypsometric tint by height. New in MapLibre v5.6; guard it, and the DEM hillshade
         // below still gives clean relief if this engine build lacks it.
@@ -2988,7 +2996,7 @@ function setGlobeBasemap(k){
       _sat ? ["interpolate",["linear"],["zoom"], 2,1.8, 5,2.4, 9,3.4] : 0);
   }
   if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // soft-white dot ring on satellite, white elsewhere
-  { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } }   // elevation scale only on Topographic
+  { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } document.body.classList.toggle("topo-active", k==="topo"); }   // elevation scale bottom-right, zoom buttons lift above it — Topographic only
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
   _worldWarmed = false;
