@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d2"
+_DATA_VER = "d3"
 _SUM_PROMPT_VER = "10"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 
@@ -4846,6 +4846,14 @@ _MONTHS = {"january", "february", "march", "april", "may", "june", "july",
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
 _CASED_PLACE_WORDS = {"polish", "china", "turkey", "guinea", "chad"}
 _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
+    # Gulf ENERGY hubs the gazetteer misses but that recur constantly in oil/gas strike news — without these
+    # a "fire at Jubail" story drops on the country centroid (Riyadh), miles from the actual coast.
+    "jubail": (27.00, 49.66, "Saudi Arabia"), "al jubail": (27.00, 49.66, "Saudi Arabia"),
+    "jubail industrial city": (27.02, 49.62, "Saudi Arabia"),
+    "yanbu": (24.09, 38.06, "Saudi Arabia"), "ras tanura": (26.64, 50.16, "Saudi Arabia"),
+    "abqaiq": (25.93, 49.67, "Saudi Arabia"), "buqayq": (25.93, 49.67, "Saudi Arabia"),
+    "khurais": (25.10, 48.10, "Saudi Arabia"), "jazan": (16.89, 42.55, "Saudi Arabia"),
+    "ras laffan": (25.90, 51.55, "Qatar"), "ruwais": (24.11, 52.73, "United Arab Emirates"),
     "silicon valley": (37.387, -122.058, "United States of America"),
     "wall street": (40.706, -74.009, "United States of America"),
     "hollywood": (34.098, -118.327, "United States of America"),

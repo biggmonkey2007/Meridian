@@ -491,6 +491,9 @@ GEO_CASES = [
     ("Russia expands anti-drone defenses over nuclear submarines at the Rybachiy base on Kamchatka",
      "More than five submarines are visible beneath large protective nets, compared with only two in May.",
      "!India", "SHIPPED: 'only two in May' dotted the town of May, India — a month is a DATE, never a place"),
+    ("Loud explosion, fire in Saudi Arabia's Jubail Industrial City amid reports gas facilities were targeted",
+     "", "Jubail", "SHIPPED: 'Jubail' (Al Jubail, a 380k Gulf-coast energy hub) is missing from GeoNames, so a "
+     "gas-strike story dropped on the Riyadh centroid — added to _MANUAL_PLACES with the Gulf energy cities"),
     ("JRS launches project to strengthen oil spill resilience in Akwa Ibom community",
      "A community in Nigeria is getting help to deal with oil spills. The initiative is backed by CARITAS Canada.",
      "Nigeria", "SHIPPED: dotted CANADA off 'CARITAS Canada' — an aid group's home country is not the scene; "

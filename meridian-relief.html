@@ -435,6 +435,13 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 .zoomers button{width:38px;height:36px;border:none;background:transparent;font-size:18px;color:var(--ink-2);display:grid;place-items:center;border-bottom:1px solid var(--line);transition:background .14s,color .14s}
 .zoomers button:last-child{border-bottom:none;font-size:13px}
 .zoomers button:hover{background:var(--panel-2);color:var(--ink)}
+/* Elevation scale — sits just above the zoom controls, only on the Topographic basemap. Matches the UI chrome
+   (theme-aware panel) with the map's own hypsometric ramp as the bar. */
+#elev-legend{position:fixed;right:14px;bottom:132px;z-index:20;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+#elev-legend .el-cap{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+#elev-legend .el-body{display:flex;gap:5px;align-items:stretch}
+#elev-legend .el-bar{width:9px;height:76px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(20,30,40,.14);background:linear-gradient(to top,#84a862 0%,#c7c886 11.5%,#d3bd83 21%,#c39f72 35%,#a9855f 50%,#8f7358 65%,#c2b6ab 81%,#f3f3f3 100%)}
+#elev-legend .el-ticks{display:flex;flex-direction:column;justify-content:space-between;font-size:9px;font-weight:600;color:var(--ink-2);line-height:1}
 .zoomers button:active{background:var(--line)}
 .legend{background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:8px 10px;max-width:170px}
 .legend h5{margin:0 0 6px;font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);font-weight:700;display:flex;align-items:center;justify-content:space-between}
@@ -1080,6 +1087,12 @@ video{color-scheme:dark}
   <button id="z-in" aria-label="Zoom in">+</button>
   <button id="z-out" aria-label="Zoom out">&minus;</button>
   <button id="z-reset" aria-label="Reset view" title="Reset view">⤾</button>
+</div>
+
+<!-- Elevation scale — only on the Topographic basemap; reads the same hypsometric ramp the map is painted with -->
+<div id="elev-legend" hidden aria-hidden="true">
+  <span class="el-cap">Elevation</span>
+  <div class="el-body"><div class="el-bar"></div><div class="el-ticks"><span>5 km</span><span>2.5</span><span>0</span></div></div>
 </div>
 
 <div id="tip"></div>
@@ -2717,7 +2730,7 @@ function globeBorderCol(){ return currentBase==="satellite" ? "#ffffff" : "#1f26
 // The ring around each news dot. WHITE glared on the busy satellite/topo maps ("everything outlined in
 // white"); a dark ring reads as a clean edge there and vanishes into dark areas where the bright dot pops on
 // its own. The pale Clean-relief map still wants white so the dots separate from the light land.
-function dotStroke(){ return (currentBase==="satellite" || currentBase==="topo") ? "rgba(10,15,22,0.55)" : "#ffffff"; }
+function dotStroke(){ return currentBase==="satellite" ? "rgba(255,255,255,0.72)" : "#ffffff"; }   // satellite: a SOFT white ring — the dot still separates from the photo, without the glaring hard white
 // Globe backdrop: dark "space" only when the whole globe is in view; as you zoom IN (space no longer
 // visible) it fades to the basemap's own tone, so a tile that hasn't loaded yet reads as map-in-progress
 // instead of a black hole. This is what actually kills the "black chunks" while panning up close.
@@ -2902,7 +2915,7 @@ function setGlobeBasemap(k){
         // -> tan uplands -> brown mountains -> snow peaks, with the relief carved in. Our English labels + the
         // blue vector sea sit on top. (No pre-rendered terrain raster — those were slow, muddy or chunky.)
         if(!mlMap.getSource("g-dem")){
-          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:14});
+          mlMap.addSource("g-dem",{type:"raster-dem",tiles:["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],encoding:"terrarium",tileSize:256,maxzoom:11});   // cap at z11: ~20m detail, far fewer tiles -> much less lag; the DEM over-zooms cleanly past that
         }
         // color-relief = hypsometric tint by height. New in MapLibre v5.6; guard it, and the DEM hillshade
         // below still gives clean relief if this engine build lacks it.
@@ -2962,19 +2975,20 @@ function setGlobeBasemap(k){
   if(mlMap.getLayer("g-borders")){
     mlMap.setPaintProperty("g-borders","line-color", globeBorderCol());
     mlMap.setPaintProperty("g-borders","line-opacity",
-      _sat ? 0.95 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);
-    // satellite: a fine white line; grows only slightly as you zoom in
+      _sat ? 0.62 : ["interpolate",["linear"],["zoom"], 2.8,0.16, 3.4,0]);   // softer white (was a stark 0.95)
+    // satellite: a FINE, restrained white line; barely grows as you zoom in
     mlMap.setPaintProperty("g-borders","line-width",
-      _sat ? ["interpolate",["linear"],["zoom"], 2,0.6, 5,0.9, 9,1.3] : 0.7);
+      _sat ? ["interpolate",["linear"],["zoom"], 2,0.5, 5,0.75, 9,1.05] : 0.7);
     const showB=(k!=="osmintl"); mlMap.setLayoutProperty("g-borders","visibility",showB?"visible":"none");
   }
   if(mlMap.getLayer("g-borders-case")){    // the dark halo — satellite only
     mlMap.setLayoutProperty("g-borders-case","visibility", _sat ? "visible" : "none");
-    mlMap.setPaintProperty("g-borders-case","line-opacity", _sat ? 0.38 : 0);   // just enough shadow to hold the white line on clouds/snow
+    mlMap.setPaintProperty("g-borders-case","line-opacity", _sat ? 0.3 : 0);   // just enough shadow to hold the white line on clouds/snow
     mlMap.setPaintProperty("g-borders-case","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,1.8, 5,2.4, 9,3.4] : 0);
   }
-  if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // dark dot ring on busy maps, white on Clean relief
+  if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // soft-white dot ring on satellite, white elsewhere
+  { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } }   // elevation scale only on Topographic
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
   // switching to Satellite/Topographic chunked. Reset the world-baseline flag and prime this base's tiles.
   _worldWarmed = false;
