@@ -3107,8 +3107,13 @@ function startGlobePulse(){
   if(_gPulseRAF) return; _gPulseT0=performance.now();
   const tick=(t)=>{
     if(!globeMode || !mlMap || !mlMap.getLayer("g-pulse")){ _gPulseRAF=null; return; }
-    const ph=((t-_gPulseT0)%1500)/1500;
-    try{ mlMap.setPaintProperty("g-pulse","circle-radius", 4 + ph*15); mlMap.setPaintProperty("g-pulse","circle-opacity", 0.45*(1-ph)); }catch(e){}
+    const ph=((t-_gPulseT0)%1600)/1600;
+    // A clean ripple: expand with an easeOut (fast then slow), fade IN over the first slice so the loop
+    // point never "pops" back at full opacity, then fade OUT to zero as it expands. Opacity is 0 at BOTH
+    // ends (ph=0 and ph=1), so the restart is invisible — no abrupt stop/re-start.
+    const grow = 1-(1-ph)*(1-ph);
+    const fade = Math.min(1, ph/0.16);
+    try{ mlMap.setPaintProperty("g-pulse","circle-radius", 4 + grow*16); mlMap.setPaintProperty("g-pulse","circle-opacity", 0.5*(1-ph)*fade); }catch(e){}
     _gPulseRAF=requestAnimationFrame(tick);
   };
   _gPulseRAF=requestAnimationFrame(tick);

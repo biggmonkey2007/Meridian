@@ -966,8 +966,15 @@ HARD_NEWS_CASES = [
     ("Iran's foreign minister warns of retaliation against Israel", True, "a top official on the record"),
     ("Kremlin says it will respond to the new sanctions", True, "an institution's statement"),
     ("EU announces fresh sanctions package on Russia", True, "institution + 'sanction' + a saying verb"),
+    ("Fire broke out at Rosneft's Komsomolsk-on-Amur refinery in Khabarovsk Krai, no casualties reported",
+     True, "a strike/fire on STRATEGIC infrastructure (refinery) reaches the map even with no casualties and "
+     "even when the target downplays it — the war-and-security news the map exists for"),
+    ("Ukrainian drone strike sets a fuel depot ablaze in Rostov region", True, "attack + depot = strategic hit"),
+    ("Explosion knocks out a power plant, cutting electricity to the region", True, "blast + power plant"),
     ("Illegal sand extraction erodes Cape Verde coastline", False, "minor/local -> defer to the AI SCOPE"),
     ("Local bakery in Lisbon revives a traditional recipe", False, "human-interest -> defer to the AI SCOPE"),
+    ("Wildfire spreads across the Australian outback", False, "a fire with NO strategic facility is not forced on"),
+    ("City council debates a new port-city housing development", False, "'port city' is not a struck facility"),
 ]
 
 # terse OSINT strike posts must classify as security (so they merge), without false positives.

@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d5"
+_DATA_VER = "d6"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -4530,15 +4530,33 @@ _MAJOR_ACTOR = re.compile(
     r"prosecutor|attorney general|sanctions?|tariffs?|ceasefire|treaty)\b", re.I)
 
 
+# A hit on STRATEGIC INFRASTRUCTURE is map-worthy even with no casualties and even when the target's side
+# downplays it ("a technical failure, no casualties") — a refinery fire / drone strike on a power plant / a
+# depot ablaze is exactly the war-and-security news the map exists for. Needs BOTH an attack/damage word AND
+# a strategic-facility word, so an ordinary "kitchen fire" or "port city" never trips it.
+_ATTACK_WORD = re.compile(
+    r"(?i)\b(?:strike|struck|strikes|hit|hits|hitting|attack(?:s|ed|ing)?|shell(?:s|ed|ing)?|"
+    r"drone|drones|missile|missiles|explosion|explode[ds]?|blast|blaze|ablaze|fire|"
+    r"damaged?|destroy(?:s|ed|ing)?|sabotage[ds]?|set\s+ablaze|caught\s+fire|on\s+fire)\b")
+_STRATEGIC_FACILITY = re.compile(
+    r"(?i)\b(?:refiner(?:y|ies)|oil\s+depot|oil\s+terminal|fuel\s+depot|oil\s+hub|oil\s+storage|"
+    r"pipeline|power\s+(?:plant|station)|nuclear\s+(?:plant|power\s+plant)|substation|power\s+grid|"
+    r"military\s+base|air\s?base|airfield|naval\s+base|shipyard|ammunition\s+depot|"
+    r"arms\s+depot|weapons?\s+depot|munitions?\s+depot|drone\s+factory|missile\s+(?:plant|factory))\b")
+
+
 def _hard_news(title, desc=""):
     """A deterministic 'this matters regardless' net for the importance gate — so the world map NEVER hides a
-    mass-casualty event or a top-official statement, even if the AI rated the wording 'local'. Everything
-    else defers to the AI's SCOPE. Kept tight on purpose (casualties + institution-level statements)."""
+    mass-casualty event, a top-official statement, or a strike on strategic infrastructure, even if the AI
+    rated the wording 'local'. Everything else defers to the AI's SCOPE."""
     t = title or ""
     if _death_toll(t) or _death_toll(desc or "") or _injured_toll(t):
         return True                                    # a shooting / attack / disaster with casualties
     if _MAJOR_ACTOR.search(t) and _TG_STMT_VERB.search(t):
         return True                                    # a government / leader / institution on the record
+    both = (title or "") + " " + (desc or "")
+    if _ATTACK_WORD.search(both) and _STRATEGIC_FACILITY.search(both):
+        return True                                    # a strike/fire on a refinery, depot, plant, base…
     return False
 
 
