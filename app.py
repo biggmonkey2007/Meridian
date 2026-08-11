@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d9"
+_DATA_VER = "d10"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -728,7 +728,7 @@ def _tg_page(ch, before=None):
     return out, oldest_id
 
 
-def _tg_fetch(ch, hours=26, max_pages=8):
+def _tg_fetch(ch, hours=24, max_pages=6):
     """EVERY post a channel made in the last `hours`, not an arbitrary count. Telegram's public preview shows
     only ~16-20 posts per page (a few hours on a busy channel), so we PAGE BACK through it (?before=<id>)
     until the oldest post we've seen is past the window — this is what stops a busy channel from pushing an
@@ -2391,13 +2391,18 @@ class Api:
         arts = []
         _ex = concurrent.futures.ThreadPoolExecutor(max_workers=3)
         try:
-            futs = [_ex.submit(_gdelt_doc, COMBINED_QUERY, span, 250),
-                    _ex.submit(_collect_feeds),
-                    _ex.submit(_tg_arts, h)]
-            done, _pending = concurrent.futures.wait(futs, timeout=16)
-            for fut in done:
+            f_gdelt = _ex.submit(_gdelt_doc, COMBINED_QUERY, span, 250)
+            f_feeds = _ex.submit(_collect_feeds)
+            f_tg = _ex.submit(_tg_arts, h)
+            # GDELT + the RSS feeds are best-effort under a tight deadline (a slow one just misses this build).
+            # The OSINT Telegram wire is the app's CORE breaking-news source, and its 24h page-back across the
+            # channels legitimately runs ~15-20s — so it gets its own, longer deadline (measured from the same
+            # start), never dropped as a "straggler". SHIPPED BUG: at a flat 16s the whole wire timed out and
+            # EVERY Telegram dot (a Ukrainian refinery strike, etc.) silently vanished from the map.
+            _t0 = time.time()
+            for fut, dl in ((f_gdelt, 16), (f_feeds, 16), (f_tg, 30)):
                 try:
-                    arts += fut.result() or []
+                    arts += fut.result(timeout=max(0.1, dl - (time.time() - _t0))) or []
                 except Exception:
                     pass
         finally:
@@ -4881,12 +4886,17 @@ def _ai_dedup(events, window_h=30, budget=80):
                 continue
             d2 = ((lai - laj) ** 2 + (lni - lnj) ** 2) if None not in (lai, lni, laj, lnj) else 9e9
             shared = len(di & dj)
+            # TWO SPECIFIC SCENES FAR APART ARE DIFFERENT EVENTS — never even pair them for the LLM. SHIPPED
+            # BUG: the Komsomolsk-on-Amur refinery strike (far-east Khabarovsk Krai) and the Orsk refinery
+            # strike (Orenburg, ~6,000 km away) share {ukrainian, ukraine, refinery}, so `shared>=2` paired
+            # them and a small model folded them into one — the far-east dot vanished for a whole day.
+            diff_scene = spi and spj and d2 >= 25
             geo = (spi and spj and coi == coj and d2 < 25)          # specific scenes <~5 deg apart, same country
             # same country + same category + ONE shared distinctive word at the SAME spot (both on a country
             # centroid, or the same city): catches 'Syria army on alert' vs 'Syria deploys troops, high alert',
             # which share no second word and pin to no specific place, so the rules above never pair them.
             samecat = (shared >= 1 and coi == coj and cati == catj and d2 < 0.36)
-            if shared >= 2 or geo or samecat:
+            if not diff_scene and (shared >= 2 or geo or samecat):
                 cand.append((shared + (1 if geo else 0) + (1 if samecat else 0), i, j))
     if not cand:
         return events
