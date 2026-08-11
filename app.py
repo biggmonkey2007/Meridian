@@ -170,7 +170,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
 _DATA_VER = "d3"
-_SUM_PROMPT_VER = "11"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
@@ -339,11 +339,15 @@ def _summarize(title, text):
               "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
               "The reader sees ONLY your brief, so it must stand on its own.\n\n"
               "Write it in this shape:\n"
-              "1. LEDE — 1 to 2 short sentences of plain prose that say what happened. This carries the brief.\n"
-              "2. BULLETS — then add 1 or 2 bullets, ONLY for the hardest specifics worth pulling out on their "
-              "own (a key number, a name, a decisive detail). If the story is simple, use one bullet or none. "
+              "1. LEDE — 1 to 3 short sentences of plain prose that say what happened. This carries the brief.\n"
+              "2. BODY (only if the story is rich enough to need it) — you MAY add a short second, and at most a "
+              "third, paragraph of plain prose that gives the next most important context or detail. Match the "
+              "length to the story: a simple item stays ONE paragraph; a big, layered story may run to about "
+              "three short paragraphs. Never pad — every sentence must earn its place.\n"
+              "3. BULLETS — optionally add 1 or 2 bullets for the hardest specifics worth pulling out on their "
+              "own (a key number, a name, a decisive detail). If the prose already covers it, use none. "
               "NEVER pad to three just to fill space.\n"
-              "3. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
+              "4. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
               "bullet that starts 'Why it matters:' and gives the stakes in one sentence. If the significance "
               "is self-evident, leave it out entirely.\n\n"
               "Formatting:\n"
@@ -389,7 +393,7 @@ def _summarize(title, text):
               "'illegal sand extraction erodes a beach' -> local. This SCOPE line is metadata, not part of the "
               "brief.\n\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    s = _llm_complete(system, prompt, max_tokens=480, temperature=0.3)   # headroom so a brief rarely hits the cap
+    s = _llm_complete(system, prompt, max_tokens=620, temperature=0.3)   # headroom for up to ~3 short paragraphs
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
@@ -536,6 +540,19 @@ def _strip_lead_flag(t):
     return stripped
 
 
+# A source's trailing truncation stamp — "… who died last month. Hegseth [...]", "(…)" — means the outlet cut
+# the text mid-thought. Drop the stamp AND the incomplete fragment it clipped, so the body ends on a whole
+# sentence instead of a dangling '[...]'. Only touches text that actually carries the stamp.
+_TRUNC_TAIL = re.compile(r"\s*[\[(]\s*(?:\.{2,}|…)\s*[\])]\s*$")
+
+
+def _strip_trunc(t):
+    t = (t or "").rstrip()
+    if _TRUNC_TAIL.search(t):
+        return _finish_brief(_TRUNC_TAIL.sub("", t).rstrip())   # cut back to the last complete sentence
+    return t
+
+
 # Role words that mark the text before a colon as a SPEAKER's label, not a topic tag. A statement that opens
 # "Former Israeli PM Naftali Bennett: Qatar is…" reads as a raw label; turning the colon into reported speech
 # ("… Bennett says Qatar is…") is cleaner while keeping the quote verbatim.
@@ -630,7 +647,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return _end_stop(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())))
+    return _end_stop(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))))
 
 
 def _tg_fetch(ch):
@@ -805,6 +822,7 @@ def _sharpen_desc(text, n=460):
     t = _strip_lead_flag(_CREDIT_BRACKET.sub(" ", _strip_promo(text or "")))
     t = re.sub(r"\s{2,}", " ", t).strip()
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
+    t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
     return _clip(_end_stop(t), n)
 
 
@@ -7035,6 +7053,20 @@ def _genuine_scenes(hits, words):
             and not _is_policy_target(h, words) and not _is_attrib_water(h, words)]
 
 
+def _bare_city_list(hits, words):
+    """A headline that LISTS several cities with none in a locating context — 'from Havana to Tehran to
+    Beirut' — is a rhetorical sweep, not one scene. The first-listed city is no more the location than the
+    others, so we should read the body for the real place instead of grabbing whichever came first. Fires
+    only when there are 2+ city hits AND not one of them sits after an 'in/at/on/strikes…' locator."""
+    cities = [h for h in hits if h[1] == "city"]
+    if len(cities) < 2:
+        return False
+    for h in cities:
+        if any(w in _GEO_PREP or w in _GEO_ACTION for w in words[max(0, h[0] - 2):h[0]]):
+            return False
+    return True
+
+
 def _pick_place(hits, words):
     """'in/at/near X' and 'hits X' mark the event location; leftmost wins (the subject's own place).
     Then CONTAINMENT: if the winner is a whole country but the text also names a city INSIDE that
@@ -7229,7 +7261,7 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     # SHIPPED BUG: "RUSSIA strikes Ukrainian drone industry and BLACK SEA PORTS" dropped a dot in open
     # water in the middle of the sea, while its very first line read "…port infrastructure in ODESSA
     # and Yuzhny". The dot must be where the event happened, and a port is not in the sea.
-    if hits and desc and not _genuine_scenes(hits, words):
+    if hits and desc and (not _genuine_scenes(hits, words) or _bare_city_list(hits, words)):
         dh, dw = _scan_places(desc[:400], _person_spans(desc[:400]), mentions)
         dscenes = _genuine_scenes(dh, dw) if dh else []
         if dscenes:
@@ -7238,7 +7270,11 @@ def _geolocate(title, sourcecountry, desc="", url=""):
             # verb ("Russia strikes Ukraine") is NOT possessive, so it never hijacks the real (Ukrainian) scene.
             _poss = {h[5] for h in hits if h[1] == "country" and h[0] + 1 < len(words) and words[h[0] + 1] == "s"}
             _pref = [d for d in dscenes if d[5] in _poss] if _poss else []
-            b = _pick_place(_pref or dscenes, dw)
+            # When the TITLE was a bare list of cities, prefer the body scene that IS one of those cities
+            # ('from Havana to Tehran to Beirut' + a body about Beirut -> Beirut, not a stray body city).
+            _tcities = {h[7] for h in hits if h[1] == "city"}
+            _match = [d for d in dscenes if d[7] in _tcities] if _tcities else []
+            b = _pick_place(_pref or _match or dscenes, dw)
             if b is not None:
                 return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:

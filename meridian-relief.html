@@ -1605,7 +1605,11 @@ function tuneVectorStyle(style){
     if(l["source-layer"]==="water_name" || /^watername/.test(l.id)){
       l.minzoom = 2;
       if(l.maxzoom!==undefined) delete l.maxzoom;
-      l.layout = Object.assign({}, l.layout, {"symbol-spacing":300, "text-max-width":7});
+      // Gulf of America — the US official name (2025), as shown on Google Maps for US users. Swap the LABEL
+      // only; the water geometry is Positron's, unchanged. `wn` is the same English name EN_TEXT resolves.
+      const _wn = ["coalesce", ["get","name_en"], ["get","name_int"], ["get","name"]];
+      l.layout = Object.assign({}, l.layout, {"symbol-spacing":300, "text-max-width":7,
+        "text-field": ["let", "wn", _wn, ["case", ["==", ["var","wn"], "Gulf of Mexico"], "Gulf of America", ["var","wn"]]]});
       l.paint  = Object.assign({}, l.paint,  {"text-color":"#8a97a0","text-halo-color":"#ffffff","text-halo-width":1.2,"text-halo-blur":0.3,"text-opacity":1});
     }
   });

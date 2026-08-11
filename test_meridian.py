@@ -203,6 +203,10 @@ GEO_CASES = [
      "...but a leader VISITING a place is AT that place (going-verbs are not deliberation)"),
     ("Rubio says the US is ready to help end the war in Ukraine", "", "United States",
      "a US official's STATEMENT about a foreign country is at their seat, even when the topic is 'located'"),
+    ("The same hostage economics playbook, from Havana to Tehran to Beirut",
+     "When Israel launched its campaign on Lebanon in March, warplanes targeted civilian banks in Beirut.", "Beirut",
+     "a bare rhetorical LIST of cities ('from Havana to Tehran to Beirut') is not a scene — read the body, "
+     "which centers on Beirut, instead of grabbing the first-listed Havana"),
     ("Trump to Axios: \"We are low-keying it\" with Iran", "", "United States",
      "SHIPPED BUG: a leader's on-record COLON statement (no say-verb) dotted the topic, Iran — it's a "
      "Washington story, and now shares the seat with the other coverage so the two merge into one dot"),
@@ -1743,6 +1747,10 @@ def main():
     _s1 = app._fix_speaker_colon("Former Israeli PM Naftali Bennett: Qatar is defeating Israel.")
     _s2 = app._fix_speaker_colon("Trump to Axios: We are low-keying it with Iran.")   # outlet dropped, opener lowered
     _s3 = app._fix_speaker_colon("Gaza: 20 killed in an overnight strike.")           # topic label, not a speaker
+    # A source's trailing "[...]" / "(…)" truncation stamp is dropped with the fragment it clipped; text with
+    # no stamp keeps the gentle end-stop instead of being trimmed.
+    _t1 = app._sharpen_desc("The senator died last month. Hegseth called for a bigger budget [...]")
+    _t2 = app._sharpen_desc("Researchers found the model bypassed a safety test, they say")   # no stamp
     _sharp_ok = ("[" not in _c1 and "AA]" not in _c1                     # credit tags gone
                  and _c2.endswith(".")                                   # mid-air headline gets a full stop
                  and "[sic]" in _c3                                      # a real editorial bracket survives
@@ -1757,7 +1765,9 @@ def main():
                  and _v3.startswith("A report on climate")              # ordinary 'on <topic>:' prose is untouched
                  and _s1 == "Former Israeli PM Naftali Bennett says Qatar is defeating Israel."  # colon -> reported speech
                  and _s2 == "Trump says we are low-keying it with Iran."  # "to Axios" outlet dropped, "We"->"we"
-                 and _s3 == "Gaza: 20 killed in an overnight strike.")   # a topic label is NOT a speaker -> untouched
+                 and _s3 == "Gaza: 20 killed in an overnight strike."    # a topic label is NOT a speaker -> untouched
+                 and "[" not in _t1 and _t1.endswith("last month.")     # "[...]" stamp + dangling fragment dropped
+                 and _t2.endswith("say."))                              # no stamp -> gentle end-stop, not trimmed
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
