@@ -211,6 +211,11 @@ GEO_CASES = [
      "and far beyond demonstrated Ukrainian UAV strike ranges", "", "Khabarovsk",
      "SHIPPED BUG: the bare word 'Amur' matched Amur, INDIA and nothing pinned the real region. The named "
      "refinery city is now in the gazetteer, so the located 'in Khabarovsk Krai' region wins — not a stray"),
+    ("Siding with West in conflict with Russia unacceptable for Serbs", "", "Serbia",
+     "SHIPPED BUG: dotted Russia (Moscow centroid). A country named only as the OTHER side of a conflict "
+     "('conflict WITH Russia') is a party, not the scene — the subject is Serbs -> Serbia"),
+    ("Kremlin says the war with Ukraine will continue", "", "Russia",
+     "GUARD: the adversary-party rule must not demote when the ACTOR (Kremlin) is the pick — stays Russia"),
     ("Trump to Axios: \"We are low-keying it\" with Iran", "", "United States",
      "SHIPPED BUG: a leader's on-record COLON statement (no say-verb) dotted the topic, Iran — it's a "
      "Washington story, and now shares the seat with the other coverage so the two merge into one dot"),

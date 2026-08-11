@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d10"
+_DATA_VER = "d11"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -5240,7 +5240,8 @@ DEMONYMS = {
     "zambian": "Zambia", "eritrean": "Eritrea", "kuwaiti": "Kuwait", "omani": "Oman",
     "bahraini": "Bahrain", "jordanian": "Jordan", "georgian": "Georgia", "armenian": "Armenia",
     "azerbaijani": "Azerbaijan", "kazakh": "Kazakhstan", "uzbek": "Uzbekistan",
-    "moldovan": "Moldova", "serbian": "Serbia", "croatian": "Croatia",
+    "moldovan": "Moldova", "serbian": "Serbia", "serb": "Serbia", "serbs": "Serbia", "serbians": "Serbia",
+    "croatian": "Croatia",
     "bosnian": "Bosnia and Herzegovina", "albanian": "Albania", "kosovar": "Kosovo",
     "slovak": "Slovakia", "slovenian": "Slovenia", "estonian": "Estonia", "latvian": "Latvia",
     "lithuanian": "Lithuania", "icelandic": "Iceland", "czech": "Czechia", "bolivian": "Bolivia",
@@ -7157,6 +7158,22 @@ def _bare_city_list(hits, words):
     return True
 
 
+_ADVERSARY_NOUNS = {"conflict", "war", "tensions", "tension", "dispute", "clash", "standoff", "rift",
+                    "feud", "row", "friction", "confrontation", "rivalry", "quarrel", "spat"}
+
+
+def _adversary_parties(hits, words):
+    """Indices of countries/demonyms named only as the OTHER SIDE of a fight — 'in conflict WITH Russia',
+    'war WITH X', 'dispute WITH X'. Such a country is a PARTY to the dispute, not the SCENE of the event."""
+    adv = set()
+    for h in hits:
+        if h[1] in ("country", "demonym"):
+            i = h[0]
+            if i >= 2 and words[i - 1] == "with" and words[i - 2] in _ADVERSARY_NOUNS:
+                adv.add(i)
+    return adv
+
+
 def _pick_place(hits, words):
     """'in/at/near X' and 'hits X' mark the event location; leftmost wins (the subject's own place).
     Then CONTAINMENT: if the winner is a whole country but the text also names a city INSIDE that
@@ -7369,6 +7386,17 @@ def _geolocate(title, sourcecountry, desc="", url=""):
                 return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
         best = _pick_place(hits, words)
+        # A country named only as the OTHER SIDE of a conflict ('conflict WITH Russia') is a PARTY, not the
+        # scene. If that's what the rules picked and the story names a DIFFERENT country/demonym as its
+        # subject, prefer that. SHIPPED: 'Siding with West in conflict with Russia unacceptable for Serbs'
+        # dotted Russia (Moscow centroid) instead of Serbia.
+        if best[1] in ("country", "demonym") and not _is_facility(best):
+            _adv = _adversary_parties(hits, words)
+            if best[0] in _adv:
+                _alt = [h for h in hits if h[0] not in _adv]
+                b2 = _pick_place(_alt, words) if _alt else None
+                if b2 is not None and b2[0] not in _adv:
+                    return b2[2], b2[3], b2[4], _sea_country(b2, mentions)
         # A COUNTRY that is the SUBJECT taking a domestic action at its own seat ("France ORDERS the
         # expulsion…") beats a country named only as background later ("…Intervention in Ukraine") — even
         # when that later one reads as "located" via an "in". Only fires when the chosen place is itself a
