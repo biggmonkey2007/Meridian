@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d6"
+_DATA_VER = "d7"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -719,7 +719,12 @@ def _tg_fetch(ch):
             "video": video, "thumb": (vthumb or photo), "dur": dur, "big": big,
             "avatar": avatar,
         })
-    return out[-16:]
+    # Keep the WHOLE recent page (Telegram exposes ~16-20 posts, spanning several hours on a busy channel),
+    # not just the newest 16. SHIPPED BUG: the old `out[-16:]` cap silently dropped the OLDEST post on the
+    # page — which is where an 8h-old but still-important story sits (the Komsomolsk-on-Amur refinery fire,
+    # post 50921 of 17, was thrown away before geolocation/the gate ever saw it). 30 is a safe ceiling the
+    # preview never reaches, so it keeps the full window while still bounding a pathological page.
+    return out[-30:]
 
 
 def _css_url(raw):
