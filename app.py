@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d3"
+_DATA_VER = "d4"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -5291,7 +5291,13 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # "the village" is the generic phrase "the village of X", never The Village(s), US;
                      # "central" is a direction/region word ("Central and Eastern Europe", "Central Asia"),
                      # never Central, Ontario — the multi-word "Central African Republic" still matches.
-                     "arab", "the village", "central"}
+                     "arab", "the village", "central",
+                     # A FACILITY TYPE is not a town. SHIPPED BUG: "Matecaña International Airport, Pereira's
+                     # Airport, is now in shambles" dotted "Airport, United States" (a Honolulu neighbourhood)
+                     # instead of Pereira, Colombia — the bare word "airport" outranked the real city. These
+                     # are type words, never a standalone place; a real multi-word name ("Airport West",
+                     # Melbourne) is a longer gram and still matches, so it is unaffected.
+                     "airport", "seaport", "heliport", "airfield", "airbase"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark / an
 # ADJECTIVE in a proper-noun phrase — a dot ONLY when the sentence locates something there ("in Sparks").
 # SHIPPED: "chipmaker SPARKS fears" -> Sparks, Nevada; "BRENT crude" -> Brent, London; a Trump "'GOLDEN

@@ -1558,6 +1558,23 @@ def main():
                       "the Wikipedia infobox parser must de-wikify basic facts and reject junk figures"))
     print(f"  {'ok ' if _if_ok else 'FAIL'} infobox facts -> {_if}")
 
+    # FACILITY TYPE IS NOT A PLACE — a bare "airport"/"seaport"/… must never be a standalone dot. SHIPPED:
+    # "Matecaña International Airport, Pereira's Airport, is now in shambles" dotted "Airport, United States"
+    # (a Honolulu neighbourhood) instead of the airport's real city, Pereira, Colombia.
+    print("\n=== FACILITY WORD NOT A PLACE (airport != a town) ===")
+    _fa_t = "Matecana International Airport, Pereira's Airport, is now in shambles"
+    _fa_m = app._context_mentions(_fa_t, "")
+    _fa_hits, _fa_words = app._scan_places(_fa_t, app._person_spans(_fa_t), _fa_m)
+    _fa_pick = app._pick_place(_fa_hits, _fa_words)
+    _fa_ok = ("airport" in app._NEVER_CITY_WORDS
+              and not any("Airport" in (h[4] or "") for h in _fa_hits)     # the type word is not a dot
+              and _fa_pick is not None and "Pereira" in (_fa_pick[4] or ""))  # the real city wins
+    ran[0] += 1
+    if not _fa_ok:
+        fails.append(("facility", "airport", "airport blocked; Pereira wins", str([(h[4], h[1]) for h in _fa_hits]),
+                      "a bare facility-type word must never outrank the real city"))
+    print(f"  {'ok ' if _fa_ok else 'FAIL'} '...International Airport, Pereira's Airport' -> {_fa_pick[4] if _fa_pick else None}")
+
     # FINISH THE BRIEF — a summary must never end mid-sentence. _finish_brief trims a dangling tail back to the
     # last full sentence, but leaves an already-complete brief (and a short whole one) untouched.
     print("\n=== FINISH BRIEF (no summary ends mid-sentence) ===")
@@ -1815,7 +1832,8 @@ def main():
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
              + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
              + 1    # + port-profile json extractor
-             + 1)   # + port infobox facts parser
+             + 1    # + port infobox facts parser
+             + 1)   # + facility word (airport) is not a place
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
