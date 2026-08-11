@@ -1634,11 +1634,24 @@ def main():
     _m = app._merge_same_event([dict(e) for e in _kyiv])
     _byplace = {e["place"]: e for e in _m}
     _kdot = next((e for e in _m if e["place"] == "Kyiv, Ukraine"), None)
+    # DIFFERENT PLACES = DIFFERENT EVENTS: a strike on the Komsomolsk-on-Amur refinery (far-east Khabarovsk
+    # Krai) must NOT fold into a strike on the Orsk refinery (Orenburg, ~6,000 km away) just because both are
+    # Ukrainian strikes on a Russian refinery. (The shipped bug that hid the far-east dot for a whole day.)
+    _refineries = [
+        {"title": "Ukrainian drone strike hits the Orsk oil refinery in Russia", "place": "Orsk, Russia",
+         "country": "Russia", "lat": 51.2, "lng": 58.6, "hrs": 5.0, "source": "NOELREPORTS",
+         "cat": "security", "image": "", "sum": "Orsk refinery hit.", "url": "r1"},
+        {"title": "Fire at Rosneft's Komsomolsk-on-Amur refinery in Khabarovsk Krai after Ukrainian strike",
+         "place": "Khabarovsk Krai, Russia", "country": "Russia", "lat": 48.48, "lng": 135.08, "hrs": 11.0,
+         "source": "NOELREPORTS", "cat": "security", "image": "", "sum": "Komsomolsk refinery fire.", "url": "r2"},
+    ]
+    _diff_ok = len(app._merge_same_event([dict(e) for e in _refineries])) == 2   # two distinct scenes, two dots
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
               and _kdot["title"].startswith("Kyiv: 9 dead")             # ...and its headline leads
               and _kdot["hrs"] == 3.4                                    # dot stays fresh (latest update)
+              and _diff_ok                                               # Komsomolsk-vs-Orsk stay two dots
               and app._death_toll("barrage kills nine in Kyiv") == 9
               and app._death_toll("markets rose 3 percent today") is None)
     ran[0] += 1

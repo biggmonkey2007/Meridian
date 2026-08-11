@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d8"
+_DATA_VER = "d9"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -2464,16 +2464,23 @@ class Api:
             img = a.get("socialimage") or ""
             _is_tg = bool(a.get("_tg"))
             _dup_ei = None
+            _spec = place != country and place != _co_short(country)          # this dot names a specific city/site
             for _co2, _cat2, _pl2, _key2, _toks2, _hrs2, _ei2 in added_sigs:
                 _inter = len(_key & _key2)
+                # TWO DIFFERENT SPECIFIC PLACES ARE DIFFERENT EVENTS. SHIPPED BUG: a Ukrainian strike on the
+                # Komsomolsk-on-Amur refinery (far-east Khabarovsk Krai) was folded into a strike on the Orsk
+                # refinery (Orenburg, ~6,000 km away) purely on same-country + {ukrainian, ukraine, refinery}.
+                # A same-country/similar-wording merge must NOT collapse two distinct, differently-located
+                # scenes — only a shared or country-level place may.
+                _diff_place = (_spec and _pl2 != _co2 and _pl2 != _co_short(_co2) and _pl2 != place)
                 # SIMILARITY METER: the same story from another source/channel — a copy may carry an extra
                 # prefix ("President Trump via Truth Social:"), be re-headlined, or land in a different
                 # category. Near-identical wording, or same-country/place with high overlap, = a duplicate.
                 if (_inter >= 4                                        # near-identical wording
-                        or (_co2 == country and _inter >= 3)          # same country, strongly alike
+                        or (_co2 == country and _inter >= 3 and not _diff_place)   # same country, strongly alike
                         or (_pl2 == place and _cat2 == cat and _inter >= 2)   # same place, same kind of event
                         or ((_co2 == country or _pl2 == place) and abs(hrs - _hrs2) <= 12
-                            and _same_story(_toks, _toks2))):
+                            and _same_story(_toks, _toks2) and not _diff_place)):
                     _dup_ei = _ei2
                     break
             if _dup_ei is not None:
@@ -2490,9 +2497,13 @@ class Api:
             # silently binned the 8th Russia story of the day, and a full-scale war produces far more
             # than seven. Dedup (above) is what protects the map from repetition; a cap is a blunt
             # instrument that throws away events we correctly fetched, classified and placed.
-            # They are kept only as a runaway guard, set high enough that they should never bite.
-            _cap = 5 if cat == "sports" else (70 if cat == "security" else 45)
-            if per_cat.get(cat, 0) >= _cap or per_country.get(country, 0) >= 30:
+            # They are a runaway guard only — so HARD NEWS (casualties, a top official on the record, a
+            # strike on strategic infrastructure) BYPASSES them entirely and can never be capped out.
+            # SHIPPED BUG: a full day of war news filled the security cap (70/70) and the map silently
+            # dropped a Ukrainian strike on the Komsomolsk-on-Amur refinery — exactly the news it's for.
+            _hard = _hard_news(title, a.get("desc") or "")
+            _cap = 5 if cat == "sports" else (150 if cat == "security" else 90)
+            if not _hard and (per_cat.get(cat, 0) >= _cap or per_country.get(country, 0) >= 55):
                 continue
             events.append({
                 "title": title, "cat": cat, "sid": _share_id(url, title),
@@ -2508,14 +2519,16 @@ class Api:
                 "channel": (a.get("_src") or "") if _is_tg else "",
                 "srcmedia": (a.get("_media") or []) if _is_tg else [],   # source post's own media, always available
                 "tg": _is_tg,
+                "_hard": _hard,     # transient: keeps hard news ahead of the final cap; stripped before return
             })
             seen_urls.add(url)
             seen_titles.add(norm)
             added_sigs.append((country, cat, place, _key, _toks, hrs, len(events) - 1))
             per_cat[cat] = per_cat.get(cat, 0) + 1
             per_country[country] = per_country.get(country, 0) + 1
-        # picture-bearing + most-recent first, then cap
-        events.sort(key=lambda e: (0 if e["image"] else 1, e["hrs"]))
+        # HARD NEWS first (so a strike/casualty/official statement is NEVER cut by the final cap), then
+        # picture-bearing, then most-recent — the order the merge keeps and the final cap trims from the end.
+        events.sort(key=lambda e: (0 if e.get("_hard") else 1, 0 if e["image"] else 1, e["hrs"]))
         try:
             events = _merge_same_event(events)     # one dot per EVENT — cite every source that covered it
         except Exception:
@@ -2527,7 +2540,9 @@ class Api:
                 events = _ai_dedup(events)     # last net: fold same-event dots the code can't prove (free LLM)
             except Exception:
                 pass
-        events = events[:260]
+        events = events[:400]                  # raised from 260 — a busy war day has more than 260 real stories
+        for _e in events:
+            _e.pop("_hard", None)              # transient sort key — not part of the served feed
         try:
             _assign_clips(events, _tg_all_posts())   # each clip belongs to ONE dot, feed-wide
         except Exception:
