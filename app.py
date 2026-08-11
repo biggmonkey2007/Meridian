@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d7"
+_DATA_VER = "d8"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -654,15 +654,16 @@ def _tg_clean(text):
     return _end_stop(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))))
 
 
-def _tg_fetch(ch):
-    """Return recent posts for one channel: [{channel,title,text,ts,time,link,photo}]."""
+def _tg_page(ch, before=None):
+    """Fetch ONE page of a channel's public preview — the most recent posts, or (with ?before=<msg_id>) the
+    page just OLDER than a given message, to walk back in time. Returns (posts, oldest_msg_id); UNCAPPED."""
+    url = "https://t.me/s/" + ch + (("?before=" + str(before)) if before else "")
     try:
         req = urllib.request.Request(
-            "https://t.me/s/" + ch,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
         h = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
     except Exception:
-        return []
+        return [], None
     tm = re.search(r'tgme_channel_info_header_title[^"]*"[^>]*>\s*<span[^>]*>(.*?)</span>', h, re.S)
     title = _clean_channel(_htmlmod.unescape(re.sub(r"<[^>]+>", "", tm.group(1)).strip()) if tm else ch)
     # THE CHANNEL'S REAL PICTURE. Telegram serves it on the preview page — as the page's og:image and
@@ -674,12 +675,17 @@ def _tg_fetch(ch):
     avatar = _htmlmod.unescape(am.group(1)) if am else ""
     if not avatar.startswith("http"):
         avatar = ""
-    out = []
+    out, oldest_id = [], None
     for chunk in re.split(r'(?=<div class="tgme_widget_message[ "])', h):
         dp = re.search(r'data-post="([^"]+)"', chunk)
         if not dp:
             continue
         post = dp.group(1)
+        try:
+            _mid = int(post.rsplit("/", 1)[-1])
+            oldest_id = _mid if oldest_id is None else min(oldest_id, _mid)   # for ?before= paging
+        except Exception:
+            pass
         tx = re.search(r'<div class="tgme_widget_message_text js-message_text[^"]*"[^>]*>(.*?)</div>\s*(?:<div class="tgme_widget_message_|<a class="tgme_widget_message_date)', chunk, re.S)
         text = _tg_clean(tx.group(1)) if tx else ""
         dt = re.search(r'<time[^>]*datetime="([^"]+)"', chunk)
@@ -719,12 +725,31 @@ def _tg_fetch(ch):
             "video": video, "thumb": (vthumb or photo), "dur": dur, "big": big,
             "avatar": avatar,
         })
-    # Keep the WHOLE recent page (Telegram exposes ~16-20 posts, spanning several hours on a busy channel),
-    # not just the newest 16. SHIPPED BUG: the old `out[-16:]` cap silently dropped the OLDEST post on the
-    # page — which is where an 8h-old but still-important story sits (the Komsomolsk-on-Amur refinery fire,
-    # post 50921 of 17, was thrown away before geolocation/the gate ever saw it). 30 is a safe ceiling the
-    # preview never reaches, so it keeps the full window while still bounding a pathological page.
-    return out[-30:]
+    return out, oldest_id
+
+
+def _tg_fetch(ch, hours=26, max_pages=8):
+    """EVERY post a channel made in the last `hours`, not an arbitrary count. Telegram's public preview shows
+    only ~16-20 posts per page (a few hours on a busy channel), so we PAGE BACK through it (?before=<id>)
+    until the oldest post we've seen is past the window — this is what stops a busy channel from pushing an
+    important story off the map before it's ever scraped. `max_pages` bounds a firehose channel so the scrape
+    can't stall; deduped by message id. (Was a flat `out[-16:]` cap that silently dropped the oldest posts.)"""
+    cutoff = time.time() - hours * 3600
+    seen, all_posts, before = set(), [], None
+    for _ in range(max_pages):
+        page, oldest = _tg_page(ch, before)
+        if not page:
+            break
+        for p in page:
+            mid = p["link"].rsplit("/", 1)[-1]
+            if mid not in seen:
+                seen.add(mid)
+                all_posts.append(p)
+        # stop once this page has reached past the time window, or there's no older page to ask for
+        if oldest is None or min((p["ts"] for p in page), default=0) < cutoff:
+            break
+        before = oldest
+    return [p for p in all_posts if p["ts"] >= cutoff]
 
 
 def _css_url(raw):
