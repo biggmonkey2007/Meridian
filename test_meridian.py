@@ -207,6 +207,10 @@ GEO_CASES = [
      "When Israel launched its campaign on Lebanon in March, warplanes targeted civilian banks in Beirut.", "Beirut",
      "a bare rhetorical LIST of cities ('from Havana to Tehran to Beirut') is not a scene — read the body, "
      "which centers on Beirut, instead of grabbing the first-listed Havana"),
+    ("Fire broke out at Rosneft's Komsomolsk-on-Amur refinery in Khabarovsk Krai, around 6,500 km from Ukraine "
+     "and far beyond demonstrated Ukrainian UAV strike ranges", "", "Khabarovsk",
+     "SHIPPED BUG: the bare word 'Amur' matched Amur, INDIA and nothing pinned the real region. The named "
+     "refinery city is now in the gazetteer, so the located 'in Khabarovsk Krai' region wins — not a stray"),
     ("Trump to Axios: \"We are low-keying it\" with Iran", "", "United States",
      "SHIPPED BUG: a leader's on-record COLON statement (no say-verb) dotted the topic, Iran — it's a "
      "Washington story, and now shares the seat with the other coverage so the two merge into one dot"),
@@ -1566,9 +1570,15 @@ def main():
     _fa_m = app._context_mentions(_fa_t, "")
     _fa_hits, _fa_words = app._scan_places(_fa_t, app._person_spans(_fa_t), _fa_m)
     _fa_pick = app._pick_place(_fa_hits, _fa_words)
+    # A wrong AI WHERE must not override a rule scene the HEADLINE names (the Orenburg-over-Khabarovsk bug):
+    _kh_t = "Fire at Rosneft's Komsomolsk-on-Amur refinery in Khabarovsk Krai, farther than the Orsk refinery"
+    _pit_ok = (app._place_in_title("Khabarovsk Krai, Russia", _kh_t)          # the rule scene IS in the headline
+               and not app._place_in_title("Orenburg Region, Russia", _kh_t)  # the AI's guess is NOT
+               and not app._place_in_title("", _kh_t))
     _fa_ok = ("airport" in app._NEVER_CITY_WORDS
               and not any("Airport" in (h[4] or "") for h in _fa_hits)     # the type word is not a dot
-              and _fa_pick is not None and "Pereira" in (_fa_pick[4] or ""))  # the real city wins
+              and _fa_pick is not None and "Pereira" in (_fa_pick[4] or "")  # the real city wins
+              and _pit_ok)
     ran[0] += 1
     if not _fa_ok:
         fails.append(("facility", "airport", "airport blocked; Pereira wins", str([(h[4], h[1]) for h in _fa_hits]),

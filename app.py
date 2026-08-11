@@ -169,9 +169,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d4"
+_DATA_VER = "d5"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
-_AIWHERE_VER = "aw5"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
+_AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
 
@@ -372,7 +372,11 @@ def _summarize(title, text):
               "ship, a naval strike, a rescue, a sinking). NEVER when the water is just a route, a border, or a "
               "backdrop that gets mentioned.\n"
               "3) Otherwise give the most specific real scene: 'City, Country' when a city/town/site is knowable, "
-              "else the 'Country', else NONE.\n"
+              "else the 'Country', else NONE. If a named FACILITY is the scene (a refinery, plant, base, "
+              "airport, port), name the CITY it sits in ('Rosneft's Komsomolsk-on-Amur refinery' -> "
+              "'Komsomolsk-on-Amur, Russia').\n"
+              "NEVER name a place mentioned only for COMPARISON, DISTANCE or CONTEXT ('6,500 km from Ukraine', "
+              "'farther than the Orsk refinery', 'unlike Moscow') — only where the event ITSELF happened.\n"
               "Never give where someone merely REACTED, or a person's nationality. And NEVER give the home "
               "country of a charity, NGO, aid group, company, agency or foundation that funds, backs, runs, "
               "donates to or is merely named in the story — even when its name CONTAINS a country ('CARITAS "
@@ -5332,6 +5336,13 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "gaza strip": (31.42, 34.35, "Palestine"),
     "donbas": (48.5, 37.8, "Ukraine"),
     "crimea": (45.3, 34.4, "Ukraine"),
+    # Far-east Russian refinery cities/regions the wire names in Ukrainian long-range drone-strike news but
+    # GeoNames' English index misses under this transliteration. SHIPPED BUG: "Komsomolsk-on-Amur refinery in
+    # Khabarovsk Krai" mis-dotted — the bare word "Amur" matched Amur, INDIA, and nothing pinned the real
+    # city. Absorbing the WHOLE hyphenated name as one gram also kills the false "Amur" match. (Hyphens
+    # tokenise to spaces, so the key is spaced.)
+    "komsomolsk on amur": (50.55, 137.01, "Russia"), "komsomolsk na amure": (50.55, 137.01, "Russia"),
+    "khabarovsk krai": (48.48, 135.08, "Russia"), "khabarovsk region": (48.48, 135.08, "Russia"),
 }
 # The strategic straits/seas/canals live in _WATERS (below), NOT here: an international water must register
 # at _FACILITY_PRIOR so it is NEVER NER-vetoed (spaCy tags "Hormuz"/"Bosphorus" as a PERSON and a 5M-prior
@@ -7420,7 +7431,64 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     return None
 
 
-_GEOAI_VER = "1"   # bump to invalidate cached AI geolocations when the prompt/format changes
+_GEOAI_VER = "2"   # bump to invalidate cached AI geolocations when the prompt/format changes
+
+
+def _geolocate_grounded(title, text):
+    """GROUNDED geolocation via Gemini + Google Search — for a hard location the model can LOOK UP the exact
+    site (which refinery, which town Ukraine struck) instead of guessing from the text alone. Names a plain
+    place the caller grounds through the gazetteer for coordinates; NEVER returns coordinates itself. Cached
+    30 days per story. Returns "" with no Gemini key or on any error, so it stays purely additive on top of
+    the rules + the free (Groq) fallback."""
+    title = (title or "").strip()
+    text = (text or "").strip()[:4000]
+    if not (title or text):
+        return ""
+    try:
+        key = load_gemini_key()
+    except Exception:
+        key = ""
+    if not key:
+        return ""
+    cache = os.path.join(CACHE_DIR, "geogr_" + hashlib.sha1(
+        (_GEOAI_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            return json.load(open(cache, encoding="utf-8")).get("p", "")
+        except Exception:
+            pass
+    prompt = ("Using web search, identify the ONE real place where the EVENT in this news story physically "
+              "happened — the exact city, town or site. If a specific named FACILITY is struck, on fire or "
+              "attacked (a refinery, plant, base, airport, port), LOOK UP which city that facility is in and "
+              "name that city. IGNORE any place mentioned only for comparison, distance or context "
+              "('6,500 km from Ukraine', 'farther than the Orsk refinery'). If the story is only an action "
+              "taken BY a country or leader (a statement, threat, ruling), give that actor's OWN country.\n"
+              "Reply with ONLY the place — 'City, Country', or just 'Country', or 'NONE'. No explanation, no "
+              "coordinates.\n\nHEADLINE: " + title + "\n\nSTORY:\n" + text)
+    out = ""
+    try:
+        url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+               + GEMINI_MODEL + ":generateContent?key=" + urllib.parse.quote(key))
+        body = json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 60},
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=55) as rr:
+            j = json.loads(rr.read().decode("utf-8"))
+        out = j["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        out = ""
+    out = ((out or "").splitlines() or [""])[0]
+    out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
+    if out.upper() == "NONE" or not (3 <= len(out) <= 60):
+        out = ""
+    try:
+        json.dump({"p": out}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
 
 
 @functools.lru_cache(maxsize=4096)
@@ -7447,14 +7515,20 @@ def _geolocate_ai(title, text):
     user = ("Where did the EVENT in this story physically take place? Reply with ONLY the place, nothing "
             "else:\n"
             "- 'City, Country' when a specific city, town or site is identifiable (e.g. 'Entebbe, Uganda').\n"
+            "- If a specific named FACILITY is the scene (a refinery, plant, base, airport, port), name the "
+            "CITY that facility is in — e.g. 'Rosneft's Komsomolsk-on-Amur refinery' -> 'Komsomolsk-on-Amur, "
+            "Russia'.\n"
             "- Just the country when only the country is knowable (e.g. 'Uganda').\n"
             "- If the story is an action taken BY a country or leader with no scene of its own (a "
             "statement, threat, ruling or decision), give that ACTOR's OWN country — not any country it "
             "merely talks about or threatens.\n"
+            "- NEVER name a place mentioned only for COMPARISON, DISTANCE or CONTEXT ('6,500 km from "
+            "Ukraine', 'farther than the Orsk refinery', 'unlike Moscow') — only where the event ITSELF "
+            "happened.\n"
             "- 'NONE' if there is genuinely no location.\n"
             "No explanation, no coordinates, no quotes — just the place name.\n\n"
             "HEADLINE: " + title + "\n\nSTORY:\n" + text)
-    out = _llm_complete(system, user, max_tokens=24, temperature=0.0)
+    out = _geolocate_grounded(title, text) or _llm_complete(system, user, max_tokens=24, temperature=0.0)
     out = ((out or "").splitlines() or [""])[0]
     out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
     if out.upper() == "NONE" or not (3 <= len(out) <= 60):
@@ -7475,6 +7549,16 @@ def _geo_is_weak(r):
     lat, lng, country = r[0], r[1], r[3]
     cc = COUNTRY_COORDS.get(country)
     return bool(cc) and abs(lat - cc[0]) < 1e-3 and abs(lng - cc[1]) < 1e-3
+
+
+def _place_in_title(label, title):
+    """Does a resolved place's city/region name appear in the HEADLINE itself? A rule scene the title NAMES
+    ('...in Khabarovsk Krai') is well grounded; an AI guess that contradicts it — often a place named only for
+    comparison or distance ('farther than the Orsk refinery') — must not override it."""
+    if not label or not title:
+        return False
+    city = _fold(str(label).split(",")[0]).lower().strip()
+    return len(city) >= 4 and city in _fold(title).lower()
 
 
 def _locate(title, sourcecountry, desc, url="", allow_ai=True):
@@ -7509,6 +7593,13 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
                 g = (g[0], g[1], g[2], ctx_co[0])
         if g and ((g[3] in ment) or (r and g[3] == r[3]) or water):
             if not _geo_is_weak(g):
+                # DON'T override a specific rule scene the HEADLINE itself names with a same-country AI guess
+                # that the headline does NOT name — the AI is often misled by a place cited only for comparison
+                # or distance. SHIPPED: "Komsomolsk-on-Amur refinery in Khabarovsk Krai … farther than Orsk"
+                # -> the AI said Orenburg (Orsk) and overrode the correct Khabarovsk Krai.
+                if (r and not _geo_is_weak(r) and r[3] == g[3]
+                        and _place_in_title(r[2], title) and not _place_in_title(g[2], title)):
+                    return r
                 return g                              # a specific, anchored place -> use the AI's pinpoint
             if r is None or _geo_is_weak(r):
                 return g                              # AI at least got the country; the rules had nothing better
