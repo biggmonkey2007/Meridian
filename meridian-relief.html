@@ -743,12 +743,10 @@ body.topo-active .zoomers{bottom:130px}
 .cx-extract{font-size:14px;line-height:1.62;color:var(--ink-2)}
 .cx-link{display:inline-block;margin-top:14px;font-size:12.5px;font-weight:700;color:#2b4a73;text-decoration:none}
 .cx-link:hover{text-decoration:underline}
-/* leadership photo bar */
-.lead-bar{display:flex;gap:11px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
-.lead-bar::-webkit-scrollbar{height:7px}
-.lead-bar::-webkit-scrollbar-thumb{background:#dde3ea;border-radius:9px}
-.lead-card{flex:0 0 auto;width:104px;text-align:center}
-.lead-img{width:104px;height:126px;object-fit:cover;border-radius:11px;background:#e7ecf1;display:block;box-shadow:0 1px 5px rgba(20,30,45,.2)}
+/* leadership photo grid — wraps to fit the panel, never scrolls sideways */
+.lead-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:13px 9px;padding:4px 0 10px}
+.lead-card{text-align:center;min-width:0}
+.lead-img{width:100%;aspect-ratio:104/126;object-fit:cover;border-radius:11px;background:#e7ecf1;display:block;box-shadow:0 1px 5px rgba(20,30,45,.2)}
 .lead-ph{display:flex;align-items:center;justify-content:center;font-size:38px;color:#9aa6b2;font-family:var(--serif)}
 .lead-name{font-size:12px;font-weight:700;color:var(--ink);margin-top:7px;line-height:1.25}
 .lead-role{font-size:10.5px;color:var(--ink-2);margin-top:1px;line-height:1.2}

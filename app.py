@@ -173,7 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l6"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
+_LEADER_VER = "l7"      # l7: fuller cabinet (VP+State+Treasury+Defense+Homeland precise for US; +Finance/Interior all)
 
 
 def _aiwhere_path(title):
@@ -3038,6 +3038,7 @@ class Api:
             # 'officeholder' (P1308). ACCURATE where Wikidata maintains it (strong for the US and well-labelled
             # offices) and SILENTLY ABSENT otherwise: a guess is never shown, so the card is never wrong. Wrapped
             # so a cabinet lookup (or a rate limit) can never break the head-of-state/government cards above.
+            _cabinet_wiped = False   # US precise-title block came back empty (429) -> re-fetch, don't cache all day
             try:
                 # Office names use assorted forms of the country name ("the United States", "United States"),
                 # not always the map's ("United States of America"). Build the common variants so the search hits.
@@ -3062,12 +3063,19 @@ class Api:
                 # US: precise-title cabinet (Vice President, Secretary of State, Secretary of Defense) from
                 # curated Wikidata offices whose current-officeholder is reliably maintained — VP isn't in the
                 # minister lists below, and these give the exact US titles.
-                for _oq in _CABINET_QIDS.get(country, ()):
+                _expect_cab = _CABINET_QIDS.get(country, ())
+                _cab_added = 0
+                for _oq in _expect_cab:
                     _co = _office_holder_qid(_oq)
                     if _co and _co["qid"] not in _seen_q and (_co.get("name") or "").lower() not in _seen_nm:
                         _seen_q.add(_co["qid"]); _seen_nm.add(_co["name"].lower())
+                        _cab_added += 1
                         out.append({"name": _co["name"], "title": _clean_cab_title(_co["title"]), "role": "Cabinet",
                                     "img": _co.get("img", ""), "x": None, "telegram": None, "truth": None})
+                # Expected a Wikidata cabinet (e.g. the US VP) but got NOTHING back -> the offices 429'd. Flag it so
+                # this profile isn't cached for the day with the VP missing; it self-heals on the next fetch.
+                if _expect_cab and _cab_added == 0:
+                    _cabinet_wiped = True
                 # EVERY country: the current foreign + defence minister from Wikipedia's "List of current …
                 # ministers" pages (one daily fetch each, all countries). Deduped so the US doesn't repeat.
                 for _role, _listart in _MINISTER_LISTS:
@@ -3084,8 +3092,8 @@ class Api:
             # DEGRADED = Wikidata gave no person data (rate-limited), so names/photos came from the Factbook
             # fallback. Cached only briefly (see the read above) so it self-heals; also flagged to the client
             # so a degraded profile isn't kept for the day either.
-            res = {"leaders": out, "lean": lean, "generated": int(time.time()), "degraded": not pents,
-                   "ver": _LEADER_VER}
+            res = {"leaders": out, "lean": lean, "generated": int(time.time()),
+                   "degraded": (not pents) or _cabinet_wiped, "ver": _LEADER_VER}
             if out:
                 try:
                     json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -4459,12 +4467,30 @@ def _succession_current(person_qid, office_qid, hops=3):
 # resolve them directly (one fetch, no search) — accurate and cheap. Curated because a generic per-country
 # name search found nothing outside the US anyway and rate-limited Wikidata enough to degrade the core cards.
 _CABINET_QIDS = {
-    "United States of America": ["Q11699", "Q14213", "Q735015"],   # VP, Secretary of State, Secretary of Defense
+    # US cabinet in order of precedence, from Wikidata offices whose current-officeholder (P1308) is reliably
+    # maintained — these give the EXACT US titles (and portraits) the minister lists below can't. Deduped by
+    # name against those lists, so the US shows the precise title, not a generic 'Finance Minister'.
+    "United States of America": [
+        "Q11699",    # Vice President
+        "Q14213",    # Secretary of State
+        "Q4215834",  # Secretary of the Treasury
+        "Q735015",   # Secretary of Defense
+        "Q642859",   # Secretary of Homeland Security
+    ],
 }
 
 
 def _office_holder_qid(office_qid):
-    """Current officeholder (P1308, unended, living) of a known office entity: {qid,name,img,title}, or None."""
+    """Current officeholder (P1308, unended, living) of a known office entity: {qid,name,img,title}, or None.
+    Cached ~daily on disk: the VP (and other precise-title offices) have NO minister-list fallback, so a
+    transient Wikidata 429 during a full profile fetch must not be able to erase an already-known holder.
+    Only successful lookups are cached — a rate-limited None never poisons the cache, it just retries."""
+    cache = os.path.join(CACHE_DIR, "office_" + re.sub(r"[^\w]", "", office_qid) + ".json")
+    if _fresh(cache, 20 * 3600):
+        try:
+            return json.load(open(cache, encoding="utf-8")) or None
+        except Exception:
+            pass
     e = _wd_entities(office_qid, "labels|claims").get(office_qid, {})
     cur = [c for c in e.get("claims", {}).get("P1308", []) if "P582" not in c.get("qualifiers", {})]
     if not cur:
@@ -4474,8 +4500,13 @@ def _office_holder_qid(office_qid):
     nm = (pe.get("labels", {}).get("en", {}) or {}).get("value", "")
     if not pq or not nm or pe.get("claims", {}).get("P570"):
         return None
-    return {"qid": pq, "name": nm, "img": _wd_img(pe),
-            "title": (e.get("labels", {}).get("en", {}) or {}).get("value", "")}
+    res = {"qid": pq, "name": nm, "img": _wd_img(pe),
+           "title": (e.get("labels", {}).get("en", {}) or {}).get("value", "")}
+    try:
+        json.dump(res, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return res
 
 
 # CABINET FOR EVERY COUNTRY — from Wikipedia's "List of current X ministers" pages. Each is ONE article that
@@ -4485,6 +4516,8 @@ def _office_holder_qid(office_qid):
 _MINISTER_LISTS = [
     ("Foreign Minister", "List of current foreign ministers"),
     ("Defence Minister", "List of current defence ministers"),
+    ("Finance Minister", "List of current finance ministers"),
+    ("Interior Minister", "List of current interior ministers"),
 ]
 _MINLIST_ALIAS = {
     "United States of America": "United States", "Czechia": "Czech Republic", "S. Sudan": "South Sudan",
