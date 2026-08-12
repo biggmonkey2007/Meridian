@@ -169,8 +169,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d14"
-_SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_DATA_VER = "d15"
+_SUM_PROMPT_VER = "13"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
@@ -327,7 +327,7 @@ def _summarize(title, text):
     cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
-            return _fix_speaker_colon(json.load(open(cache, encoding="utf-8")).get("s", ""))
+            return _drop_empty_bullets(_fix_speaker_colon(json.load(open(cache, encoding="utf-8")).get("s", "")))
         except Exception:
             pass
     system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write clean, original, "
@@ -338,15 +338,19 @@ def _summarize(title, text):
               "Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template.\n"
               "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
               "The reader sees ONLY your brief, so it must stand on its own.\n\n"
+              "The brief must ADD to the headline, never just restate it. If the headline already says what "
+              "happened and there is no more real detail, write ONE short sentence (or even none) — do NOT pad. "
               "Write it in this shape:\n"
               "1. LEDE — 1 to 3 short sentences of plain prose that say what happened. This carries the brief.\n"
               "2. BODY (only if the story is rich enough to need it) — you MAY add a short second, and at most a "
               "third, paragraph of plain prose that gives the next most important context or detail. Match the "
               "length to the story: a simple item stays ONE paragraph; a big, layered story may run to about "
               "three short paragraphs. Never pad — every sentence must earn its place.\n"
-              "3. BULLETS — optionally add 1 or 2 bullets for the hardest specifics worth pulling out on their "
-              "own (a key number, a name, a decisive detail). If the prose already covers it, use none. "
-              "NEVER pad to three just to fill space.\n"
+              "3. BULLETS — optionally add 1 or 2 bullets ONLY for a hard specific worth pulling out (a key "
+              "number, a name, a decisive detail). If the prose already covers it, use none. NEVER pad to three "
+              "to fill space, and NEVER write a bullet whose only content is that a fact is missing — no "
+              "'Damage: unknown', 'Status: unclear', 'What's next: not yet disclosed'. If you do not have the "
+              "specific, leave the bullet out entirely.\n"
               "4. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
               "bullet that starts 'Why it matters:' and gives the stakes in one sentence. If the significance "
               "is self-evident, leave it out entirely.\n\n"
@@ -421,6 +425,7 @@ def _summarize(title, text):
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     s = _finish_brief(s)                                        # never leave a brief cut off mid-sentence
     s = _fix_speaker_colon(s)                                   # "Bennett: Qatar is…" -> "Bennett says Qatar is…"
+    s = _drop_empty_bullets(s)                                  # drop filler bullets ("- Damage: unknown")
     if where or scope:
         try:
             json.dump({"p": where, "sc": scope}, open(_aiwhere_path(title), "w", encoding="utf-8"))
@@ -596,6 +601,35 @@ def _fix_speaker_colon(text):
     if lead and lead.group(0).lower() in _COMMON_LOWER:       # lowercase a common opener; proper nouns keep caps
         rest = rest[0].lower() + rest[1:]
     return attrib + " says " + rest
+
+
+# A bullet that only says a fact is missing carries NO information — "- Damage: The extent is unknown",
+# "- What's next: The refinery's status is unclear". It's pure padding, so drop it. A bullet with any real
+# specific (a number) is always kept, so "3 units damaged, extent still unclear" survives.
+_EMPTY_BULLET_RE = re.compile(
+    r"(?i)\b(?:unclear|unknown|not\s+(?:yet\s+|immediately\s+)?(?:been\s+)?(?:clear|disclosed|released|"
+    r"confirmed|specified|determined|available|known|reported|provided|announced|revealed|stated|given|"
+    r"established|verified)|remains?\s+(?:to\s+be\s+seen|unclear|unknown)|yet\s+to\s+be\s+(?:determined|"
+    r"confirmed|announced|seen|known|released|disclosed|established)|no\s+(?:further|additional)?\s*details?|"
+    r"not\s+been\s+made\s+public|is\s+not\s+known|are\s+not\s+known|could\s+not\s+be\s+(?:confirmed|"
+    r"determined|verified|reached)|no\s+word\s+on|has\s+not\s+(?:said|commented))\b")
+
+
+def _drop_empty_bullets(s):
+    """Strip bullets that carry no news — a fact declared missing ('the extent is unknown', 'status unclear')
+    is filler that just pads the brief. A bullet holding any real specific (a number) is always kept."""
+    if not s or "\n" not in s:
+        return s
+    out = []
+    for ln in s.split("\n"):
+        st = ln.strip()
+        if st[:1] in "-•*" and len(st) > 1 and st[1] in " \t":
+            body = re.sub(r"^[-•*]\s*", "", st)
+            body = re.sub(r"^\*\*[^*]{1,26}\*\*\s*:?\s*", "", body)      # drop a bold "Label:" prefix
+            if _EMPTY_BULLET_RE.search(body) and not re.search(r"\d", body):
+                continue                                                # a no-information bullet -> drop it
+        out.append(ln)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
 def _end_stop(t):
@@ -826,6 +860,13 @@ _PROMO_TAIL   = re.compile(
     r"|[\s\-–—|]*(?:read(?:\s+more)?|watch|more|link|source|via|details?|full\s+story)\s*:\s*$",  # a label + colon left dangling after the URL was cut
     re.I | re.S)
 _PROMO_HANDLE = re.compile(r"(?<![\w@])@[A-Za-z]\w{2,}")                            # stray "@InsiderPaper"
+# A BYLINE/CREDIT is not news: "Authored by Guy Birchall via The Epoch Times", "Written by … for …",
+# "Story by …". Strip it wherever it sits. A Capitalised NAME must follow "by", so ordinary prose ("a study
+# authored by the team") is left alone.
+_BYLINE = re.compile(
+    r"(?m)(?:^|(?<=[.\s]))(?i:authored|written|reported|produced|compiled|edited|republished|reposted|story)\s+"
+    r"(?i:by)\s+[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+){0,3}"        # a Capitalised NAME (no '.', so 'Smith.' can't bleed
+    r"(?:\s+(?i:via|for|at|from)\s+[A-Z][\w'’&-]+(?:\s+[\w'’&-]+){0,4})?\s*[.,;:·—\-]*")   # into the next sentence
 # WIRE DATELINE: "TEHRAN – ", "WASHINGTON — ", "BEIRUT, Lebanon — ", "NEW DELHI (Reuters) — ". A brief should
 # just START, not open with a place-stamp. Only strips an ALL-CAPS leading place (>=3 caps) + optional
 # ", Country" + optional "(Agency)" + a spaced dash — so a Title-cased sentence ("Trump — the president —")
@@ -844,7 +885,8 @@ def _strip_promo(t):
         prev = t
         t = _PROMO_TAIL.sub("", t)
     t = _PROMO_HANDLE.sub("", t)
-    return re.sub(r"\s{2,}", " ", t).strip(" \t\r\n-–—|:")
+    t = _BYLINE.sub(" ", t)             # "Authored by Guy Birchall via The Epoch Times ," -> gone
+    return re.sub(r"\s{2,}", " ", t).strip(" \t\r\n-–—|:,")
 
 
 def _sharpen_desc(text, n=460):
