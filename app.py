@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d17"
+_DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -918,6 +918,13 @@ _BYLINE = re.compile(
     r"(?m)(?:^|(?<=[.\s]))(?i:authored|written|reported|produced|compiled|edited|republished|reposted|story)\s+"
     r"(?i:by)\s+[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+){0,3}"        # a Capitalised NAME (no '.', so 'Smith.' can't bleed
     r"(?:\s+(?i:via|for|at|from)\s+[A-Z][\w'’&-]+(?:\s+[\w'’&-]+){0,4})?\s*[.,;:·—\-]*")   # into the next sentence
+# A TRAILING SOURCE ATTRIBUTION — "…, Axios reports.", "…, sources say.", "…, officials said.", "…, according
+# to Reuters." — is wire furniture, not the news. Strip it from the END. A COMMA is required first, so ordinary
+# prose ("the president said.") is left alone.
+_TRAIL_ATTRIB = re.compile(
+    r",\s*(?:(?:[A-Z][\w.&'’-]+(?:\s+[A-Z][\w.&'’-]+){0,3}\s+)?(?:reports?|reported|says?|said|confirms?|"
+    r"confirmed|adds?|added|notes?|noted)|sources?\s+(?:say|said|tell|told|reported)|"
+    r"(?:the\s+)?officials?\s+(?:say|said|added)|according\s+to\s+[^.,]{2,40})\s*\.?\s*$")   # NO re.I: the
 # WIRE DATELINE: "TEHRAN – ", "WASHINGTON — ", "BEIRUT, Lebanon — ", "NEW DELHI (Reuters) — ". A brief should
 # just START, not open with a place-stamp. Only strips an ALL-CAPS leading place (>=3 caps) + optional
 # ", Country" + optional "(Agency)" + a spaced dash — so a Title-cased sentence ("Trump — the president —")
@@ -963,6 +970,7 @@ def _sharpen_desc(text, n=460):
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
     t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
+    t = _TRAIL_ATTRIB.sub("", t).strip(" ,;:–—-")   # "…, Reuters reports." -> drop the trailing attribution
     return _clip(_end_stop(t), n)
 
 
@@ -1048,6 +1056,7 @@ def _tg_headline(text):
     # Never leave a headline ending on a dangling function word ("...held talks in.", "...struck by") —
     # a source that truncated mid-phrase. Drop the trailing word (and any comma/period it carried).
     line = re.sub(r"[\s,;:]+(?:" + _DANGLE_WORDS + r")\s*[.!?]*$", "", line, flags=re.I).strip()
+    line = _TRAIL_ATTRIB.sub("", line).strip(" ,;:–—-")     # "…conflict with Armenia, Axios reports." -> drop the tag
     if line and line[0].islower():
         line = line[0].upper() + line[1:]
     return line.strip()
@@ -1651,12 +1660,16 @@ class Api:
                 except Exception:
                     pass
             import yt_dlp
-            # full extract (not flat) so we get real upload dates; limited to n so it stays quick; cached 2 days
+            # BIAS the search toward the leader actually SPEAKING (official/news footage), not sensational
+            # commentary channels — "<name> speech OR interview OR remarks OR address OR press conference". Fetch
+            # a few extra so the recency filter (last week, then month) still has candidates. Cached 2 days.
+            sq = query.strip() + " speech OR interview OR remarks OR address OR press conference OR statement"
+            fetch = min(14, max(n + 6, 10))
             opts = {"quiet": True, "skip_download": True, "extract_flat": False,
                     "noplaylist": True, "no_warnings": True, "socket_timeout": 15,
-                    "ignoreerrors": True, "playlist_items": "1-%d" % n}
+                    "ignoreerrors": True, "playlist_items": "1-%d" % fetch}
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info("https://www.youtube.com/results?search_query=" + urllib.parse.quote(query) + "&sp=CAI%253D", download=False)
+                info = ydl.extract_info("https://www.youtube.com/results?search_query=" + urllib.parse.quote(sq) + "&sp=CAI%253D", download=False)
             out = []
             for e in ((info or {}).get("entries") or []):
                 if e and e.get("id"):
@@ -1671,7 +1684,7 @@ class Api:
             # recent clips shows NONE rather than years-old footage (a 2022 NYSE panel under a live leader).
             out = ([c for c in out if c.get("ts") and (_now - c["ts"]) < 8 * 86400]
                    or [c for c in out if c.get("ts") and (_now - c["ts"]) < 31 * 86400])
-            res = {"clips": out}
+            res = {"clips": out[:n]}
             try:
                 json.dump(res, open(cache, "w", encoding="utf-8"))
             except Exception:
