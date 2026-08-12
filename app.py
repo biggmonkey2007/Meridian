@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d12"
+_DATA_VER = "d13"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -5380,7 +5380,12 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # instead of Pereira, Colombia — the bare word "airport" outranked the real city. These
                      # are type words, never a standalone place; a real multi-word name ("Airport West",
                      # Melbourne) is a longer gram and still matches, so it is unaffected.
-                     "airport", "seaport", "heliport", "airfield", "airbase"}
+                     "airport", "seaport", "heliport", "airfield", "airbase",
+                     # A DIRECTION or a WEATHER PATTERN is not a town. SHIPPED: "Ivory Coast has acquired…drones"
+                     # dotted West, TEXAS; "Southern African bloc raises alarm over severe El Nino" dotted El
+                     # Niño, MEXICO. "west"/"el nino" are never the scene; "West Bank"/"West Virginia" are longer
+                     # grams and still match.
+                     "west", "el nino", "el niño"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark / an
 # ADJECTIVE in a proper-noun phrase — a dot ONLY when the sentence locates something there ("in Sparks").
 # SHIPPED: "chipmaker SPARKS fears" -> Sparks, Nevada; "BRENT crude" -> Brent, London; a Trump "'GOLDEN
@@ -5388,7 +5393,12 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
 # workers" are the same trap: the word is a modifier, not the town, unless a preposition locates it.
 _NOT_CITY_WORDS = {"sparks", "brent", "shaping", "golden", "silver", "liberty", "victory",
                    "union", "enterprise", "sunrise", "sunset", "eagle", "hope", "energy",
-                   "fleet", "dome", "shield", "dawn", "sentinel", "guardian"}   # program/operation names
+                   "fleet", "dome", "shield", "dawn", "sentinel", "guardian",
+                   # An OCEAN, the SUN'S CORONA, and a UNIT OF WEIGHT are not the scene unless the sentence
+                   # locates something there. SHIPPED: "Putin threatened…Russian vessels" dotted Pacific, MISSOURI;
+                   # "solar eclipse could help scientists" dotted Corona, CALIFORNIA; "gold surpasses $4,500 per
+                   # troy ounce" dotted Troy, MICHIGAN. "in Corona"/"in Troy" still dots the real town.
+                   "pacific", "atlantic", "corona", "troy"}   # program/operation names, oceans, measures
 # Month names are DATES, never the scene. A single "May"/"March"/"August" — even after a preposition that
 # normally locates ("only two in May", "since March") — is a gazetteer town (May, India; March, England) the
 # scan would otherwise dot. SHIPPED BUG: a Kamchatka submarine story dotted "May, India" off "…two in May".
@@ -6529,7 +6539,11 @@ _ACTOR_SEAT_VERBS = {
     "imposes", "impose", "imposed", "announces", "announce", "announced", "declares", "declare", "declared",
     "approves", "approve", "approved", "passes", "pass", "passed", "unveils", "unveil", "unveiled",
     "introduces", "introduce", "introduced", "suspends", "suspend", "suspended", "deports", "deport", "deported",
-    "indicts", "indict", "indicted", "outlaws", "outlaw", "outlawed", "designates", "designate", "designated"}
+    "indicts", "indict", "indicted", "outlaws", "outlaw", "outlawed", "designates", "designate", "designated",
+    # A WEAPONS TEST happens at the TESTING country (it has no foreign target). SHIPPED: "North Korea tests
+    # missile ahead of US-South Korea drills" dotted the United States (the higher-profile country the headline
+    # merely names). Strike/attack/launch-on verbs stay OUT (those hit a target); a bare test does not.
+    "tests", "test", "tested", "test-fires", "test-fired"}
 
 
 def _actor_seat_country(hits, words):
@@ -7004,8 +7018,10 @@ def _is_materiel_nationality(h, words):
         j += 1
     for k in range(j, min(j + 8, len(words))):
         w = words[k]
-        if w in _GEO_PREP or w in _GEO_ACTION or w in _SAY_VERBS:
-            break                                    # a verb/preposition ends the weapon phrase
+        if (w in _GEO_PREP or w in _GEO_ACTION or w in _SAY_VERBS or w in _ACTOR_SEAT_VERBS
+                or w in ("launches", "launched", "fires", "fired", "conducts", "conducted", "deploys", "deployed")):
+            break                                    # a verb/preposition ends the weapon phrase — the country
+            #  before it is the ACTOR, not the weapon's nationality ("North Korea TESTS missile" is North Korea)
         if w in _MATERIEL_NOUNS:
             return True
     return False

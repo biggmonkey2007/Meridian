@@ -216,6 +216,12 @@ GEO_CASES = [
      "('conflict WITH Russia') is a party, not the scene — the subject is Serbs -> Serbia"),
     ("Kremlin says the war with Ukraine will continue", "", "Russia",
      "GUARD: the adversary-party rule must not demote when the ACTOR (Kremlin) is the pick — stays Russia"),
+    ("North Korea tests missile ahead of US-South Korea drills", "", "North Korea",
+     "SHIPPED BUG: dotted the United States. A weapons TEST is at the testing country — 'North Korea' is the "
+     "actor (verb 'tests' between it and 'missile'), not the missile's nationality, and beats a higher-profile "
+     "country the headline merely names"),
+    ("Ivory Coast has acquired at least two Chinese-made Wing Loong II drones", "Ivory Coast bought drones.",
+     "Ivoire", "SHIPPED BUG: the bare direction word 'West' dotted West, TEXAS — 'west' is never the scene"),
     ("Trump to Axios: \"We are low-keying it\" with Iran", "", "United States",
      "SHIPPED BUG: a leader's on-record COLON statement (no say-verb) dotted the topic, Iran — it's a "
      "Washington story, and now shares the seat with the other coverage so the two merge into one dot"),
