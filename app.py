@@ -169,8 +169,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d15"
-_SUM_PROMPT_VER = "13"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_DATA_VER = "d16"
+_SUM_PROMPT_VER = "14"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
@@ -327,7 +327,8 @@ def _summarize(title, text):
     cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
-            return _drop_empty_bullets(_fix_speaker_colon(json.load(open(cache, encoding="utf-8")).get("s", "")))
+            return _drop_redundant_bullets(_drop_empty_bullets(_fix_speaker_colon(
+                json.load(open(cache, encoding="utf-8")).get("s", ""))))
         except Exception:
             pass
     system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write clean, original, "
@@ -347,10 +348,12 @@ def _summarize(title, text):
               "length to the story: a simple item stays ONE paragraph; a big, layered story may run to about "
               "three short paragraphs. Never pad — every sentence must earn its place.\n"
               "3. BULLETS — optionally add 1 or 2 bullets ONLY for a hard specific worth pulling out (a key "
-              "number, a name, a decisive detail). If the prose already covers it, use none. NEVER pad to three "
-              "to fill space, and NEVER write a bullet whose only content is that a fact is missing — no "
-              "'Damage: unknown', 'Status: unclear', 'What's next: not yet disclosed'. If you do not have the "
-              "specific, leave the bullet out entirely.\n"
+              "number, a name, a decisive detail). Every bullet must ADD something the lede did NOT already "
+              "say — NEVER restate a number, place or fact that is already in the prose above (do not add a "
+              "'Casualties:' bullet repeating a toll the lede gave, or a 'Location:' bullet repeating where it "
+              "happened). If the prose already covers everything, use NO bullets. NEVER pad to fill space, and "
+              "NEVER write a bullet whose only content is that a fact is missing — no 'Damage: unknown', "
+              "'Status: unclear', 'What's next: not yet disclosed'.\n"
               "4. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
               "bullet that starts 'Why it matters:' and gives the stakes in one sentence. If the significance "
               "is self-evident, leave it out entirely.\n\n"
@@ -426,6 +429,7 @@ def _summarize(title, text):
     s = _finish_brief(s)                                        # never leave a brief cut off mid-sentence
     s = _fix_speaker_colon(s)                                   # "Bennett: Qatar is…" -> "Bennett says Qatar is…"
     s = _drop_empty_bullets(s)                                  # drop filler bullets ("- Damage: unknown")
+    s = _drop_redundant_bullets(s)                              # drop bullets that just restate the lede
     if where or scope:
         try:
             json.dump({"p": where, "sc": scope}, open(_aiwhere_path(title), "w", encoding="utf-8"))
@@ -628,6 +632,46 @@ def _drop_empty_bullets(s):
             body = re.sub(r"^\*\*[^*]{1,26}\*\*\s*:?\s*", "", body)      # drop a bold "Label:" prefix
             if _EMPTY_BULLET_RE.search(body) and not re.search(r"\d", body):
                 continue                                                # a no-information bullet -> drop it
+        out.append(ln)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _bullet_body(st):
+    """The content of a bullet line, without its marker and any bold 'Label:' prefix."""
+    body = re.sub(r"^[-•*]\s*", "", st)
+    return re.sub(r"^\*\*[^*]{1,26}\*\*\s*:?\s*", "", body)
+
+
+def _fact_tokens(text):
+    """The FACTS in a line — every number, plus its distinctive words. Two lines carrying the same facts have
+    the same tokens; a line that adds a new number/name has an extra one."""
+    return set(re.findall(r"\d+", text or "")) | (_sigwords(text or "") - _GENERIC_WORDS)
+
+
+def _drop_redundant_bullets(s):
+    """A bullet must ADD to the prose, not restate it. 'Casualties: 16 killed and 23 wounded' under a lede that
+    already said 'killing at least 16 and wounding 23' is a pure restatement — drop it. A bullet is kept the
+    moment it carries a fact (a number or distinctive word) the lede did NOT: only >=80%-already-in-the-lede
+    bullets go. 'Why it matters:' is interpretive, not a fact restatement, so it is always kept."""
+    if not s or "\n" not in s:
+        return s
+    lines = s.split("\n")
+    lede = set()
+    for ln in lines:                                        # the prose ABOVE the first bullet is the lede
+        st = ln.strip()
+        if st[:1] in "-•*" and len(st) > 1 and st[1] in " \t":
+            break
+        if st:
+            lede |= _fact_tokens(st)
+    if not lede:
+        return s
+    out = []
+    for ln in lines:
+        st = ln.strip()
+        if st[:1] in "-•*" and len(st) > 1 and st[1] in " \t" and not re.match(r"^[-•*]\s*\*\*why", st, re.I):
+            bt = _fact_tokens(_bullet_body(st))
+            if bt and len(bt & lede) / len(bt) >= 0.8:      # ~all its facts already said above -> restatement
+                continue
         out.append(ln)
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
@@ -909,6 +953,14 @@ def _sharpen_desc(text, n=460):
 _DANGLE_WORDS = "in|on|at|of|to|the|a|an|and|or|nor|with|from|by|into|onto|upon|per|via|amid|toward|towards"
 
 
+# A trailing '.' on one of these is an abbreviation, NOT a sentence end — so the first-sentence cut must not
+# stop there ("wait until Mr. Trump…", "the U.S. said…", "Gen. Qaani…", "St. Petersburg…").
+_ABBREV = {"mr", "mrs", "ms", "dr", "prof", "rev", "hon", "st", "mt", "jr", "sr", "vs", "no", "fig",
+           "gen", "sen", "rep", "gov", "lt", "col", "sgt", "cpl", "capt", "cmdr", "maj", "adm", "brig",
+           "pres", "sec", "supt", "det", "esq", "messrs", "inc", "ltd", "co", "corp", "dept", "est",
+           "approx", "vol", "ave", "blvd", "rd"}
+
+
 def _tg_headline(text):
     """A map-ready headline: first solid line, urgency tags/emoji stripped, cut at a SENTENCE end (never
     mid-word — "...or Russian attack, The Ti" shipped), and always Capitalised, because Telegram threads
@@ -950,9 +1002,16 @@ def _tg_headline(text):
     # long-but-complete first sentence is kept in full rather than clipped.
     cut = -1
     for mm in re.finditer(r"(?<=[\w)\"'’”])[.!?]+[\"'’”)\]]*(?=\s|$)", line):
-        if mm.end() >= 60:
-            cut = mm.end()              # FIRST complete sentence, incl. its closing quote
-            break
+        if mm.end() < 60:
+            continue
+        # NOT a sentence end if the '.' belongs to an abbreviation or an initial. SHIPPED: "…wait until Mr.
+        # Trump takes office" was cut at "Mr." — a truncated, meaningless headline.
+        _wm = re.search(r"([A-Za-z]+)$", line[:mm.start()])
+        _lw = _wm.group(1) if _wm else ""
+        if _lw.lower() in _ABBREV or (len(_lw) == 1 and _lw.isupper()):
+            continue
+        cut = mm.end()                  # FIRST complete sentence, incl. its closing quote
+        break
     if cut >= 60:
         line = line[:cut].strip()
     elif len(line) > 120:
