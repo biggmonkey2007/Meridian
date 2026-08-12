@@ -28,6 +28,22 @@ the `Stop` hook (or run `/hooks` in Claude Code); to open the app by hand, just 
 
 Read this before changing anything. Every design decision below exists to serve it.
 
+> ### The standard: professional, or it does not ship
+> **We are competing with million-dollar newsrooms, and we cannot afford mediocrity.** Every time
+> anyone touches this bot, the bar is the utmost professional standard — the standard of a paid,
+> world-class product, not a hobby project. Concretely, that means:
+> - **Every article reads like a professional wrote it.** Clean, sharp, crisp paragraphs; no truncation
+>   (`[...]`, trailing "…"), no stray quotation marks, no raw source stamps ("via Truth Social:",
+>   "Axios reports", "Disclose.tv"), no bullets that just restate the headline. If it isn't publishable
+>   in a real outlet, it isn't done.
+> - **Every fact per country is correct and current.** Heads of state and government, the cabinet
+>   (VP, foreign & defence ministers…), and the overview must be accurate and refreshed daily — never
+>   a stale or wrong name. When a name can't be verified, self-heal from another source; never guess.
+> - **Every dot is in the right place, and every picture loads and never lies.** A wrong location, a
+>   broken image, or a mislabelled photo is a P0, not a cosmetic nit.
+> - **"Good enough" is a regression.** Ship the polished version or keep working. If a free, scalable
+>   source can make it more accurate, use it before settling for less.
+
 - **A map of what is happening in the world, right now.** Every real event is a dot, placed
   **where it actually happened** — not on the capital, not on the publisher's country.
 - **Fast and plentiful, like the OSINT Telegram channels the user actually reads** (Rerum

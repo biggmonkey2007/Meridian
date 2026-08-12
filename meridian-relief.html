@@ -2081,6 +2081,9 @@ const WIKI_TITLE = {
 };
 const profileCache = {};
 function _dayStamp(){ const d=new Date(); return ""+d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,"0")+String(d.getUTCDate()).padStart(2,"0"); }
+// Bump when the profile SHAPE changes (cabinet added, overview source changed) so a same-day cache built by
+// the old code is re-fetched instead of sticking until tomorrow.
+const _PROFILE_VER = "pf2";
 /* Persist assembled country profiles across relaunches (LRU-capped, quota-safe) so a country you've
    opened before renders INSTANTLY next time — even after a relaunch — instead of re-fetching everything. */
 const _PROF_LS = "meridian_profiles_v7", _PROF_MAX = 16;   // v7: flush stale former-leader profiles (Starmer->Burnham)
@@ -2288,7 +2291,7 @@ function _storeProfile(name, r, cached){
                   lean: r.lean || (cached && cached.lean) || null,
                   // carry the degradation status of whichever leaders we actually kept (new vs retained old)
                   degraded: (r.leaders && r.leaders.length) ? !!r.degraded : !!(cached && cached.degraded),
-                  t: Date.now(), day: _dayStamp() };
+                  t: Date.now(), day: _dayStamp(), ver: _PROFILE_VER };
   profileCache[name] = entry; writeProfileLS(name, entry);
   return entry;
 }
@@ -2596,7 +2599,11 @@ async function leadImgTryNext(img){
 }
 function renderProfile(name, fb, wp, leaders){
   let out = "";
-  const overview = (wp && wp.extract) ? wp.extract : (fb ? fbField(fb,["Introduction","Background"]) : "");
+  // Prefer the CIA Factbook "Background" — a professional narrative of how the country formed and its role —
+  // over Wikipedia's dry geography lead ("…consisting of 50 states and a federal capital district…"); fall back
+  // to Wikipedia when the Factbook has no substantial background.
+  const _bg = fb ? fbField(fb,["Introduction","Background"]) : "";
+  const overview = (_bg && _bg.length >= 250) ? _bg : ((wp && wp.extract) ? wp.extract : _bg);
   if(overview){ const t = overview.length>640 ? overview.slice(0,640).replace(/\s+\S*$/,"")+"…" : overview; out += `<div class="sec-label">Country overview</div><div class="ctx-sit">${esc(t)}</div>`; }
   if(leaders && leaders.length){
     out += `<div class="sec-label">Leadership</div><div class="lead-bar">`+leaders.map(L=>{
@@ -4755,7 +4762,7 @@ function selectCountry(name){
   const newsSeen = new Set(); const newsCities = [];
   localEvents.forEach(e=>{ const c=e.place.split(",")[0].trim(); if(!newsSeen.has(c)){ newsSeen.add(c); newsCities.push({city:c, ev:e.id, cat:e.cat, title:e.title}); } });
   let body = `<div class="p-eyebrow">National news desk</div>
-    <div class="ctry-head">${flagImg(ISO2[name]||"")}<h2 class="p-title" style="font-size:24px;margin:0">${esc(shortCountry(name))}</h2><button id="ctry-star" class="ctry-star" type="button" aria-label="Star this country">${_STAR_SVG}</button></div>
+    <div class="ctry-head">${flagImg(ISO2[name]||"")}<h2 class="p-title" style="font-size:24px;margin:0">${esc(deskTitle(name))}</h2><button id="ctry-star" class="ctry-star" type="button" aria-label="Star this country">${_STAR_SVG}</button></div>
     <div id="ctry-profile" class="ctry-profile"><span class="spin"></span>Loading live country profile…</div>`;
   if(CTX[name]){
     body += `<div class="sec-label">Context to read the news</div><div class="ctx-sit">${esc(CTX[name].sit)}</div>`;
@@ -4860,6 +4867,8 @@ function flagifyText(str){
 }
 function flagImg(iso){ if(!iso) return ""; const c=iso.toLowerCase(); if(FLAGS[c]) return FLAGS[c]; return '<img class="flag flag-img" loading="lazy" decoding="async" src="https://flagcdn.com/'+c+'.svg" alt="" onerror="this.style.display=\'none\'">'; }
 function shortCountry(n){ return n==="United States of America"?"the United States":n; }
+// Title case for a HEADER (capitalise the leading "the"): "the United States" -> "The United States".
+function deskTitle(n){ const s=shortCountry(n); return s.charAt(0).toUpperCase()+s.slice(1); }
 // A clicked seaport -> a profile popup (the country-panel idea, for a port): type, when it opened, operator,
 // annual throughput, approx ships/day, why it matters + a recent development, plus a one-tap link to a live
 // ship tracker (MarineTraffic centred on the port). The facts are AI-generated + cached weekly on the backend.
