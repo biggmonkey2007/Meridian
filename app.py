@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d11"
+_DATA_VER = "d12"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -1545,11 +1545,11 @@ class Api:
                                 "ts": e.get("timestamp") or e.get("release_timestamp")})
             out.sort(key=lambda c: (c.get("ts") or 0), reverse=True)
             _now = time.time()
-            for _win in (3, 10, 45):
-                _recent = [c for c in out if c.get("ts") and (_now - c["ts"]) < _win * 86400]
-                if _recent:
-                    out = _recent
-                    break
+            # RECENT footage only: prefer the last WEEK, widen to a MONTH at most. A clip we can't date is
+            # excluded (we can't prove it's recent), and we NEVER fall back to older videos — a person with no
+            # recent clips shows NONE rather than years-old footage (a 2022 NYSE panel under a live leader).
+            out = ([c for c in out if c.get("ts") and (_now - c["ts"]) < 8 * 86400]
+                   or [c for c in out if c.get("ts") and (_now - c["ts"]) < 31 * 86400])
             res = {"clips": out}
             try:
                 json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -2408,6 +2408,8 @@ class Api:
         finally:
             _ex.shutdown(wait=False)          # don't block on a straggler; its socket timeouts bound it
         events, seen_urls, seen_titles, added_sigs = [], set(), set(), []
+        if not _WEAK_MATCH:
+            _init_weak_match()               # the inline dedup subtracts it, like _ai_dedup does
         # Freshest first, so the per-category caps keep the NEWEST stories. Previously the caps were
         # first-come-first-served, and a 1h-old strike on the Tver oil depot was silently dropped
         # because 18 older security stories happened to be processed before it.
@@ -2459,12 +2461,15 @@ class Api:
             # next build once summarised — the same one-build lag as the AI pinpoint.
             if not _map_worthy(title, a.get("desc") or "", loc):
                 continue
-            # Dedup on DISTINCTIVE words only. Comparing raw sigwords merged genuinely different
-            # events: every Russia+security story shares {drone, strike, oil, refinery...}, so a
-            # fresh strike on the Tver oil depot was thrown away as a "duplicate" of an unrelated
-            # strike on Omsk. _GENERIC_WORDS existed for this and was simply never wired in.
+            # Dedup on DISTINCTIVE words only. Comparing raw sigwords merged genuinely different events: every
+            # Russia+security story shares {drone, strike, oil, refinery...}, so a fresh strike on the Tver oil
+            # depot was thrown away as a "duplicate" of an unrelated Omsk strike. Subtract BOTH _GENERIC_WORDS
+            # AND _WEAK_MATCH (demonyms + ubiquitous names: russian/ukrainian/israeli…) — exactly what _ai_dedup
+            # uses. SHIPPED BUG: six different NOELREPORTS war posts (a Novorossiysk strike, a HIMARS shot, a
+            # Zelensky statement, the daily losses tally) all pinned to 'Ukraine' + same category collapsed into
+            # ONE dot because {russian, ukrainian} counted as 2 shared "distinctive" words.
             _sig = _sigwords(title)
-            _key = _sig - _GENERIC_WORDS
+            _key = _sig - _GENERIC_WORDS - _WEAK_MATCH
             _toks = _norm_tokens(title)                                # richer set for the similarity meter
             img = a.get("socialimage") or ""
             _is_tg = bool(a.get("_tg"))
