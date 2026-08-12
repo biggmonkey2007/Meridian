@@ -173,7 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l2"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
+_LEADER_VER = "l3"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
 
 
 def _aiwhere_path(title):
@@ -2977,6 +2977,19 @@ class Api:
                     c["x"], c["tg"], c["truth"] = _social(e, "P2002"), _social(e, "P3789"), _social(e, "P10858")
             hos = _pick_leader(roles["P35"], fb_cos_name)
             hog = _pick_leader(roles["P6"], fb_hog_name)
+            # If the best holder Wikidata offers has an ENDED term (a former leader, because the country's P6
+            # hasn't been rewired to the successor yet), follow 'replaced by' to the CURRENT holder. This is
+            # what makes the daily update catch a change the day it happens — e.g. UK: Starmer (ended) -> Burnham.
+            for _role, _pick in (("P35", hos), ("P6", hog)):
+                if _pick and _pick.get("ended") and offices.get(_role):
+                    _cur = _succession_current(_pick["qid"], offices[_role])
+                    if _cur and _cur.get("name") and _cur["qid"] != _pick["qid"]:
+                        _fresh_leader = {"qid": _cur["qid"], "name": _cur["name"], "img": _cur.get("img", ""),
+                                         "ended": False, "dead": False, "x": "", "tg": "", "truth": ""}
+                        if _role == "P35":
+                            hos = _fresh_leader
+                        else:
+                            hog = _fresh_leader
             # SUPPLEMENT: Wikidata often lacks a DISTINCT head of government (e.g. Saudi Arabia's PM, MBS —
             # its P6 still points to the King). If Wikidata gives none, or the same person as the head of
             # state, but the Factbook names a different head of government, resolve that person via Wikidata
@@ -4352,6 +4365,50 @@ def _pick_leader(cands, fb_name):
         if m:
             return m
     return sorted(pool, key=lambda c: (1 if c.get("preferred") else 0, c.get("start") or ""), reverse=True)[0]
+
+
+def _wd_img(e):
+    """The Commons portrait URL for a Wikidata entity (P18), or ''."""
+    p18 = e.get("claims", {}).get("P18", [])
+    if p18:
+        fn = p18[0].get("mainsnak", {}).get("datavalue", {}).get("value", "")
+        if fn:
+            return ("https://commons.wikimedia.org/wiki/Special:FilePath/"
+                    + urllib.parse.quote(fn.replace(" ", "_")) + "?width=240")
+    return ""
+
+
+def _succession_current(person_qid, office_qid, hops=3):
+    """Follow Wikidata's 'replaced by' (P1366) chain from a FORMER office-holder to the CURRENT one. This is
+    what keeps leadership up to date the DAY a PM changes: editors mark the outgoing term ended and set who
+    replaced them long before a country's head-of-government (P6) or the office's officeholder (P1308) is
+    rewired. SHIPPED BUG: the UK still showed Keir Starmer (term ended 2026-07-20) because the only fresh
+    signal — 'replaced by Andy Burnham' — sat on Starmer's ended term and was never read. Matches the SAME
+    office so the chain can't wander onto another position; alive + unended = the current holder."""
+    if not (person_qid and office_qid):
+        return None
+    q, seen, first = person_qid, set(), True
+    for _ in range(hops):
+        if not q or q in seen:
+            break
+        seen.add(q)
+        e = _wd_entities(q, "labels|claims").get(q, {})
+        if not e:
+            break
+        term = None
+        for c in e.get("claims", {}).get("P39", []):
+            if _wd_claim_qid(c) == office_qid:
+                if term is None or (_wd_qual_time(c, "P580") or "") >= (_wd_qual_time(term, "P580") or ""):
+                    term = c                                   # this office, its most recent term
+        ended = bool(term) and bool(_wd_qual_time(term, "P582"))
+        alive = not e.get("claims", {}).get("P570")
+        if not first and alive and not ended:                  # a successor whose term is ongoing -> CURRENT
+            name = (e.get("labels", {}).get("en", {}) or {}).get("value", "")
+            return {"qid": q, "name": name, "img": _wd_img(e)} if name else None
+        rep = (term or {}).get("qualifiers", {}).get("P1366", [])   # 'replaced by' on the ended term
+        q = ((rep[0].get("datavalue", {}).get("value", {}) if rep else {}) or {}).get("id")
+        first = False
+    return None
 
 
 # The CIA World Factbook is more COMPLETE than Wikidata for "who holds power" (it always lists a chief of
