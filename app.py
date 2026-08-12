@@ -169,8 +169,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d16"
-_SUM_PROMPT_VER = "14"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_DATA_VER = "d17"
+_SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 
@@ -331,10 +331,12 @@ def _summarize(title, text):
                 json.load(open(cache, encoding="utf-8")).get("s", ""))))
         except Exception:
             pass
-    system = ("You are a sharp news editor in the Axios 'Smart Brevity' tradition. You write clean, original, "
-              "copyright-free briefs that a busy 8th-grader can read at a glance. You NEVER copy the source's "
-              "wording — every line is rephrased from scratch, and you shape each brief to the story instead "
-              "of forcing a fixed template.")
+    system = ("You are a senior wire-service editor — the polish and authority of AP or Reuters — writing in the "
+              "Axios 'Smart Brevity' tradition. Your briefs are clean, original, copyright-free, and precise: "
+              "flawless punctuation (no stray, unbalanced or random quotation marks), no garbled fragments, no "
+              "source or channel name left in the prose. A busy reader understands it at a glance, yet it reads "
+              "as sharp and authoritative as legacy journalism. You NEVER copy the source's wording — every line "
+              "is rephrased from scratch — and you shape each brief to the story instead of forcing a template.")
     prompt = ("Rewrite the story below as a clean, original news brief for a world-news map, in the spirit of "
               "Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template.\n"
               "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
@@ -729,7 +731,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return _end_stop(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))))
+    return _end_stop(_fix_stray_quotes(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())))))
 
 
 def _tg_page(ch, before=None):
@@ -904,6 +906,11 @@ _PROMO_TAIL   = re.compile(
     r"|[\s\-–—|]*(?:read(?:\s+more)?|watch|more|link|source|via|details?|full\s+story)\s*:\s*$",  # a label + colon left dangling after the URL was cut
     re.I | re.S)
 _PROMO_HANDLE = re.compile(r"(?<![\w@])@[A-Za-z]\w{2,}")                            # stray "@InsiderPaper"
+# A BARE OUTLET DOMAIN dropped into the prose is a source stamp, not news. SHIPPED: a Disclose.tv post read
+# "…grade-point averages. Disclose.tv University of Michigan will stop…" — the channel name sat mid-sentence.
+# Capitalised first letter (a brand) + a real TLD, standalone, no http (URLs are handled above); so an
+# ordinary "booking.com" (lowercase) and "U.S." are left alone.
+_BARE_SOURCE = re.compile(r"(?<!\S)[A-Z][A-Za-z0-9-]{1,20}\.(?:tv|com|net|org|io|news|co)(?![\w/])")
 # A BYLINE/CREDIT is not news: "Authored by Guy Birchall via The Epoch Times", "Written by … for …",
 # "Story by …". Strip it wherever it sits. A Capitalised NAME must follow "by", so ordinary prose ("a study
 # authored by the team") is left alone.
@@ -930,7 +937,19 @@ def _strip_promo(t):
         t = _PROMO_TAIL.sub("", t)
     t = _PROMO_HANDLE.sub("", t)
     t = _BYLINE.sub(" ", t)             # "Authored by Guy Birchall via The Epoch Times ," -> gone
+    t = _BARE_SOURCE.sub(" ", t)        # "…averages. Disclose.tv University of Michigan…" -> drop the stamp
     return re.sub(r"\s{2,}", " ", t).strip(" \t\r\n-–—|:,")
+
+
+# A quotation mark immediately followed by a SPACE ('" Letter grades…') is not a real quote-open — it's a
+# stray artifact. And a lone, unpaired double-quote reads as a typo. Fix both so copy is clean.
+def _fix_stray_quotes(t):
+    t = (t or "").strip()
+    t = re.sub(r'^\s*["“”«»]\s+', "", t)                 # a leading quote + space is stray -> drop it
+    t = re.sub(r'\s+["“”«»]\s*$', "", t)                 # a trailing dangling quote -> drop it
+    if t.count('"') == 1:                                # a single, unpaired straight quote left anywhere -> drop
+        t = t.replace('"', "")
+    return t.strip()
 
 
 def _sharpen_desc(text, n=460):
@@ -943,6 +962,7 @@ def _sharpen_desc(text, n=460):
     t = re.sub(r"\s{2,}", " ", t).strip()
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
+    t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
     return _clip(_end_stop(t), n)
 
 
