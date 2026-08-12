@@ -173,6 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
+_LEADER_VER = "l2"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
 
 
 def _aiwhere_path(title):
@@ -2917,6 +2918,8 @@ class Api:
                 cached = json.load(open(cache, encoding="utf-8"))
             except Exception:
                 cached = None
+            if cached and cached.get("ver") != _LEADER_VER:
+                cached = None                    # a resolution-logic fix shipped -> discard the stale card
             if cached:
                 # A DEGRADED result — Wikidata was rate-limited, so names came from the Factbook and the
                 # photos are missing — must NOT stick for 20h. Retry it in ~20 min so it self-heals to the
@@ -2984,7 +2987,12 @@ class Api:
             # King Salman share a family name, so compare by QID — not fuzzy names), resolve the Factbook's
             # head of government via search and add them if they're genuinely a different person.
             if fb_hog_name and (not hog or (_hos_qid and hog.get("qid") == _hos_qid)):
-                p = _wd_search_person(fb_hog_name) or _wd_search_person(" ".join(fb_hog_name.split()[:3]))
+                # The SHORT name resolves best (Wikidata search takes "Muhammad bin Salman", not the full
+                # "…bin Abd al-Aziz Al Saud") — try it FIRST so we don't burn a doomed call (and risk a rate
+                # limit) before the one that works.
+                _hog_short = " ".join(fb_hog_name.split()[:3])
+                p = _wd_search_person(_hog_short) or (
+                    _wd_search_person(fb_hog_name) if fb_hog_name != _hog_short else None)
                 if p and p["qid"] != _hos_qid:
                     hog = {"qid": p["qid"], "name": p["name"], "img": p["img"], "x": "", "tg": "", "truth": ""}
                     hog_forced_title = fb_hog_title
@@ -3019,7 +3027,8 @@ class Api:
             # DEGRADED = Wikidata gave no person data (rate-limited), so names/photos came from the Factbook
             # fallback. Cached only briefly (see the read above) so it self-heals; also flagged to the client
             # so a degraded profile isn't kept for the day either.
-            res = {"leaders": out, "lean": lean, "generated": int(time.time()), "degraded": not pents}
+            res = {"leaders": out, "lean": lean, "generated": int(time.time()), "degraded": not pents,
+                   "ver": _LEADER_VER}
             if out:
                 try:
                     json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -4352,13 +4361,18 @@ def _pick_leader(cands, fb_name):
 _FB_TITLES = set(("president prime minister supreme leader king queen emir emira sultan monarch chancellor "
                   "chief prince princess sheikh sheikha shaykh grand duke duchess governor general captain "
                   "regent co-prince sovereign acting interim transitional head state council chairperson "
-                  "chairman chairwoman presidential federal vice deputy and the of crown paramount").split())
+                  "chairman chairwoman presidential federal vice deputy and the of crown paramount "
+                  "government premier chief-executive").split())
 _FB_PARTICLES = {"bin", "al", "of", "the", "von", "van", "de", "da", "del", "el", "ibn", "abu", "abd", "ben", "bint", "la"}
 
 
 def _fb_parse(raw):
     """(name, title) from a Factbook chief-of-state / head-of-government string. Returns ('', '') if blank."""
-    s = re.split(r"\(since|\(", raw or "", flags=re.I)[0]
+    # Drop EVERY parenthetical, not just "(since …)". SHIPPED BUG: Spain's field is "President of the
+    # Government (Prime Minister) Pedro SANCHEZ Perez-Castejon (since …)" — splitting on the FIRST '(' kept
+    # only "President of the Government" and lost the name. Removing all parens leaves "President of the
+    # Government Pedro SANCHEZ Perez-Castejon" for the title/name split below.
+    s = re.sub(r"\s*\([^)]*\)", " ", raw or "")
     s = re.split(r"[;,]", s)[0].strip()
     toks = s.split()
     ti = 0
@@ -4370,6 +4384,8 @@ def _fb_parse(raw):
         low = t.lower()
         if i > 0 and low in _FB_PARTICLES:
             parts.append(low)
+        elif len(t) >= 2 and re.fullmatch(r"[IVXLCDM]+", t):
+            parts.append(t)                                        # a regnal number stays uppercase: "FELIPE VI" -> "Felipe VI"
         elif "-" in t:
             parts.append("-".join(p[:1].upper() + p[1:].lower() for p in t.split("-")))
         elif t.isupper() or t.islower():
@@ -4388,9 +4404,19 @@ def _wd_search_person(name):
     try:
         url = ("https://www.wikidata.org/w/api.php?action=wbsearchentities&search="
                + urllib.parse.quote(name) + "&language=en&type=item&limit=7&format=json")
-        j = json.loads(urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Meridian/1.0"}),
-                                              timeout=12).read().decode("utf-8", "replace"))
-        ids = [h.get("id") for h in (j.get("search") or []) if h.get("id")]
+        j = None
+        for attempt in range(2):        # a 429 here (after country_leaders' other WD calls) was dropping MBS
+            try:
+                j = json.loads(urllib.request.urlopen(
+                    urllib.request.Request(url, headers={"User-Agent": "Meridian/1.0"}),
+                    timeout=12).read().decode("utf-8", "replace"))
+                break
+            except Exception:
+                if attempt < 1:
+                    time.sleep(0.5)
+                    continue
+                return None
+        ids = [h.get("id") for h in ((j or {}).get("search") or []) if h.get("id")]
         if not ids:
             return None
         ents = _wd_entities("|".join(ids[:7]), "labels|claims")
