@@ -173,7 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l3"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
+_LEADER_VER = "l4"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
 
 
 def _aiwhere_path(title):
@@ -3034,6 +3034,47 @@ class Api:
                     hos and _same_person(hog.get("name"), hog.get("qid"), hos.get("name"), hos.get("qid"))):
                 _emit(hog, "P6", "Head of government", "Prime Minister",
                       fb_name=fb_hog_name, fb_title=fb_hog_title, forced_title=hog_forced_title)
+            # CABINET — deputy leader + top diplomat + defence chief, resolved from Wikidata's office
+            # 'officeholder' (P1308). ACCURATE where Wikidata maintains it (strong for the US and well-labelled
+            # offices) and SILENTLY ABSENT otherwise: a guess is never shown, so the card is never wrong. Wrapped
+            # so a cabinet lookup (or a rate limit) can never break the head-of-state/government cards above.
+            try:
+                # Office names use assorted forms of the country name ("the United States", "United States"),
+                # not always the map's ("United States of America"). Build the common variants so the search hits.
+                _cn = (country or "").strip()
+                _vars = [_cn]
+                _short = re.sub(r"(?i)\s+of\s+America$", "", _cn)
+                if _short != _cn:
+                    _vars.append(_short)
+                for _b in list(_vars):
+                    if _b and not _b.lower().startswith("the "):
+                        _vars.append("the " + _b)
+
+                def _clean_cab_title(t):
+                    for v in sorted(_vars, key=len, reverse=True):
+                        if v:
+                            t = re.sub(r"(?i)\b" + re.escape(v) + r"\b", "", t)
+                    t = re.sub(r"(?i)\s+of\s+the\s*$|\s+of\s*$|^\s*of\s+the\s+|^\s*of\s+", " ", t)
+                    return re.sub(r"\s+", " ", t).strip(" -")
+                _seen_q = {(hos or {}).get("qid"), (hog or {}).get("qid")}
+                _seen_q.discard(None)
+                # ONLY curated offices whose current-officeholder Wikidata reliably maintains (resolve by QID —
+                # one fetch each). A per-country NAME search was tried and removed: it found nothing outside the
+                # US anyway, and its extra calls rate-limited Wikidata enough to DEGRADE the head-of-state/
+                # government cards (names fell back to the Factbook, photos dropped). Accuracy over reach.
+                _cabinet = []
+                for _oq in _CABINET_QIDS.get(country, ()):
+                    _co = _office_holder_qid(_oq)
+                    if _co:
+                        _co["title"] = _clean_cab_title(_co["title"])
+                        _cabinet.append(_co)
+                for _co in _cabinet:
+                    if _co["qid"] not in _seen_q and _co.get("name") and _co.get("title"):
+                        _seen_q.add(_co["qid"])
+                        out.append({"name": _co["name"], "title": _co["title"], "role": "Cabinet",
+                                    "img": _co.get("img", ""), "x": None, "telegram": None, "truth": None})
+            except Exception:
+                pass
             # governing lean = the party of whoever runs the government (head of gov, else head of state)
             ruling = hog if (hog and hog.get("qid")) else hos
             lean = _ruling_party_lean(ruling.get("qid"), pents.get(ruling.get("qid"))) if ruling else None
@@ -4409,6 +4450,29 @@ def _succession_current(person_qid, office_qid, hops=3):
         q = ((rep[0].get("datavalue", {}).get("value", {}) if rep else {}) or {}).get("id")
         first = False
     return None
+
+
+# Verified cabinet OFFICE entities whose Wikidata 'current officeholder' (P1308) is reliably maintained, so we
+# resolve them directly (one fetch, no search) — accurate and cheap. Curated because a generic per-country
+# name search found nothing outside the US anyway and rate-limited Wikidata enough to degrade the core cards.
+_CABINET_QIDS = {
+    "United States of America": ["Q11699", "Q14213", "Q735015"],   # VP, Secretary of State, Secretary of Defense
+}
+
+
+def _office_holder_qid(office_qid):
+    """Current officeholder (P1308, unended, living) of a known office entity: {qid,name,img,title}, or None."""
+    e = _wd_entities(office_qid, "labels|claims").get(office_qid, {})
+    cur = [c for c in e.get("claims", {}).get("P1308", []) if "P582" not in c.get("qualifiers", {})]
+    if not cur:
+        return None
+    pq = _wd_claim_qid(cur[0])
+    pe = _wd_entities(pq, "labels|claims").get(pq, {}) if pq else {}
+    nm = (pe.get("labels", {}).get("en", {}) or {}).get("value", "")
+    if not pq or not nm or pe.get("claims", {}).get("P570"):
+        return None
+    return {"qid": pq, "name": nm, "img": _wd_img(pe),
+            "title": (e.get("labels", {}).get("en", {}) or {}).get("value", "")}
 
 
 # The CIA World Factbook is more COMPLETE than Wikidata for "who holds power" (it always lists a chief of
