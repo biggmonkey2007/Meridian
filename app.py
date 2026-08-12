@@ -169,7 +169,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d13"
+_DATA_VER = "d14"
 _SUM_PROMPT_VER = "12"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -2477,12 +2477,16 @@ class Api:
             _spec = place != country and place != _co_short(country)          # this dot names a specific city/site
             for _co2, _cat2, _pl2, _key2, _toks2, _hrs2, _ei2 in added_sigs:
                 _inter = len(_key & _key2)
-                # TWO DIFFERENT SPECIFIC PLACES ARE DIFFERENT EVENTS. SHIPPED BUG: a Ukrainian strike on the
+                # TWO FAR-APART SPECIFIC PLACES ARE DIFFERENT EVENTS. SHIPPED BUG: a Ukrainian strike on the
                 # Komsomolsk-on-Amur refinery (far-east Khabarovsk Krai) was folded into a strike on the Orsk
-                # refinery (Orenburg, ~6,000 km away) purely on same-country + {ukrainian, ukraine, refinery}.
-                # A same-country/similar-wording merge must NOT collapse two distinct, differently-located
-                # scenes — only a shared or country-level place may.
-                _diff_place = (_spec and _pl2 != _co2 and _pl2 != _co_short(_co2) and _pl2 != place)
+                # refinery (Orenburg, ~6,000 km away). But this must be DISTANCE, not a string compare — else
+                # "Orsk Refinery, Russia" and "Orsk, Russia" (the same site, ~10 km apart, a facility vs its
+                # host city) read as different and the SAME refinery-halt story stays two dots. Only a real gap
+                # (>60 km) marks a different scene.
+                _diff_place = False
+                if _spec and _pl2 != _co2 and _pl2 != _co_short(_co2) and _pl2 != place:
+                    _e2 = events[_ei2]
+                    _diff_place = _km(lat, lng, _e2.get("lat", lat), _e2.get("lng", lng)) > 60
                 # SIMILARITY METER: the same story from another source/channel — a copy may carry an extra
                 # prefix ("President Trump via Truth Social:"), be re-headlined, or land in a different
                 # category. Near-identical wording, or same-country/place with high overlap, = a duplicate.
@@ -5124,11 +5128,20 @@ def _feed_articles(url, home):
             _core = _p.group(1) if _p else _raw
             desc = re.sub(r"\s{2,}", " ", re.sub(r"<[^>]+>", " ", _core)).strip()
             desc = re.split(r"(?i)continue reading|prefer the guardian|read more", desc)[0].strip()[:360]
+        # Google-News RSS wraps the real outlet in <source url="reuters.com">Reuters</source>. Without this the
+        # link is a news.google.com redirect, so the dot was bylined "News" (from news.google.com) instead of
+        # "Reuters". Take the outlet name AND its domain from the tag; a direct RSS feed has no <source>, so it
+        # falls through to the domain name exactly as before.
+        sm = re.search(r"<source[^>]*>(.*?)</source>", b, re.S)
+        su = re.search(r'<source[^>]*url="([^"]+)"', b)
+        _src_name = _cdata(sm.group(1)).strip() if sm else ""
         out.append({
             "title": title, "url": link.split("?")[0] if "theguardian" not in link else link,
             "hrs": round(_pub_hours(_cdata(pm.group(1)) if pm else ""), 1),
             "socialimage": _upsize_thumb(im.group(1)) if im else "",
-            "domain": _domain_of(link), "sourcecountry": home, "desc": desc,
+            "domain": _domain_of(su.group(1)) if su else _domain_of(link),
+            "sourcecountry": home, "desc": desc,
+            "_src": _src_name,     # real outlet ("Reuters"); "" on direct feeds -> domain name is used
         })
     return out
 
