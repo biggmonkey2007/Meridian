@@ -173,7 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l4"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
+_LEADER_VER = "l5"      # bump to invalidate cached leader cards after a resolution-logic fix (MBS, Pedro Sánchez)
 
 
 def _aiwhere_path(title):
@@ -3058,21 +3058,25 @@ class Api:
                     return re.sub(r"\s+", " ", t).strip(" -")
                 _seen_q = {(hos or {}).get("qid"), (hog or {}).get("qid")}
                 _seen_q.discard(None)
-                # ONLY curated offices whose current-officeholder Wikidata reliably maintains (resolve by QID —
-                # one fetch each). A per-country NAME search was tried and removed: it found nothing outside the
-                # US anyway, and its extra calls rate-limited Wikidata enough to DEGRADE the head-of-state/
-                # government cards (names fell back to the Factbook, photos dropped). Accuracy over reach.
-                _cabinet = []
+                _seen_nm = {(_l.get("name") or "").lower() for _l in out}
+                # From WIKIDATA, only curated offices whose current-officeholder is reliably maintained (US) —
+                # resolved by QID, one cheap fetch each. A generic per-country name search was tried and removed:
+                # outside the US it found nothing AND its calls rate-limited Wikidata enough to DEGRADE the
+                # head-of-state/government cards. Broader coverage comes from _WIKI_CABINET below (Wikipedia).
                 for _oq in _CABINET_QIDS.get(country, ()):
                     _co = _office_holder_qid(_oq)
-                    if _co:
-                        _co["title"] = _clean_cab_title(_co["title"])
-                        _cabinet.append(_co)
-                for _co in _cabinet:
-                    if _co["qid"] not in _seen_q and _co.get("name") and _co.get("title"):
-                        _seen_q.add(_co["qid"])
-                        out.append({"name": _co["name"], "title": _co["title"], "role": "Cabinet",
+                    if _co and _co["qid"] not in _seen_q and (_co.get("name") or "").lower() not in _seen_nm:
+                        _seen_q.add(_co["qid"]); _seen_nm.add(_co["name"].lower())
+                        out.append({"name": _co["name"], "title": _clean_cab_title(_co["title"]), "role": "Cabinet",
                                     "img": _co.get("img", ""), "x": None, "telegram": None, "truth": None})
+                # From WIKIPEDIA position articles (a different service, so no Wikidata rate-limit hit): the
+                # current 'incumbent' + photo, for the curated countries in _WIKI_CABINET.
+                for _art, _role in _WIKI_CABINET.get(country, ()):
+                    _wc = _wiki_incumbent(_art)
+                    if _wc and _wc.get("name") and _wc["name"].lower() not in _seen_nm:
+                        _seen_nm.add(_wc["name"].lower())
+                        out.append({"name": _wc["name"], "title": _role, "role": "Cabinet",
+                                    "img": _wc.get("img", ""), "x": None, "telegram": None, "truth": None})
             except Exception:
                 pass
             # governing lean = the party of whoever runs the government (head of gov, else head of state)
@@ -4473,6 +4477,52 @@ def _office_holder_qid(office_qid):
         return None
     return {"qid": pq, "name": nm, "img": _wd_img(pe),
             "title": (e.get("labels", {}).get("en", {}) or {}).get("value", "")}
+
+
+# Cabinet offices resolved from WIKIPEDIA position articles instead of Wikidata. Each country titles its
+# offices differently (India "Minister of External Affairs", France "Minister for Europe and Foreign Affairs",
+# US "Secretary of State"), and there is no uniform, queryable source — so the correct article is CURATED per
+# country, one line each, verified to expose a current "incumbent". Wikipedia is a DIFFERENT service from
+# Wikidata, so resolving cabinet here never rate-limits the head-of-state/government lookups. Expandable: add a
+# (country -> [(article, role-label), …]) row once its article is confirmed.
+_WIKI_CABINET = {
+    "Germany":   [("Minister of Foreign Affairs (Germany)", "Foreign Minister")],
+    "India":     [("Minister of External Affairs (India)", "External Affairs Minister")],
+    "Japan":     [("Minister for Foreign Affairs (Japan)", "Foreign Minister")],
+    "Australia": [("Minister of Foreign Affairs (Australia)", "Foreign Minister")],
+    "Spain":     [("Minister of Foreign Affairs (Spain)", "Foreign Minister")],
+    "Brazil":    [("Vice President of Brazil", "Vice President")],
+}
+
+
+def _wiki_incumbent(article_title):
+    """The CURRENT holder named in a Wikipedia position article's infobox ('incumbent' field), with a photo
+    from that person's own Wikipedia summary. Kept current within hours by editors. Returns {name,img} or None
+    (vacant / no infobox)."""
+    try:
+        url = ("https://en.wikipedia.org/w/api.php?format=json&action=parse&prop=wikitext&section=0&redirects=1"
+               "&page=" + urllib.parse.quote(article_title.replace(" ", "_")))
+        wt = (((json.loads(_http_get(url, 12)).get("parse") or {}).get("wikitext") or {}).get("*")) or ""
+    except Exception:
+        return None
+    m = re.search(r"(?im)^\s*\|\s*incumbent\s*=\s*(.+)$", wt)
+    if not m:
+        return None
+    name = re.sub(r"\[\[[^\]|]*\|([^\]]*)\]\]", r"\1", m.group(1))
+    name = re.sub(r"\[\[([^\]]*)\]\]", r"\1", name)
+    name = re.sub(r"<[^>]+>|\{\{[^}]*\}\}", "", name).strip()
+    if len(name) < 3 or name.lower().startswith(("vacant", "none", "tbd")):
+        return None
+    img = ""
+    try:
+        js = _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/"
+                        + urllib.parse.quote(name.replace(" ", "_")))
+        if js and js.get("type") != "disambiguation":
+            img = ((js.get("originalimage") or {}).get("source")
+                   or (js.get("thumbnail") or {}).get("source") or "")
+    except Exception:
+        pass
+    return {"name": name, "img": img}
 
 
 # The CIA World Factbook is more COMPLETE than Wikidata for "who holds power" (it always lists a chief of
