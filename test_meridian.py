@@ -1218,7 +1218,7 @@ def main():
     print("\n=== LEADERS RESILIENT TO WIKIDATA 429 (never blank / garbled again) ===")
     _sa_fb = {"cos": "King and Prime Minister SALMAN bin Abd al-Aziz Al Saud (since 23 January 2015)",
               "hog": "Crown Prince and Prime Minister MUHAMMAD BIN SALMAN Al Saud (since 27 September 2022)"}
-    _oe, _os = app._wd_entities, app._wd_search_person
+    _oe, _os, _omf = app._wd_entities, app._wd_search_person, app._minister_for
     import os as _os_mod
     try:
         _os_mod.remove(_os_mod.path.join(app.CACHE_DIR, "leaders_Q99999901.json"))   # deterministic: no stale cache
@@ -1227,9 +1227,10 @@ def main():
     try:
         app._wd_entities = lambda *a, **k: {}          # simulate HTTP 429 — Wikidata gives nothing
         app._wd_search_person = lambda *a, **k: None
+        app._minister_for = lambda *a, **k: None       # isolate to head-of-state/gov (cabinet is a Wikipedia source, unaffected by a Wikidata 429)
         _r = app.Api().country_leaders("Q99999901", "Saudi Arabia", _sa_fb)
     finally:
-        app._wd_entities, app._wd_search_person = _oe, _os
+        app._wd_entities, app._wd_search_person, app._minister_for = _oe, _os, _omf
     _names = [L.get("name", "") for L in _r.get("leaders", [])]
     _clean = len(_names) == 2 and all(_names) and not any("crown salman" in n.lower() for n in _names)
     ran[0] += 1
