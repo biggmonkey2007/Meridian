@@ -7,7 +7,7 @@
 <style>
 :root{
   --ocean:#E9EFF5; --land:#FFFFFF; --border:#A3B0BD; --grat:#D9E2EB;
-  --ink:#14181D; --ink-2:#5A6573; --ink-3:#8A95A1; --line:#E7ECF1;
+  --ink:#14181D; --ink-1:#242C36; --ink-2:#5A6573; --ink-3:#8A95A1; --line:#E7ECF1;
   --panel:#FFFFFF; --panel-2:#FBFCFD; --signal:#E5484D; --chip:#EEF2F6;
   --shadow:0 6px 24px rgba(20,30,45,.10), 0 1px 3px rgba(20,30,45,.06);
   --serif:"Iowan Old Style","Palatino Linotype","Palatino",Georgia,"Times New Roman",serif;
@@ -19,7 +19,7 @@
 /* DARK MODE — re-tint the chrome variables (panels, wire, articles, header, text). The map keeps its own
    basemap. Toggled via the sun/moon button; persisted in localStorage. */
 :root[data-theme="dark"]{
-  --ink:#E7ECF3; --ink-2:#9AA7B5; --ink-3:#6E7A88; --line:#232C38;
+  --ink:#E7ECF3; --ink-1:#D6DEE8; --ink-2:#9AA7B5; --ink-3:#6E7A88; --line:#232C38;
   --panel:#141B24; --panel-2:#1B2530; --chip:#232C38;
   --shadow:0 10px 30px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.42);
 }
@@ -442,16 +442,21 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 
 /* detail: geography / cities */
 .geo-sub{font-size:10.5px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin:15px 0 8px}
-.cap-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:12px;box-shadow:0 1px 4px rgba(20,30,45,.05)}
-.cap-star{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#C9A227;background:rgba(201,162,39,.13)}
-.cap-star svg{fill:currentColor}
+.cap-row{display:inline-flex;align-items:center;gap:9px;padding:7px 13px 7px 8px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:10px}
+.cap-star{flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#C9A227;background:rgba(201,162,39,.14)}
+.cap-star svg{fill:currentColor;width:14px;height:14px}
 .cap-tx{min-width:0}
-.cap-name{font-size:15px;font-weight:800;color:var(--ink);line-height:1.2;letter-spacing:-.01em}
-.cap-sub{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-top:2px}
+.cap-name{font-size:13.5px;font-weight:800;color:var(--ink);line-height:1.15;letter-spacing:-.01em}
+.cap-sub{font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-top:1px}
 .geo-chips{display:flex;flex-wrap:wrap;gap:7px}
 .geo-chip{font-size:12px;font-weight:600;color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:5px 12px;line-height:1.3;white-space:nowrap}
 .geo-chip.port{padding-left:9px}
 .geo-chip.port::before{content:"\2693";font-size:10px;margin-right:5px;color:var(--ink-3)}
+/* clickable geography — fly to the spot on the map */
+.geo-clk{cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s}
+.cap-row.geo-clk:hover{border-color:#2b5c8a;box-shadow:0 0 0 1px rgba(43,92,138,.25)}
+.geo-chip.geo-clk:hover{border-color:#2b5c8a;background:var(--panel-2)}
+.geo-clk:focus-visible{outline:2px solid #2b5c8a;outline-offset:2px}
 .city-chips{display:flex;flex-wrap:wrap;gap:6px}
 .city-chip2{font-size:12px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .news-cities{display:flex;flex-direction:column;gap:6px}
@@ -821,6 +826,13 @@ body.topo-active .zoomers{bottom:130px}
 .pol-spec-lab{display:flex;justify-content:space-between;font-size:8.5px;color:var(--ink-3);margin-top:4px}
 .pol-mark{font-size:12px;font-weight:800;color:#2b5c8a;margin-top:2px}
 .pol-note{font-size:12px;line-height:1.5;color:var(--ink-2);margin-top:8px;background:#f6f8fb;border-radius:8px;padding:9px 11px}
+/* dark mode: these political-landscape fills were hardcoded light -> repaint for the dark panel */
+:root[data-theme="dark"] .pol-note{background:var(--panel-2);color:var(--ink-2)}
+:root[data-theme="dark"] .pol-sys{background:var(--chip);color:var(--ink)}
+:root[data-theme="dark"] .pol-spec .pol-seg{background:#2a3542}
+:root[data-theme="dark"] .pol-spec .pol-seg.on{background:#4d86c4}
+:root[data-theme="dark"] .pol-mark,
+:root[data-theme="dark"] .pol-approx{color:#7fb0e0}
 
 .xp-clip-poster{cursor:pointer}
 .xp-clip-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.4);transition:background .15s}
@@ -3586,6 +3598,7 @@ async function upgradeLeaderPhotos(){
 }
 function afterProfileRender(name, fb){
   upgradeLeaderPhotos();
+  annotateGloss(document.getElementById("ctry-profile"));   // define orgs/treaties inline in the overview
   if(document.getElementById("ctry-news")) loadCountryNews(name);
   if(document.getElementById("ctry-stmts")) setupStatements(name);
   if(analysisMode!=="expert") return;
@@ -4538,6 +4551,47 @@ function noteMedia(d, n){
   if(base===-1){ noteReadKey(k, n); return; }       // establish the baseline the first time (persisted)
   if(n > base){ clearReadKey(k); drawDots(); }       // genuinely NEW footage -> re-light the dot
 }
+// COUNTRY-PROSE GLOSSARY — curated, offline, even-handed definitions for the organizations, alliances,
+// treaties and historical bodies that recur in country overviews (the "EC and the EU" case). Same inline
+// .gloss treatment as articles: hover / tap / focus for a definition. Longest alias wins; each spelling once.
+const GEO_GLOSSARY = [
+  {term:"European Union", def:"A political and economic union of 27 European states with a single market and shared institutions; successor to the EEC and EC.", aliases:["European Union","EU"]},
+  {term:"European Economic Community", def:"The 1957 common market of six Western European states that grew into today's European Union.", aliases:["European Economic Community","EEC"]},
+  {term:"European Communities", def:"The 1967–1993 forerunner of the European Union, merging the earlier European economic and atomic-energy communities.", aliases:["European Communities","European Community","EC"]},
+  {term:"Economic and Monetary Union", def:"The EU framework that coordinates members' economic policy and runs the single currency, the euro.", aliases:["Economic and Monetary Union","EMU"]},
+  {term:"Eurozone", def:"The group of EU countries that have adopted the euro as their currency.", aliases:["Eurozone","euro area"]},
+  {term:"Schengen Area", def:"A zone of European states that have abolished passport checks at their mutual borders.", aliases:["Schengen Area","Schengen"]},
+  {term:"NATO", def:"North Atlantic Treaty Organization — a military alliance of North American and European states founded in 1949 for collective defense.", aliases:["North Atlantic Treaty Organization","NATO"]},
+  {term:"United Nations", def:"The global body founded in 1945 to maintain international peace and cooperation; nearly every country is a member.", aliases:["United Nations","UN"]},
+  {term:"European Free Trade Association", def:"A trade bloc of a few non-EU European states (Norway, Switzerland, Iceland, Liechtenstein).", aliases:["European Free Trade Association","EFTA"]},
+  {term:"Soviet Union", def:"The Union of Soviet Socialist Republics (1922–1991), a communist federation led from Moscow.", aliases:["Soviet Union","USSR","U.S.S.R."]},
+  {term:"Warsaw Pact", def:"The Soviet-led military alliance of Eastern Bloc states during the Cold War (1955–1991).", aliases:["Warsaw Pact"]},
+  {term:"Commonwealth of Nations", def:"A voluntary association of 56 states, most of them former territories of the British Empire.", aliases:["Commonwealth of Nations","Commonwealth"]},
+  {term:"World Trade Organization", def:"The global body that sets and enforces the rules of international trade, founded in 1995.", aliases:["World Trade Organization","WTO"]},
+  {term:"International Monetary Fund", def:"A UN-linked institution that lends to member states in financial trouble and monitors the world economy.", aliases:["International Monetary Fund","IMF"]},
+  {term:"World Bank", def:"An international institution that lends and grants money to countries for development projects.", aliases:["World Bank"]},
+  {term:"OPEC", def:"Organization of the Petroleum Exporting Countries — a bloc of major oil producers that coordinates output and prices.", aliases:["Organization of the Petroleum Exporting Countries","OPEC"]},
+  {term:"OECD", def:"Organisation for Economic Co-operation and Development — a club of mostly high-income democracies that coordinate economic policy.", aliases:["Organisation for Economic Co-operation and Development","OECD"]},
+  {term:"ASEAN", def:"Association of Southeast Asian Nations — a regional bloc of ten Southeast Asian states.", aliases:["Association of Southeast Asian Nations","ASEAN"]},
+  {term:"African Union", def:"A continental union of all 55 African states, founded in 2002 to succeed the Organisation of African Unity.", aliases:["African Union"]},
+  {term:"Arab League", def:"A regional organization of Arab states, founded in 1945 to coordinate political and economic affairs.", aliases:["Arab League"]},
+  {term:"Gulf Cooperation Council", def:"A union of six Arab Gulf monarchies (Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, Oman).", aliases:["Gulf Cooperation Council","GCC"]},
+  {term:"Mercosur", def:"A South American trade bloc whose core members are Argentina, Brazil, Paraguay and Uruguay.", aliases:["Mercosur","MERCOSUR"]},
+  {term:"League of Nations", def:"The world body founded after World War I (1920) to keep peace; the forerunner of the United Nations.", aliases:["League of Nations"]},
+  {term:"Ottoman Empire", def:"A Turkish empire that ruled much of the Middle East, North Africa and southeastern Europe from about 1300 until 1922.", aliases:["Ottoman Empire","the Ottomans"]},
+  {term:"British Empire", def:"The global territories ruled or administered by Britain, at its height the largest empire in history.", aliases:["British Empire"]},
+  {term:"Eastern Bloc", def:"The communist states of Central and Eastern Europe aligned with the Soviet Union during the Cold War.", aliases:["Eastern Bloc","Soviet bloc"]},
+  {term:"Cold War", def:"The period of tension (roughly 1947–1991) between the US-led West and the Soviet-led East, without direct war between them.", aliases:["Cold War"]},
+];
+function annotateGloss(root){
+  if(!root) return;
+  try{
+    const al=[];
+    GEO_GLOSSARY.forEach(t=> (t.aliases||[t.term]).forEach(a=> al.push({a:a, term:t.term, def:t.def})));
+    al.sort((x,y)=> y.a.length - x.a.length);   // longest alias first: "European Union" beats a bare "EU"
+    wrapTermsIn(root, al, new Set());
+  }catch(e){}
+}
 // WHO'S INVOLVED, inline — any group/body the story names that an average reader might not know (Ansar Allah,
 // IRGC, the IMF…) is lightly bolded right in the text. Hover, tap or keyboard-focus it for a clean little
 // popup with a fair, even-handed definition (never a label). No panel, no button — just the words themselves.
@@ -4800,10 +4854,10 @@ function selectCountry(name){
   }
   if(cityList.length){
     body += `<div class="sec-label">Geography</div>`;
-    if(capital) body += `<div class="cap-row"><span class="cap-star">${_STAR_SVG}</span><div class="cap-tx"><div class="cap-name">${esc(capital[0])}</div><div class="cap-sub">Capital</div></div></div>`;
-    if(majors.length) body += `<div class="geo-sub">Major cities</div><div class="geo-chips">${majors.map(c=>`<span class="geo-chip">${esc(c[0])}</span>`).join("")}</div>`;
+    if(capital) body += `<div class="cap-row geo-clk" data-lat="${capital[1]}" data-lon="${capital[2]}" data-z="8" role="button" tabindex="0" title="Show ${esc(capital[0])} on the map"><span class="cap-star">${_STAR_SVG}</span><div class="cap-tx"><div class="cap-name">${esc(capital[0])}</div><div class="cap-sub">Capital</div></div></div>`;
+    if(majors.length) body += `<div class="geo-sub">Major cities</div><div class="geo-chips">${majors.map(c=>`<span class="geo-chip geo-clk" data-lat="${c[1]}" data-lon="${c[2]}" data-z="9" role="button" tabindex="0" title="Show ${esc(c[0])} on the map">${esc(c[0])}</span>`).join("")}</div>`;
     const portList = PORTS[name] || [];
-    if(portList.length) body += `<div class="geo-sub">Key ports</div><div class="geo-chips">${portList.map(p=>`<span class="geo-chip port">${esc(p[0])}</span>`).join("")}</div>`;
+    if(portList.length) body += `<div class="geo-sub">Key ports</div><div class="geo-chips">${portList.map(p=>`<span class="geo-chip port geo-clk" data-lat="${p[1]}" data-lon="${p[2]}" data-z="10" role="button" tabindex="0" title="Show ${esc(p[0])} on the map">${esc(p[0])}</span>`).join("")}</div>`;
   }
   if(outlets){
     body += `<div class="p-sub">${outlets.length} leading outlets · tap to open</div>`;
@@ -4823,6 +4877,13 @@ function selectCountry(name){
   openDetail();
   dBody.scrollTop=0;
   document.getElementById("dclose").onclick=deselectAll;
+  dBody.querySelectorAll(".ctx-sit").forEach(el=> annotateGloss(el));   // define orgs/treaties inline in the prose
+  // Capital / cities / ports fly the map to that spot WITHOUT closing the country panel.
+  dBody.querySelectorAll(".geo-clk").forEach(el=>{
+    const go=()=>{ const la=+el.dataset.lat, lo=+el.dataset.lon; if(isFinite(la)&&isFinite(lo)) flyTo(lo, la, +el.dataset.z||9); };
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } });
+  });
   const _star=document.getElementById("ctry-star");
   if(_star){
     const sync=()=>{ const on=isStarred(name); _star.classList.toggle("on", on); _star.title = on
