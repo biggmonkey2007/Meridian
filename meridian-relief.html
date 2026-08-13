@@ -733,6 +733,9 @@ body.topo-active .zoomers{bottom:130px}
 .xlc-h{font-size:14px;font-weight:700;color:var(--ink);margin:2px 0 5px}
 .xlc-x{font-size:12.5px;line-height:1.6;color:var(--ink-2)}
 .xlc-x+.cx-link{margin-top:8px}
+.xlc-attr{font-size:10.5px;color:var(--ink-3);margin-top:9px}
+.xlc-attr a{color:var(--ink-2);font-weight:600;text-decoration:none}
+.xlc-attr a:hover{text-decoration:underline}
 .xp-src-list{display:flex;flex-direction:column;gap:7px}
 .xp-src{display:flex;align-items:center;gap:11px;text-decoration:none;border:1px solid #e6e9ef;border-radius:10px;padding:9px 12px;transition:.13s;background:#fff}
 .xp-src:hover{border-color:#3a6098;background:#f6f9fc;transform:translateX(2px)}
@@ -781,30 +784,30 @@ body.topo-active .zoomers{bottom:130px}
    every hardcoded fill, border and navy accent so the section reads cleanly on the dark panel. */
 :root[data-theme="dark"] .xp-wrap{border-top-color:var(--line)}
 :root[data-theme="dark"] .xp-lens{border-left-color:#5a8fc7}
-:root[data-theme="dark"] .xp-h{color:#9cc0ea}
-:root[data-theme="dark"] .xp-block-h{color:#bcd6f2;border-bottom-color:var(--line)}
+:root[data-theme="dark"] .xp-h{color:var(--ink)}
+:root[data-theme="dark"] .xp-block-h{color:var(--ink);border-bottom-color:var(--line)}
 :root[data-theme="dark"] .xp-chip,
 :root[data-theme="dark"] .xp-jump{background:var(--panel-2);border-color:var(--line)}
-:root[data-theme="dark"] .xp-jump{color:#9cc0ea}
+:root[data-theme="dark"] .xp-jump{color:var(--ink)}
 :root[data-theme="dark"] .xp-chip:hover,
 :root[data-theme="dark"] .xp-jump:hover{background:#243349;border-color:#3f6ea8}
-:root[data-theme="dark"] .xp-chip .xc-n{color:#9cc0ea}
-:root[data-theme="dark"] .xlc-label{color:#8fb4dd}
+:root[data-theme="dark"] .xp-chip .xc-n{color:var(--ink)}
+:root[data-theme="dark"] .xlc-label{color:var(--ink-2)}
 :root[data-theme="dark"] .xp-live-card{background:var(--panel-2);border-color:var(--line);border-left-color:#5a8fc7}
 :root[data-theme="dark"] .xp-src{background:var(--panel-2);border-color:var(--line)}
 :root[data-theme="dark"] .xp-src:hover{background:#243349;border-color:#3f6ea8}
 :root[data-theme="dark"] .xs-arr{color:#5f6b7a}
 :root[data-theme="dark"] .xp-ai-block{background:linear-gradient(180deg,#1a2634,#161f2b);border-color:var(--line)}
 :root[data-theme="dark"] .xp-ai-cta{background:linear-gradient(180deg,#1a2634,#161f2b);border-color:#33506e}
-:root[data-theme="dark"] .xp-ai-cta b{color:#9cc0ea}
+:root[data-theme="dark"] .xp-ai-cta b{color:var(--ink)}
 :root[data-theme="dark"] .xp-ai-cta code{background:#26364a}
-:root[data-theme="dark"] .xp-ai-cta a{color:#7fb0e6}
-:root[data-theme="dark"] .xp-clip-label{color:#bcd6f2}
+:root[data-theme="dark"] .xp-ai-cta a{color:var(--ink)}
+:root[data-theme="dark"] .xp-clip-label{color:var(--ink)}
 :root[data-theme="dark"] .xp-clip-load{background:var(--panel-2)}
 :root[data-theme="dark"] .xp-loading .spin,
 :root[data-theme="dark"] .xp-clip-load .spin{border-color:#2a3a4d;border-top-color:#5a8fc7}
-:root[data-theme="dark"] .cx-kicker{color:#8fb4dd}
-:root[data-theme="dark"] .cx-link{color:#7fb0e6}
+:root[data-theme="dark"] .cx-kicker{color:var(--ink-2)}
+:root[data-theme="dark"] .cx-link{color:var(--ink)}
 /* leadership photo grid — wraps to fit the panel, never scrolls sideways */
 .lead-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:13px 9px;padding:4px 0 10px}
 .lead-card{text-align:center;min-width:0}
@@ -3074,11 +3077,10 @@ function positionCountryHighlight(){
     if(currentBase==="clean" || currentBase==="topo"){
       below = (mlMap.getStyle().layers.find(l=> l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || null;
     }
-    ["g-hl-fill","g-hl-line"].forEach(id=>{
-      if(!mlMap.getLayer(id)) return;
-      if(below && mlMap.getLayer(below)) mlMap.moveLayer(id, below);   // clip to the coast
-      else mlMap.moveLayer(id);                                        // satellite/osm: no water fill -> keep on top
-    });
+    // FILL tucks UNDER the water (the sea clips the tint to the real coastline). The OUTLINE stays ON TOP so
+    // the border wraps the ENTIRE country — coast included — the same as satellite.
+    if(mlMap.getLayer("g-hl-fill")){ if(below && mlMap.getLayer(below)) mlMap.moveLayer("g-hl-fill", below); else mlMap.moveLayer("g-hl-fill"); }
+    if(mlMap.getLayer("g-hl-line")) mlMap.moveLayer("g-hl-line");
     ["g-pulse","g-events"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.moveLayer(id); });   // dots always above the highlight
   }catch(e){}
 }
@@ -3591,7 +3593,7 @@ function expertHTML(name, leaders){
   // 1) STRATEGIC ANALYSIS
   out += `<div id="xs-analysis" class="xp-block"><div class="xp-block-h"><span class="xp-num">01</span>Strategic analysis</div>`;
   if(d){ d.sections.forEach(s=>{ out += `<div class="xp-sec"><div class="xp-h">${esc(s.h)}</div><div class="xp-b"><p>${esc(s.b)}</p></div></div>`; }); }
-  else { out += `<div class="xp-b"><p>A hand-written Meridian dossier for ${esc(short)} is still being authored. Below you'll find the regional lens, a live in-depth brief pulled from public encyclopedic sources, official primary sources, and tap-through explainers for every key actor and concept — the full scaffolding to analyze ${esc(short)} at depth.</p></div>`; }
+  else { out += `<div class="xp-b"><p>A hand-written Meridian dossier for ${esc(short)} is still being authored. Below you'll find the regional lens, a live in-depth brief in Meridian's own words, and tap-through explainers for every key actor and concept — the full scaffolding to analyze ${esc(short)} at depth.</p></div>`; }
   out += `</div>`;
 
   // 2) ACTORS & CONCEPTS (country-specific)
@@ -3604,17 +3606,14 @@ function expertHTML(name, leaders){
   // 3) IN-DEPTH (live, filled by enrichExpert)
   out += `<div id="xs-deep" class="xp-block"><div class="xp-block-h"><span class="xp-num">03</span>In-depth — live from public sources</div><div id="xp-live" class="xp-live"><div class="xp-loading"><span class="spin"></span>Pulling encyclopedic deep-dives for ${esc(short)}…</div></div></div>`;
 
-  // 4) OFFICIAL VOICES & PRIMARY SOURCES
-  out += `<div id="xs-voices" class="xp-block"><div class="xp-block-h"><span class="xp-num">04</span>Official voices &amp; primary sources</div><div id="xp-clip" class="xp-clip-wrap"></div><div class="xp-hint">Public, on-the-record material — opens in your browser.</div><div class="xp-src-list">`+expertSources(name, leaders).map(s=>`<a class="xp-src" href="${esc(s[2])}" target="_blank" rel="noopener"><span class="xs-ico">${s[3]||"↗"}</span><span class="xs-main"><span class="xs-t">${esc(s[0])}</span><span class="xs-d">${esc(s[1])}</span></span><span class="xs-arr">↗</span></a>`).join("")+`</div></div>`;
-
-  // 5) REGIONAL CONTEXT
+  // 4) REGIONAL CONTEXT
   if(reg){
-    out += `<div id="xs-region" class="xp-block"><div class="xp-block-h"><span class="xp-num">05</span>Regional context — ${esc(regLabel)}</div>`;
+    out += `<div id="xs-region" class="xp-block"><div class="xp-block-h"><span class="xp-num">04</span>Regional context — ${esc(regLabel)}</div>`;
     if(d) out += `<div class="xp-b"><p>${esc(reg.frame)}</p></div>`;
     out += `<div class="xp-chips">`+reg.concepts.map(chipHTML).join("")+`</div></div>`;
   }
 
-  out += `<div class="fb-src" style="margin-top:14px">Advanced dossier · Meridian analysis + live public sources (Wikipedia · UN · CIA World Factbook · official channels)</div></div>`;
+  out += `<div class="fb-src" style="margin-top:14px">Advanced dossier · Meridian analysis, summarized from public reference sources (Wikipedia · CIA World Factbook)</div></div>`;
   return out;
 }
 const WIKI_DEEP_BASE = { "United States of America":"the United States", "United Kingdom":"the United Kingdom", "Dem. Rep. Congo":"the Democratic Republic of the Congo", "Congo":"the Republic of the Congo", "Czechia":"the Czech Republic", "Netherlands":"the Netherlands", "Philippines":"the Philippines", "United Arab Emirates":"the United Arab Emirates", "Bahamas":"the Bahamas", "S. Sudan":"South Sudan", "Bosnia and Herz.":"Bosnia and Herzegovina", "Dominican Rep.":"the Dominican Republic", "Central African Rep.":"the Central African Republic", "Eq. Guinea":"Equatorial Guinea", "W. Sahara":"Western Sahara", "Myanmar":"Myanmar" };
@@ -3632,24 +3631,29 @@ async function enrichExpert(name){
     expertLiveCache[name]=arr;
   }
   const cur=document.getElementById("xp-live"); if(!cur) return;
-  if(!arr.length){ cur.innerHTML=`<div class="xp-b" style="color:var(--ink-3)">No encyclopedic deep-dives were found for ${esc(shortCountry(name))} right now — try the official sources below.</div>`; return; }
-  cur.innerHTML = arr.map(a=>{
-    const ex = a.extract.length>460 ? a.extract.slice(0,460).replace(/\s+\S*$/,"")+"…" : a.extract;
-    return `<div class="xp-live-card"><div class="xlc-label">${esc(a.label)}</div><div class="xlc-h">${esc(a.title)}</div><div class="xlc-x">${esc(ex)}</div><a class="cx-link" href="${esc(a.url)}" target="_blank" rel="noopener">Read the full article →</a></div>`;
+  if(!arr.length){ cur.innerHTML=`<div class="xp-b" style="color:var(--ink-3)">No encyclopedic deep-dives were found for ${esc(shortCountry(name))} right now.</div>`; return; }
+  cur.innerHTML = arr.map((a,i)=>{
+    const ex = a.extract.length>340 ? a.extract.slice(0,340).replace(/\s+\S*$/,"")+"…" : a.extract;
+    return `<div class="xp-live-card"><div class="xlc-label">${esc(a.label)}</div><div class="xlc-h">${esc(a.title)}</div>`
+      + `<div class="xlc-x" id="xlc-x-${i}">${esc(ex)}</div>`
+      + `<div class="xlc-attr" id="xlc-attr-${i}">Source · <a href="${esc(a.url)}" target="_blank" rel="noopener">Wikipedia</a></div></div>`;
   }).join("");
-}
-function ytSearch(q){ return "https://www.youtube.com/results?search_query="+encodeURIComponent(q); }
-function expertSources(name, leaders){
-  const short=shortCountry(name);
-  const out=[];
-  out.push(["UN General Assembly address","Watch this country's leaders speak at the UN — full video","https://webtv.un.org/en/search?q="+encodeURIComponent(short),"▶"]);
-  (leaders||[]).slice(0,3).forEach(L=>{ if(L&&L.name){ out.push([L.name+" — speeches & remarks","Video of the "+(L.title||"leader").toLowerCase()+" addressing the public",ytSearch(L.name+" speech"),"▶"]); } });
-  out.push([short+" — official statements","Latest on-camera government statements & press briefings",ytSearch(short+" government statement speech"),"▶"]);
-  out.push(["CIA World Factbook","The full official country reference (government, economy, society)","https://www.cia.gov/the-world-factbook/countries/"+factbookSlug(name)+"/","📘"]);
-  out.push(["Reuters — country coverage","Wire-service reporting & analysis","https://www.reuters.com/site-search/?query="+encodeURIComponent(short),"📰"]);
-  out.push(["Crisis Group","In-depth conflict & policy briefings","https://www.crisisgroup.org/search?search_api_fulltext="+encodeURIComponent(short),"📑"]);
-  out.push(["Council on Foreign Relations","Expert analysis & explainers","https://www.cfr.org/search?query="+encodeURIComponent(short),"📑"]);
-  return out;
+  // REWRITE each brief into Meridian's OWN words with the copyright-free summarizer (the same one behind the
+  // news "In brief"). When a summarizer is available the card becomes original prose; when it isn't, the plainly
+  // attributed public-source text stands (Wikipedia is CC BY-SA — fine to quote with credit).
+  const _api = aiBridge();
+  if(_api && _api.summarize_event){
+    arr.forEach((a,i)=>{
+      Promise.resolve(_api.summarize_event(a.title, a.url, a.extract)).then(r=>{
+        if(!cur || !document.body.contains(cur)) return;
+        const tx=document.getElementById("xlc-x-"+i), at=document.getElementById("xlc-attr-"+i);
+        if(tx && r && r.summary && r.summary.trim().length>60){
+          tx.textContent = r.summary.trim();
+          if(at) at.innerHTML = `In Meridian's words · <a href="${esc(a.url)}" target="_blank" rel="noopener">further reading</a>`;
+        }
+      }).catch(()=>{});
+    });
+  }
 }
 function factbookSlug(name){
   const map={ "United States of America":"united-states","United Kingdom":"united-kingdom","Dem. Rep. Congo":"congo-democratic-republic-of-the","Congo":"congo-republic-of-the","Czechia":"czechia","S. Sudan":"south-sudan","Bosnia and Herz.":"bosnia-and-herzegovina","Dominican Rep.":"dominican-republic","Central African Rep.":"central-african-republic","Eq. Guinea":"equatorial-guinea","W. Sahara":"western-sahara","Myanmar":"burma","Côte d'Ivoire":"cote-divoire","eSwatini":"eswatini","Cabo Verde":"cabo-verde","Timor-Leste":"timor-leste" };
@@ -3875,8 +3879,21 @@ async function openConcept(title){
   if(j && j.extract){
     titleEl.textContent=j.title||title;
     ex.textContent=j.extract;
+    const _url=(j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || ("https://en.wikipedia.org/wiki/"+encodeURIComponent(title));
     if(j.thumbnail && j.thumbnail.source){ img.src=j.thumbnail.source.replace(/\/\d+px-/,"/720px-"); img.style.display=""; }
-    link.href=(j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || ("https://en.wikipedia.org/wiki/"+encodeURIComponent(title)); link.style.display="";
+    link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
+    // reword into Meridian's own words when a summarizer is available; else the attributed Wikipedia text stands
+    try{
+      const _api=aiBridge();
+      if(_api && _api.summarize_event){
+        const r=await _api.summarize_event(j.title||title, _url, j.extract);
+        if(ov.classList.contains("open") && ov._t===title && r && r.summary && r.summary.trim().length>60){
+          ex.textContent=r.summary.trim();
+          const _kick=ov.querySelector(".cx-kicker"); if(_kick) _kick.textContent="Concept · in Meridian's words";
+          link.textContent="Further reading →";
+        }
+      }
+    }catch(e){}
   } else {
     ex.textContent="Couldn’t load an explainer for this topic right now — open it on Wikipedia instead.";
     link.href="https://en.wikipedia.org/wiki/"+encodeURIComponent(title.replace(/ /g,"_")); link.style.display="";
