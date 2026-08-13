@@ -50,6 +50,7 @@ def _fold(s):
         out.append(base[0] if base else ch)
     return "".join(out)
 import html as _htmlmod
+import gzip
 import urllib.request
 import urllib.parse
 
@@ -82,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -3247,8 +3248,17 @@ CURATED_FEEDS = {
 
 
 def _http_get(url, timeout=20):
-    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout).read().decode("utf-8", "replace")
+    # Ask for gzip — these fetch large text (Factbook backgrounds, the ~71 KB heads list, minister lists,
+    # feeds), which compress ~4-5x. urllib doesn't auto-decode, so we unzip when the server actually gzipped.
+    UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Encoding": "gzip"}
+    resp = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout)
+    data = resp.read()
+    if (resp.headers.get("Content-Encoding") or "").lower() == "gzip":
+        try:
+            data = gzip.decompress(data)
+        except Exception:
+            pass
+    return data.decode("utf-8", "replace")
 
 
 def _clean_post(h):
@@ -4571,13 +4581,22 @@ _MINLIST_ALIAS = {
 }
 
 
+_MINLIST_MEM = {}   # in-process cache (list_article -> (t, data)): browsing many countries reuses ONE parse
+                    # instead of re-reading + re-loading the same disk JSON on every country.
+
+
 def _current_ministers(list_article):
     """Parse a Wikipedia 'List of current X ministers' table into {country: {name, article}} — the current
     holder for EVERY country from ONE page. Cached ~daily on disk, so one fetch serves all countries."""
+    _m = _MINLIST_MEM.get(list_article)
+    if _m and time.time() - _m[0] < 3600:
+        return _m[1]
     cache = os.path.join(CACHE_DIR, "minlist_" + _slug(list_article) + ".json")
     if _fresh(cache, 20 * 3600):
         try:
-            return json.load(open(cache, encoding="utf-8"))
+            d = json.load(open(cache, encoding="utf-8"))
+            _MINLIST_MEM[list_article] = (time.time(), d)
+            return d
         except Exception:
             pass
     out = {}
@@ -4612,6 +4631,7 @@ def _current_ministers(list_article):
             json.dump(out, open(cache, "w", encoding="utf-8"))
         except Exception:
             pass
+        _MINLIST_MEM[list_article] = (time.time(), out)
     return out
 
 
@@ -4710,13 +4730,20 @@ def _heads_parse_cell(cell):
     return (title, name or None, art or name)
 
 
+_HEADS_MEM = {"t": 0, "data": None}   # in-process cache: one parse serves every country in the session
+
+
 def _current_heads():
     """Parse the 'List of current heads of state and government' page into
     {country: {'hos':{name,title,article}|None, 'hog':{...}|None}} — one daily fetch covers every country."""
+    if _HEADS_MEM["data"] is not None and time.time() - _HEADS_MEM["t"] < 3600:
+        return _HEADS_MEM["data"]
     cache = os.path.join(CACHE_DIR, "heads_of_state_gov.json")
     if _fresh(cache, 20 * 3600):
         try:
-            return json.load(open(cache, encoding="utf-8"))
+            d = json.load(open(cache, encoding="utf-8"))
+            _HEADS_MEM["data"] = d; _HEADS_MEM["t"] = time.time()
+            return d
         except Exception:
             pass
     out = {}
@@ -4769,6 +4796,7 @@ def _current_heads():
             json.dump(out, open(cache, "w", encoding="utf-8"))
         except Exception:
             pass
+        _HEADS_MEM["data"] = out; _HEADS_MEM["t"] = time.time()
     return out
 
 
