@@ -2045,11 +2045,11 @@ function highlightCountry(name){
   const f = countryByName[name]; if(!f || !map) return;
   const fill = splitFillGeo(f), segs = featureSegments(f);
   const rnd = L.canvas();   // ONE canvas for the fill + outline: SVG can't stay in step with Leaflet's panes mid-drag, canvas can (matches the base borders)
-  const fillStyle = { stroke:false, fillColor:"#2f7fe0", fillOpacity:0.2 };
+  const fillStyle = { stroke:false, fillColor:"#8fb8ef", fillOpacity:0.16 };   // soft, translucent (matches the vector map)
   const parts=[
     L.geoJSON(fill, { style:fillStyle, interactive:false, renderer:rnd }),
     L.geoJSON(eastFillGeo(fill), { style:fillStyle, interactive:false, renderer:rnd }),   // >180° extension (Russia/Alaska)
-    L.polyline(segs.concat(eastSegs(segs)), { color:"#1668d6", weight:3, opacity:0.95, interactive:false, lineJoin:"round", renderer:rnd })
+    L.polyline(segs.concat(eastSegs(segs)), { color:"#5b95e0", weight:1.2, opacity:0.62, interactive:false, lineJoin:"round", renderer:rnd })
   ];
   highlightLayer = L.layerGroup(parts).addTo(map);
   if(mlMap && mlLoaded && mlMap.getSource("g-hl-line")){
@@ -3127,6 +3127,22 @@ function setGlobeBasemap(k){
     mlMap.setPaintProperty("g-borders-case","line-width",
       _sat ? ["interpolate",["linear"],["zoom"], 2,1.8, 5,2.4, 9,3.4] : 0);
   }
+  // The selected-country highlight adapts to the base so the blue never muddies the map: a soft cornflower
+  // wash on the clean map, cooler + more transparent over the busy topographic relief, brighter over the dark
+  // satellite photo. Fill stays translucent (the border below reads through it); the outline stays thin.
+  if(mlMap.getLayer("g-hl-fill")){
+    const HL = k==="topo"      ? {fill:"#7db4f2", fo:0.13, line:"#8fc2ff", lw:1.1, lo:0.78}
+             : k==="satellite" ? {fill:"#93c4ff", fo:0.17, line:"#a9d2ff", lw:1.3, lo:0.8}
+             : k==="osmintl"   ? {fill:"#8bb6ee", fo:0.16, line:"#5b95e0", lw:1.1, lo:0.60}
+             :                   {fill:"#8fb8ef", fo:0.16, line:"#5b95e0", lw:1.2, lo:0.62};
+    try{
+      mlMap.setPaintProperty("g-hl-fill","fill-color",HL.fill);
+      mlMap.setPaintProperty("g-hl-fill","fill-opacity",HL.fo);
+      mlMap.setPaintProperty("g-hl-line","line-color",HL.line);
+      mlMap.setPaintProperty("g-hl-line","line-width",HL.lw);
+      mlMap.setPaintProperty("g-hl-line","line-opacity",HL.lo);
+    }catch(e){}
+  }
   if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // soft-white dot ring on satellite, white elsewhere
   { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } document.body.classList.toggle("topo-active", k==="topo"); }   // elevation scale bottom-right, zoom buttons lift above it — Topographic only
   try{ mlMap.setMaxZoom(k==="topo" ? 11 : 16); if(mlMap.getZoom() > (k==="topo"?11:16)) mlMap.setZoom(k==="topo"?11:16); }catch(e){}   // cap how far Topographic zooms — the DEM detail (and the lag) doesn't need to go past ~city scale
@@ -3227,11 +3243,11 @@ function buildGlobeLayers(){
   }
   if(!mlMap.getSource("g-hl-fill")){
     mlMap.addSource("g-hl-fill",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
-    mlMap.addLayer({id:"g-hl-fill",type:"fill",source:"g-hl-fill",paint:{"fill-color":"#3f86ec","fill-opacity":0.34}});
+    mlMap.addLayer({id:"g-hl-fill",type:"fill",source:"g-hl-fill",paint:{"fill-color":"#8fb8ef","fill-opacity":0.16,"fill-antialias":true}});   // soft translucent tint; setGlobeBasemap re-tunes per base
   }
   if(!mlMap.getSource("g-hl-line")){
     mlMap.addSource("g-hl-line",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
-    mlMap.addLayer({id:"g-hl-line",type:"line",source:"g-hl-line",paint:{"line-color":"#1668d6","line-width":2.4}});
+    mlMap.addLayer({id:"g-hl-line",type:"line",source:"g-hl-line",layout:{"line-cap":"round","line-join":"round"},paint:{"line-color":"#5b95e0","line-width":1.2,"line-opacity":0.6}});   // thin, semi-transparent outline
   }
   setGlobeBasemap(currentBase);
   if(!mlMap.getSource("g-events")){
