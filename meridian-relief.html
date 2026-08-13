@@ -732,10 +732,12 @@ body.topo-active .zoomers{bottom:130px}
 .xlc-label{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:#3a6098}
 .xlc-h{font-size:14px;font-weight:700;color:var(--ink);margin:2px 0 5px}
 .xlc-x{font-size:12.5px;line-height:1.6;color:var(--ink-2)}
-.xlc-x+.cx-link{margin-top:8px}
-.xlc-attr{font-size:10.5px;color:var(--ink-3);margin-top:9px}
-.xlc-attr a{color:var(--ink-2);font-weight:600;text-decoration:none}
-.xlc-attr a:hover{text-decoration:underline}
+.xlc-x.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.xlc-more{background:none;border:none;color:var(--ink-2);font-size:11.5px;font-weight:700;cursor:pointer;padding:7px 0 0;margin:0;font-family:inherit;letter-spacing:.01em}
+.xlc-more:hover{color:var(--ink);text-decoration:underline}
+.xlc-sources{font-size:10.5px;color:var(--ink-3);margin-top:13px;line-height:1.75}
+.xlc-sources a{color:var(--ink-2);font-weight:600;text-decoration:none}
+.xlc-sources a:hover{text-decoration:underline}
 .xp-src-list{display:flex;flex-direction:column;gap:7px}
 .xp-src{display:flex;align-items:center;gap:11px;text-decoration:none;border:1px solid #e6e9ef;border-radius:10px;padding:9px 12px;transition:.13s;background:#fff}
 .xp-src:hover{border-color:#3a6098;background:#f6f9fc;transform:translateX(2px)}
@@ -3632,28 +3634,46 @@ async function enrichExpert(name){
   }
   const cur=document.getElementById("xp-live"); if(!cur) return;
   if(!arr.length){ cur.innerHTML=`<div class="xp-b" style="color:var(--ink-3)">No encyclopedic deep-dives were found for ${esc(shortCountry(name))} right now.</div>`; return; }
-  cur.innerHTML = arr.map((a,i)=>{
-    const ex = a.extract.length>340 ? a.extract.slice(0,340).replace(/\s+\S*$/,"")+"…" : a.extract;
-    return `<div class="xp-live-card"><div class="xlc-label">${esc(a.label)}</div><div class="xlc-h">${esc(a.title)}</div>`
-      + `<div class="xlc-x" id="xlc-x-${i}">${esc(ex)}</div>`
-      + `<div class="xlc-attr" id="xlc-attr-${i}">Source · <a href="${esc(a.url)}" target="_blank" rel="noopener">Wikipedia</a></div></div>`;
-  }).join("");
+  // The FULL text goes in — never a mid-word "…". Long paragraphs are clamped to a few lines with a "Read
+  // more" toggle that expands them in place. Sources are cited ONCE, together, at the foot of the section.
+  const srcLinks = arr.map(a=>`<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc((a.label.split(/ [&]/)[0]||a.title).trim())}</a>`).join(" · ");
+  cur.innerHTML = arr.map((a,i)=>
+    `<div class="xp-live-card"><div class="xlc-label">${esc(a.label)}</div><div class="xlc-h">${esc(a.title)}</div>`
+    + `<div class="xlc-x clamp" id="xlc-x-${i}">${esc(a.extract)}</div>`
+    + `<button type="button" class="xlc-more" id="xlc-more-${i}" hidden>Read more…</button></div>`
+  ).join("") + `<div class="xlc-sources">Summaries based on Wikipedia (CC BY-SA) — ${srcLinks}</div>`;
+  arr.forEach((a,i)=> _wireReadMore("xlc-x-"+i, "xlc-more-"+i));
   // REWRITE each brief into Meridian's OWN words with the copyright-free summarizer (the same one behind the
-  // news "In brief"). When a summarizer is available the card becomes original prose; when it isn't, the plainly
-  // attributed public-source text stands (Wikipedia is CC BY-SA — fine to quote with credit).
+  // news "In brief"). When a summarizer is available the card becomes original prose; when it isn't, the full
+  // public-source text stands, cited together below (Wikipedia is CC BY-SA — fine to quote with credit).
   const _api = aiBridge();
   if(_api && _api.summarize_event){
     arr.forEach((a,i)=>{
       Promise.resolve(_api.summarize_event(a.title, a.url, a.extract)).then(r=>{
         if(!cur || !document.body.contains(cur)) return;
-        const tx=document.getElementById("xlc-x-"+i), at=document.getElementById("xlc-attr-"+i);
+        const tx=document.getElementById("xlc-x-"+i);
         if(tx && r && r.summary && r.summary.trim().length>60){
-          tx.textContent = r.summary.trim();
-          if(at) at.innerHTML = `In Meridian's words · <a href="${esc(a.url)}" target="_blank" rel="noopener">further reading</a>`;
+          tx.textContent = r.summary.trim(); tx.classList.add("clamp");
+          _wireReadMore("xlc-x-"+i, "xlc-more-"+i);
         }
       }).catch(()=>{});
     });
   }
+}
+// Show a "Read more" toggle only when the paragraph is actually taller than its clamp; otherwise drop the clamp
+// and the button so short text sits flush. Toggling swaps clamp on/off and relabels the button.
+function _wireReadMore(txId, btnId){
+  const tx=document.getElementById(txId), btn=document.getElementById(btnId);
+  if(!tx || !btn) return;
+  requestAnimationFrame(()=>{
+    if(!document.body.contains(tx)) return;
+    if(tx.scrollHeight - tx.clientHeight > 4){
+      btn.hidden=false;
+      btn.onclick=()=>{ const clamped=tx.classList.toggle("clamp"); btn.textContent=clamped?"Read more…":"Show less"; };
+    } else {
+      tx.classList.remove("clamp"); btn.hidden=true;
+    }
+  });
 }
 function factbookSlug(name){
   const map={ "United States of America":"united-states","United Kingdom":"united-kingdom","Dem. Rep. Congo":"congo-democratic-republic-of-the","Congo":"congo-republic-of-the","Czechia":"czechia","S. Sudan":"south-sudan","Bosnia and Herz.":"bosnia-and-herzegovina","Dominican Rep.":"dominican-republic","Central African Rep.":"central-african-republic","Eq. Guinea":"equatorial-guinea","W. Sahara":"western-sahara","Myanmar":"burma","Côte d'Ivoire":"cote-divoire","eSwatini":"eswatini","Cabo Verde":"cabo-verde","Timor-Leste":"timor-leste" };
