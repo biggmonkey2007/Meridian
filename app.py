@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.4.3"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -708,6 +708,23 @@ def _cap_first(t):
     return t
 
 
+def _start_at_sentence(t):
+    """A wire 'description' is frequently the TAIL of a sentence whose head became the headline — it opens
+    mid-thought and lower-case ('against Iran earlier this year. TJP reports…'), which reads unfinished. If it
+    starts lower-case AND a whole sentence follows, drop the dangling fragment and begin at that first COMPLETE
+    sentence; if there's nothing substantial to fall back to, just capitalize the opening so it's not a runt."""
+    if not t:
+        return t
+    if not re.match(r"['\"“‘(]?\s*[a-z]", t):     # doesn't open mid-sentence -> leave it
+        return _cap_first(t)
+    sm = re.search(r"[.!?][\"'”’)\]]*\s+(?=[A-Z0-9\"'“])", t)   # end of the dangling first sentence
+    if sm:
+        rest = t[sm.end():].strip()
+        if len(rest) >= 40:                        # enough real sentence(s) left to stand alone
+            return rest
+    return _cap_first(t)
+
+
 def _tg_clean(text):
     t = re.sub(r"<br\s*/?>", "\n", text)
     t = re.sub(r"</p>", "\n", t)
@@ -987,6 +1004,7 @@ def _sharpen_desc(text, n=460):
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
     t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
     t = _TRAIL_ATTRIB.sub("", t).strip(" ,;:–—-")   # "…, Reuters reports." -> drop the trailing attribution
+    t = _start_at_sentence(t)                        # never open on a lower-case sentence fragment
     return _clip(_end_stop(t), n)
 
 
@@ -2620,7 +2638,11 @@ class Api:
             # ONE dot because {russian, ukrainian} counted as 2 shared "distinctive" words.
             _sig = _sigwords(title)
             _key = _sig - _GENERIC_WORDS - _WEAK_MATCH
-            _toks = _norm_tokens(title)                                # richer set for the similarity meter
+            # Similarity set = title + the lede. The title alone missed the SAME story told with different
+            # words (a long "Jerusalem Post… Israel surprised by Iran's recovery" vs a short "Israel shocked
+            # by Iran's rebound") — the bodies share the real content. Only feeds _same_story, which still
+            # demands a 0.72 overlap AND same place/country + a 12h window, so distinct events don't collapse.
+            _toks = _norm_tokens(title + " " + (a.get("desc") or "")[:280])
             img = a.get("socialimage") or ""
             _is_tg = bool(a.get("_tg"))
             _dup_ei = None

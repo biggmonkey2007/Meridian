@@ -1860,7 +1860,9 @@ def main():
                  and _s2 == "Trump says we are low-keying it with Iran."  # "to Axios" outlet dropped, "We"->"we"
                  and _s3 == "Gaza: 20 killed in an overnight strike."    # a topic label is NOT a speaker -> untouched
                  and "[" not in _t1 and _t1.endswith("last month.")     # "[...]" stamp + dangling fragment dropped
-                 and _t2.endswith("say."))                              # no stamp -> gentle end-stop, not trimmed
+                 and _t2.endswith("say.")                               # no stamp -> gentle end-stop, not trimmed
+                 and app._sharpen_desc("against Iran earlier this year. TJP reports that Iran kept its missile capabilities.").startswith("TJP reports")   # lower-case sentence TAIL dropped -> starts at the whole sentence
+                 and app._sharpen_desc("imagery also shows significant damage to the base.")[:1].isupper())  # a lone lower-case fragment is capitalized, not shipped mid-thought
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
