@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.4"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -170,7 +170,7 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d18"
+_DATA_VER = "d19"   # d19: rebuild the feed so the sentence-fragment fix + name-based dedup reach cached events
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -2643,11 +2643,16 @@ class Api:
             # by Iran's rebound") — the bodies share the real content. Only feeds _same_story, which still
             # demands a 0.72 overlap AND same place/country + a 12h window, so distinct events don't collapse.
             _toks = _norm_tokens(title + " " + (a.get("desc") or "")[:280])
+            # The NAMES a story mentions (Jerusalem Post, Mossad, Tel Aviv). Names don't collide by coincidence
+            # the way ordinary words do, so a strong shared-name overlap is the most reliable "same story told
+            # with different words" signal — it catches re-headlined copies (astonished vs surprised, military
+            # rebuild vs defense recovery) that share almost no common vocabulary but clearly the same subject.
+            _props = {w.rstrip("'") for w in _proper_words(title + " " + (a.get("desc") or "")[:280])}
             img = a.get("socialimage") or ""
             _is_tg = bool(a.get("_tg"))
             _dup_ei = None
             _spec = place != country and place != _co_short(country)          # this dot names a specific city/site
-            for _co2, _cat2, _pl2, _key2, _toks2, _hrs2, _ei2 in added_sigs:
+            for _co2, _cat2, _pl2, _key2, _toks2, _props2, _hrs2, _ei2 in added_sigs:
                 _inter = len(_key & _key2)
                 # TWO FAR-APART SPECIFIC PLACES ARE DIFFERENT EVENTS. SHIPPED BUG: a Ukrainian strike on the
                 # Komsomolsk-on-Amur refinery (far-east Khabarovsk Krai) was folded into a strike on the Orsk
@@ -2666,7 +2671,9 @@ class Api:
                         or (_co2 == country and _inter >= 3 and not _diff_place)   # same country, strongly alike
                         or (_pl2 == place and _cat2 == cat and _inter >= 2)   # same place, same kind of event
                         or ((_co2 == country or _pl2 == place) and abs(hrs - _hrs2) <= 12
-                            and _same_story(_toks, _toks2) and not _diff_place)):
+                            and _same_story(_toks, _toks2) and not _diff_place)
+                        or ((_co2 == country or _pl2 == place) and abs(hrs - _hrs2) <= 12
+                            and not _diff_place and len(_props & _props2) >= 3)):   # 3+ shared NAMES + same scene/day = the same story, however reworded
                     _dup_ei = _ei2
                     break
             if _dup_ei is not None:
@@ -2709,7 +2716,7 @@ class Api:
             })
             seen_urls.add(url)
             seen_titles.add(norm)
-            added_sigs.append((country, cat, place, _key, _toks, hrs, len(events) - 1))
+            added_sigs.append((country, cat, place, _key, _toks, _props, hrs, len(events) - 1))
             per_cat[cat] = per_cat.get(cat, 0) + 1
             per_country[country] = per_country.get(country, 0) + 1
         # HARD NEWS first (so a strike/casualty/official statement is NEVER cut by the final cap), then

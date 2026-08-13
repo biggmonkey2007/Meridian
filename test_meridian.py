@@ -1138,6 +1138,22 @@ def main():
             fails.append(("similarity", a[:48], same, dup, why))
         print(f"  {'ok ' if ok else 'FAIL'} {'DUP ' if dup else 'KEEP'} (want {'DUP ' if same else 'KEEP'}) shared={shared} sim={sim:.2f}")
 
+    # NAME-BASED DEDUP: the same story reworded shares almost no ordinary words but the same NAMES. The dot's
+    # dedup merges when 3+ proper names overlap (+ same place/day); distinct stories share only the countries.
+    print("\n=== NAME DEDUP (re-headlined copy caught by shared names) ===")
+    def _props(t): return {w.rstrip("'") for w in app._proper_words(t)}
+    _dupA = _props("Israel is astonished at Iran's rapid military rebuild. The Jerusalem Post reports Tel Aviv believes Iran will rebuild by 2028.")
+    _dupB = _props("The Jerusalem Post, citing IDF and Mossad, reports Israel taken by surprise by Iran's speedy defense recovery after the war.")
+    _difA = _props("Israel strikes Natanz nuclear site in Iran overnight")
+    _difB = _props("Iran's Khamenei vows revenge on Israel after a Tehran blast")
+    _name_ok = (len(_dupA & _dupB) >= 3 and len(_difA & _difB) < 3)
+    ran[0] += 1
+    if not _name_ok:
+        fails.append(("name-dedup", "reworded copy", "dup>=3 names, different<3",
+                      f"dup={len(_dupA & _dupB)} diff={len(_difA & _difB)}",
+                      "a re-headlined copy must be caught by shared NAMES while distinct stories are not"))
+    print(f"  {'ok ' if _name_ok else 'FAIL'} dup shared names={len(_dupA & _dupB)}, different={len(_difA & _difB)}")
+
     print("\n=== STARRED COUNTRIES (FIPS lookup + name matching) ===")
     for name, want in FIPS_CASES:
         got = app._fips_for(name)
@@ -1912,7 +1928,8 @@ def main():
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
              + 1    # + facility word (airport) is not a place
-             + 1)   # + heads-of-state list overrides a stale head of government
+             + 1    # + heads-of-state list overrides a stale head of government
+             + 1)   # + name-based dedup (a re-headlined copy is caught by shared names)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
