@@ -628,7 +628,7 @@ body.topo-active .zoomers{bottom:130px}
 .fb-v{font-size:12.5px;line-height:1.5;color:var(--ink)}
 .fb-src{font-size:10px;color:var(--ink-3);margin-top:9px;font-style:italic}
 /* country news feed + statements */
-.ctry-news,.ctry-stmts{margin-top:6px}
+.ctry-stmts{margin-top:6px}
 .cn-note{font-size:12px;color:var(--ink-3);line-height:1.5;margin:2px 0 9px}
 .cn-load{font-size:12px;color:var(--ink-3);margin:6px 0 10px}
 .cn-load .spin,.st-list .spin{display:inline-block;width:12px;height:12px;border:2px solid #dbe3ec;border-top-color:#2b4a73;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px}
@@ -735,9 +735,6 @@ body.topo-active .zoomers{bottom:130px}
 .xlc-x.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
 .xlc-more{background:none;border:none;color:var(--ink-2);font-size:11.5px;font-weight:700;cursor:pointer;padding:7px 0 0;margin:0;font-family:inherit;letter-spacing:.01em}
 .xlc-more:hover{color:var(--ink);text-decoration:underline}
-.xlc-sources{font-size:10.5px;color:var(--ink-3);margin-top:13px;line-height:1.75}
-.xlc-sources a{color:var(--ink-2);font-weight:600;text-decoration:none}
-.xlc-sources a:hover{text-decoration:underline}
 .xp-src-list{display:flex;flex-direction:column;gap:7px}
 .xp-src{display:flex;align-items:center;gap:11px;text-decoration:none;border:1px solid #e6e9ef;border-radius:10px;padding:9px 12px;transition:.13s;background:#fff}
 .xp-src:hover{border-color:#3a6098;background:#f6f9fc;transform:translateX(2px)}
@@ -3602,17 +3599,18 @@ function synthAnalysis(name, short, reg, regLabel){
   const secs=[];
   const p = (typeof POLITICS!=="undefined") ? POLITICS[name] : null;
   const ctx = (typeof CTX!=="undefined") ? CTX[name] : null;
-  if(p){
+  if(p && (p.gov||"").trim()){
     const gov=(p.gov||"").trim();
-    let g = `${short} is ${/^[aeiou]/i.test(gov)?"an":"a"} ${gov.toLowerCase()}`;
+    // "a"/"an" by SOUND, not just the first letter: "a unitary state", "a one-party state", "a European…"
+    const art = /^(uni|use|one|eu)/i.test(gov) ? "a" : (/^[aeiou]/i.test(gov) ? "an" : "a");
+    let g = `${short} is ${art} ${gov.toLowerCase()}`;
     if(p.ruling) g += ` (${p.ruling})`;
     g += ".";
     if(p.note) g += " " + p.note;
     secs.push({h:"Government & power", b:g});
     if(p.econ) secs.push({h:"Economy", b:`Its economy is ${p.econ.toLowerCase()}${p.system?` — ${p.system.toLowerCase()}`:""}.`});
   }
-  if(ctx && ctx.sit) secs.push({h:"Where things stand", b:ctx.sit});
-  if(reg && reg.frame) secs.push({h:`Position in ${regLabel}`, b:reg.frame});
+  if(ctx && ctx.sit) secs.push({h:"Where things stand", b:ctx.sit});   // the regional frame is already the lens above — don't repeat it
   if(!secs.length) secs.push({h:"Overview", b:`A deep-dive resource for ${short} — see the live in-depth brief and the tap-through explainers below.`});
   return secs;
 }
@@ -3751,11 +3749,9 @@ async function upgradeLeaderPhotos(){
 function afterProfileRender(name, fb){
   upgradeLeaderPhotos();
   annotateGloss(document.getElementById("ctry-profile"));   // define orgs/treaties inline in the overview
-  if(document.getElementById("ctry-news")) loadCountryNews(name);
   if(document.getElementById("ctry-stmts")) setupStatements(name);
   if(analysisMode!=="expert") return;
   if(document.getElementById("xp-live")) enrichExpert(name);
-  if(document.getElementById("xp-clip")) embedClips(name);
 }
 /* ---- backend bridge ----
    Desktop: the Python pywebview API (window.pywebview.api.*) — full enrichments.
@@ -3787,20 +3783,6 @@ function webApi(){
 /* ---- desktop AI/clips bridge (Python pywebview), else the hosted-feed web API ---- */
 function aiBridge(){ try{ if(window.pywebview && window.pywebview.api) return window.pywebview.api; }catch(e){} return webApi(); }
 function newsAgo(pub){ try{ const t=new Date(pub).getTime(); if(!t) return ""; const m=Math.floor((Date.now()-t)/60000); if(m<1) return "now"; if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<24) return h+"h ago"; return Math.floor(h/24)+"d ago"; }catch(e){ return ""; } }
-async function loadCountryNews(name){
-  const slot=document.getElementById("ctry-news"); if(!slot) return;
-  const api=aiBridge();
-  const head=`<div class="sec-label">Latest — last 24 hours · ${esc(shortCountry(name))}</div>`;
-  if(!api || !api.country_news){ slot.innerHTML=head+`<div class="cn-note">Live news runs in the Meridian desktop app.</div>`; return; }
-  slot.innerHTML=head+`<div class="cn-load"><span class="spin"></span>Pulling the latest headlines…</div>`;
-  try{
-    const r=await api.country_news(name);
-    if(activeCountry!==name || !document.getElementById("ctry-news")) return;
-    const items=(r&&r.items)||[];
-    if(!items.length){ slot.innerHTML=head+`<div class="cn-note">No fresh headlines found right now.</div>`; return; }
-    slot.innerHTML=head+`<div class="cn-list">`+items.map(it=>`<a class="cn-item" href="${esc(it.link)}" target="_blank" rel="noopener"><div class="cn-title">${esc(it.title)}</div><div class="cn-meta"><span class="cn-src">${esc(it.source||"")}</span>${it.pub?`<span class="cn-time">${esc(newsAgo(it.pub))}</span>`:""}</div></a>`).join("")+`</div>`;
-  }catch(e){ slot.innerHTML=head+`<div class="cn-note">Couldn’t load headlines.</div>`; }
-}
 function stmtsHead(name){ return `<div class="sec-label">What officials are saying · ${esc(shortCountry(name))}</div>`; }
 function relDate(d){ try{ const t=new Date(d).getTime(); if(!t) return ""; const m=Math.floor((Date.now()-t)/60000); if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<24) return h+"h ago"; const dd=Math.floor(h/24); return dd<8?dd+"d ago":new Date(t).toLocaleDateString(); }catch(e){ return ""; } }
 async function setupStatements(name){
@@ -3937,7 +3919,10 @@ async function openConcept(title){
     titleEl.textContent=j.title||title;
     ex.textContent=j.extract;
     const _url=(j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || ("https://en.wikipedia.org/wiki/"+encodeURIComponent(title));
-    const _im = (j.originalimage && j.originalimage.source) || (j.thumbnail && j.thumbnail.source ? j.thumbnail.source.replace(/\/\d+px-/,"/720px-") : "");
+    // Use a right-sized thumbnail for the small hero (a Wikipedia originalimage can be many MB); fall back to
+    // the original only when there's no thumbnail to resize.
+    const _im = (j.thumbnail && j.thumbnail.source) ? j.thumbnail.source.replace(/\/\d+px-/,"/640px-")
+              : ((j.originalimage && j.originalimage.source) || "");
     if(_im){ img.src=_im; img.style.display=""; } else { img.style.display="none"; }
     link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
     // reword into Meridian's own words when a summarizer is available; else the attributed Wikipedia text stands
