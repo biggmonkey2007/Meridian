@@ -2055,6 +2055,7 @@ function highlightCountry(name){
   if(mlMap && mlLoaded && mlMap.getSource("g-hl-line")){
     mlMap.getSource("g-hl-fill").setData({type:"FeatureCollection",features:[fill]});
     mlMap.getSource("g-hl-line").setData(splitFeatureLines(f));
+    positionCountryHighlight();   // ensure the tint sits under the vector water so it clips to the coastline
   }
 }
 function clearCountryHighlight(){ if(highlightLayer && map){ map.removeLayer(highlightLayer); } highlightLayer=null; if(mlMap && mlLoaded){ ["g-hl-fill","g-hl-line"].forEach(s=>{ if(mlMap.getSource(s)) mlMap.getSource(s).setData({type:"FeatureCollection",features:[]}); }); } }
@@ -2632,6 +2633,35 @@ async function leadImgTryNext(img){
   }catch(e){}
   const ch=(img.getAttribute("data-ch")||"?"); const d=document.createElement("div"); d.className="lead-img lead-ph"; d.textContent=ch; if(img.parentNode) img.parentNode.replaceChild(d, img);
 }
+// The CIA Factbook writes SURNAMES in ALL-CAPS ("Nicolae CEAUSESCU", "ABD AL-AZIZ ... AL SAUD") and uses
+// "--" for an em-dash. That reads as shouting and looks unprofessional, so we normalize the overview to clean
+// prose: title-case the caps-locked names (keeping genuine acronyms USSR/US/NATO and monarch numerals I–XX),
+// turn "--" into a real em-dash, and end on a whole sentence. One pass, applied to EVERY country's overview.
+const _KEEP_UPPER = new Set(("USSR US USA UK UN EU EEC EC EMU NATO OPEC UAE PRC ROC PLO IRA ETA FARC ISIS ISIL "
+  + "WWI WWII GDP GNP EFTA ASEAN OSCE WTO IMF NAFTA OAU AU ECOWAS SADC CIS KGB TV BBC FRG GDR DPRK ROK SSR SFRY "
+  + "UAR RSFSR NKVD SED PDR SFR AH BC AD BCE CE "
+  + "I II III IV V VI VII VIII IX X XI XII XIII XIV XV XVI XVII XVIII XIX XX").split(" "));
+function _titleCaseWord(w){ return w.split("-").map(seg=> seg ? seg.charAt(0).toUpperCase()+seg.slice(1).toLowerCase() : seg).join("-"); }
+function _fixAllCaps(s){
+  return s.replace(/\b[\p{Lu}][\p{Lu}'’.\-]*\b/gu, (w)=>{
+    if(w.indexOf(".") >= 0) return w;                              // a dotted abbreviation (B.C., U.S.) -> keep
+    const bare = w.replace(/['’]/g,"");
+    if(bare.replace(/-/g,"").length <= 1) return w;                 // an initial
+    if(_KEEP_UPPER.has(bare) || _KEEP_UPPER.has(w)) return w;       // real acronym / roman numeral -> keep
+    return _titleCaseWord(w);                                       // caps-locked name -> "Ceausescu", "Al Saud"
+  });
+}
+function tidyOverview(s){
+  let t = String(s||"").replace(/\s+/g," ").trim();
+  t = t.replace(/\s*--\s*/g, " — ");         // Factbook's double hyphen -> a clean em-dash
+  t = _fixAllCaps(t);
+  const CAP = 900;                           // show the opening history; never chop mid-sentence, never "…"
+  if(t.length > CAP){
+    const m = t.slice(0, CAP).match(/^[\s\S]*[.!?](?=\s|$)/);
+    t = (m && m[0].length > CAP*0.5) ? m[0].trim() : (t.slice(0, CAP).replace(/\s+\S*$/,"").trim()+".");
+  }
+  return t;
+}
 function renderProfile(name, fb, wp, leaders){
   let out = "";
   // Prefer the CIA Factbook "Background" — a professional narrative of how the country formed and its role —
@@ -2640,15 +2670,7 @@ function renderProfile(name, fb, wp, leaders){
   const _bg = fb ? fbField(fb,["Introduction","Background"]) : "";
   const overview = (_bg && _bg.length >= 250) ? _bg : ((wp && wp.extract) ? wp.extract : _bg);
   if(overview){
-    // A professional overview is never chopped mid-sentence. Show the opening history and END ON A WHOLE
-    // SENTENCE (no "…"): trim to the last '.'/'!'/'?' before the cap; if the whole thing is short, show it all.
-    let t = String(overview).replace(/\s+/g," ").trim();
-    const CAP = 900;
-    if(t.length > CAP){
-      const m = t.slice(0, CAP).match(/^[\s\S]*[.!?](?=\s|$)/);
-      t = (m && m[0].length > CAP*0.5) ? m[0].trim() : (t.slice(0, CAP).replace(/\s+\S*$/,"").trim()+".");
-    }
-    out += `<div class="sec-label">Country overview</div><div class="ctx-sit">${esc(t)}</div>`;
+    out += `<div class="sec-label">Country overview</div><div class="ctx-sit">${esc(tidyOverview(overview))}</div>`;
   }
   if(leaders && leaders.length){
     out += `<div class="sec-label">Leadership</div><div class="lead-bar">`+leaders.map(L=>{
@@ -3010,6 +3032,25 @@ function applyCartoLabelToggle(){
   const vis = layers.labels ? "visible" : "none";
   _gCartoIds.forEach(id=>{ const l = mlMap.getLayer(id); if(l && l.type==="symbol"){ try{ mlMap.setLayoutProperty(id,"visibility",vis); }catch(e){} } });
 }
+// 1:1 COASTLINE — the highlight polygon comes from a coarser atlas than the basemap, so its edge cut across
+// bays and islands. On the VECTOR bases (clean/topo) we tuck the highlight UNDER the basemap's own water fill:
+// the sea then paints over it, so the tint AND the outline stop exactly at the map's real coastline. Inland
+// borders keep the atlas edge (there's no water to clip against, and they read fine). Dots stay on top.
+function positionCountryHighlight(){
+  if(!mlMap || !mlMap.getLayer("g-hl-fill")) return;
+  try{
+    let below = null;
+    if(currentBase==="clean" || currentBase==="topo"){
+      below = (mlMap.getStyle().layers.find(l=> l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || null;
+    }
+    ["g-hl-fill","g-hl-line"].forEach(id=>{
+      if(!mlMap.getLayer(id)) return;
+      if(below && mlMap.getLayer(below)) mlMap.moveLayer(id, below);   // clip to the coast
+      else mlMap.moveLayer(id);                                        // satellite/osm: no water fill -> keep on top
+    });
+    ["g-pulse","g-events"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.moveLayer(id); });   // dots always above the highlight
+  }catch(e){}
+}
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
@@ -3081,6 +3122,7 @@ function setGlobeBasemap(k){
       // render on top of the raster overview, so z<3 reads clean and English.
       tuneLabelTiers();
       applyCartoLabelToggle();
+      positionCountryHighlight();               // tuck the highlight under the vector water so it clips to the coast
     }).catch(()=>{});
   } else {
     const b=mlBaseSpec(k);
@@ -3092,6 +3134,7 @@ function setGlobeBasemap(k){
     mlMap.addLayer({id:"g-base",type:"raster",source:"g-base",paint:{"raster-fade-duration":0}}, before);
     if(k==="osmintl"){
       // OSM tiles carry their own baked labels/borders — nothing to overlay.
+      positionCountryHighlight();               // raster base: highlight stays on top
     } else {
       // SATELLITE COPIES the Clean-relief map: the SAME English one-name labels, tuned region
       // borders, softened rivers and forced capitals — just over the imagery instead of pale land. skipFills
@@ -3101,6 +3144,7 @@ function setGlobeBasemap(k){
         else if(k==="topo") tuneCartoForTopo();
         tuneLabelTiers();
         applyCartoLabelToggle();
+        positionCountryHighlight();             // satellite: no water fill (skipFills) -> highlight stays on top
       }).catch(()=>{});
     }
   }
