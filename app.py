@@ -173,7 +173,7 @@ _DATA_VER = "d18"
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l7"      # l7: fuller cabinet (VP+State+Treasury+Defense+Homeland precise for US; +Finance/Interior all)
+_LEADER_VER = "l8"      # l8: heads of state/gov from Wikipedia's daily 'current heads' list (fixes stale PMs)
 
 
 def _aiwhere_path(title):
@@ -3018,6 +3018,33 @@ class Api:
                     hos and _same_person(fb_hog_name, None, hos.get("name", ""), hos.get("qid"))):
                 hog = {"qid": (hog or {}).get("qid"), "name": fb_hog_name, "img": (hog or {}).get("img", "")}
                 hog_forced_title = hog_forced_title or fb_hog_title
+            # AUTHORITATIVE OVERRIDE — Wikipedia's daily-current "heads of state and government" list is the
+            # source of truth for WHO holds each post today. Where it names a DIFFERENT current holder than we
+            # resolved (Wikidata P6 and the Factbook both lag reshuffles — e.g. a new PM), trust the list: take
+            # its name + clean title and pull the photo from Wikipedia. When it names the SAME person we keep our
+            # richer Wikidata card (portrait + party). This is what keeps every country correct, checked daily.
+            hos_forced_title = ""
+            try:
+                _hd = _heads_for(country)
+                if _hd:
+                    _hh = _hd.get("hos") or {}
+                    if _hh.get("name") and not _is_dead(_hh["name"]):
+                        if not hos or not _same_person(hos.get("name"), hos.get("qid"), _hh["name"], None):
+                            hos = {"qid": None, "name": _hh["name"],
+                                   "img": _wiki_person_img(_hh.get("article") or _hh["name"])}
+                            hos_forced_title = _hh.get("title") or ""
+                        elif not hos.get("img"):       # same person, our portrait 429'd -> fill from Wikipedia
+                            hos["img"] = _wiki_person_img(_hh.get("article") or _hh["name"])
+                    _hg = _hd.get("hog") or {}
+                    if _hg.get("name") and not _is_dead(_hg["name"]):
+                        if not hog or not _same_person(hog.get("name"), hog.get("qid"), _hg["name"], None):
+                            hog = {"qid": None, "name": _hg["name"],
+                                   "img": _wiki_person_img(_hg.get("article") or _hg["name"])}
+                            hog_forced_title = _hg.get("title") or ""
+                        elif not hog.get("img"):
+                            hog["img"] = _wiki_person_img(_hg.get("article") or _hg["name"])
+            except Exception:
+                pass
             out = []
 
             def _emit(c, prop, role, default_title, fb_name="", fb_title="", forced_title=""):
@@ -3029,7 +3056,8 @@ class Api:
                 out.append({"name": c["name"], "title": title, "role": role, "img": c.get("img", ""),
                             "x": c.get("x"), "telegram": c.get("tg"), "truth": c.get("truth")})
             if hos and hos.get("name"):
-                _emit(hos, "P35", "Head of state", "President", fb_name=fb_cos_name, fb_title=fb_cos_title)
+                _emit(hos, "P35", "Head of state", "President", fb_name=fb_cos_name, fb_title=fb_cos_title,
+                      forced_title=hos_forced_title)
             if hog and hog.get("name") and not (
                     hos and _same_person(hog.get("name"), hog.get("qid"), hos.get("name"), hos.get("qid"))):
                 _emit(hog, "P6", "Head of government", "Prime Minister",
@@ -4589,6 +4617,151 @@ def _minister_for(country, list_article):
     except Exception:
         pass
     return {"name": rec["name"], "img": img}
+
+
+def _wiki_person_img(name_or_article):
+    """A person's portrait URL from their Wikipedia summary (originalimage/thumbnail), or ''."""
+    if not name_or_article:
+        return ""
+    try:
+        js = _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/"
+                        + urllib.parse.quote(str(name_or_article).replace(" ", "_")))
+        if js and js.get("type") != "disambiguation":
+            return ((js.get("originalimage") or {}).get("source")
+                    or (js.get("thumbnail") or {}).get("source") or "")
+    except Exception:
+        pass
+    return ""
+
+
+# AUTHORITATIVE, DAILY-CURRENT LEADERS — Wikipedia's "List of current heads of state and government" is one
+# page, edited within hours of any change, that tabulates EVERY country's head of state and head of government.
+# It is more current than Wikidata's P6 or the CIA Factbook snapshot (both lag reshuffles by weeks), so we use
+# it as the source of truth for WHO currently holds each post, cross-checked against what we already resolved.
+_HEADS_HOG = ("prime minister", "premier", "chancellor", "taoiseach", "chief minister",
+              "president of the government", "minister-president", "head of government",
+              "president of the council of ministers", "chief executive", "prime ministers",
+              "chairman of the council of ministers", "chairperson of the council of ministers",
+              "council of ministers")
+_HEADS_HOS_STRONG = ("king", "queen", "emperor", "sultan", "emir", "grand duke", "president",
+                     "supreme leader", "co-prince", "monarch", "captain regent", "captains regent",
+                     "yang di-pertuan agong", "amir", "sovereign", "ngwenyama", "prince regnant")
+_HEADS_HOS_WEAK = ("crown prince", "general secretary", "chairman", "chairperson", "supreme", "paramount")
+_HEADS_NOT_PERSON = ("council", "commission", "government", "committee", "presidency", "authority",
+                     "junta", "assembly", "confederation", "cabinet", "members")
+
+
+def _heads_link(s):
+    m = re.search(r"\[\[([^\]]+)\]\]", s or "")
+    if not m:
+        return ("", "")
+    inner = m.group(1)
+    if "|" in inner:
+        a, d = inner.split("|", 1)
+        return (a.strip(), d.strip())
+    return (inner.strip(), inner.strip())
+
+
+def _heads_clean_name(n):
+    n = re.sub(r"\{\{[^{}]*\}\}", "", n or "")
+    n = re.sub(r"[{}\[\]]", "", n)
+    n = re.sub(r"<[^>]+>", "", n)
+    n = re.sub(r"\s*\(.*$", "", n)
+    n = re.sub(r"'{2,}", "", n)
+    return re.sub(r"\s+", " ", n).strip(" |-")
+
+
+def _heads_clean_title(t):
+    t = re.sub(r"\{\{[^{}]*\}\}", "", t or "")
+    t = re.sub(r"(?i)\b(?:success|operational|small|nowrap|nobold|smalldiv|align=left|align=center)\b", "", t)
+    t = re.sub(r"[{}\[\]|<>=\"]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _heads_parse_cell(cell):
+    """A table cell '[[Office|Title]]&nbsp;- [[Person|Name]]' -> (title, name, person_article)."""
+    c = re.sub(r"<ref[^>]*>.*?</ref>", "", cell or "", flags=re.S)
+    c = re.sub(r"<ref[^>]*/>", "", c)
+    c = re.sub(r"\{\{efn[^{}]*(?:\{\{[^{}]*\}\}[^{}]*)*\}\}", "", c)
+    c = re.sub(r"\{\{(?:small|nowrap|nobold|smalldiv)\|", "", c)
+    if "–" not in c and "—" not in c:
+        return (None, None, None)
+    left, right = re.split(r"&nbsp;\s*[–—]|\s[–—]\s?|[–—]", c, maxsplit=1)
+    _, disp = _heads_link(left)
+    title = _heads_clean_title(disp or left)
+    art, pdisp = _heads_link(right)
+    name = _heads_clean_name(pdisp) if pdisp else _heads_clean_name(right)
+    if name and any(w in name.lower() for w in _HEADS_NOT_PERSON):   # an institution isn't a person
+        return (title, None, None)
+    return (title, name or None, art or name)
+
+
+def _current_heads():
+    """Parse the 'List of current heads of state and government' page into
+    {country: {'hos':{name,title,article}|None, 'hog':{...}|None}} — one daily fetch covers every country."""
+    cache = os.path.join(CACHE_DIR, "heads_of_state_gov.json")
+    if _fresh(cache, 20 * 3600):
+        try:
+            return json.load(open(cache, encoding="utf-8"))
+        except Exception:
+            pass
+    out = {}
+    try:
+        url = ("https://en.wikipedia.org/w/api.php?format=json&action=parse&prop=wikitext&redirects=1&page="
+               + urllib.parse.quote("List of current heads of state and government".replace(" ", "_")))
+        wt = (((json.loads(_http_get(url, 25)).get("parse") or {}).get("wikitext") or {}).get("*")) or ""
+        wt = re.sub(r"<!--.*?-->", "", wt, flags=re.S)    # HTML comments hide some rows (e.g. Spain's King)
+        blocks, cur = {}, None
+        for seg in re.split(r"\n\|-", wt):
+            fm = re.search(r"\{\{flag(?:country|icon|deco)?\|([^}|]+)", seg)
+            if fm:
+                cur = re.sub(r"\s*\(country\)$", "", fm.group(1).strip())
+                cur = {"Kingdom of the Netherlands": "Netherlands"}.get(cur, cur)
+                blocks.setdefault(cur, [])
+            if cur is None:
+                continue
+            for line in re.split(r"\n\|", seg):
+                if "{{flag" in line or not line.strip():
+                    continue
+                t, n, art = _heads_parse_cell(line)
+                if n and len(n) > 1 and not n.lower().startswith(("list", "vacant", "member")):
+                    blocks[cur].append((t or "", n, art, bool(re.search(r'colspan="2"', line))))
+        for country, cells in blocks.items():
+            if not cells:
+                continue
+
+            def _find(keys):
+                for t, n, art, cs in cells:
+                    if any(k in (t or "").lower() for k in keys):
+                        return {"name": n, "title": t, "article": art}
+                return None
+            hog = _find(_HEADS_HOG)
+            hos = _find(_HEADS_HOS_STRONG) or _find(_HEADS_HOS_WEAK)
+            # A president sitting under a paramount leader (Supreme Leader / monarch / party secretary) is that
+            # country's head of GOVERNMENT (Iran and some one-party states have no separate PM).
+            if hos and not hog:
+                if any(k in (hos["title"] or "").lower() for k in
+                       ("supreme leader", "general secretary", "king", "emperor", "monarch", "crown prince")):
+                    pres = next(({"name": n, "title": t, "article": art}
+                                 for t, n, art, cs in cells if "president" in (t or "").lower()), None)
+                    if pres and pres["name"] != hos["name"]:
+                        hog = pres
+            if hos or hog:
+                out[country] = {"hos": hos, "hog": hog}
+    except Exception:
+        pass
+    if out:
+        try:
+            json.dump(out, open(cache, "w", encoding="utf-8"))
+        except Exception:
+            pass
+    return out
+
+
+def _heads_for(country):
+    """The current {hos, hog} for a map country name from the heads-of-state list, or None."""
+    h = _current_heads()
+    return h.get(country) or h.get(_MINLIST_ALIAS.get(country, "\0"))
 
 
 # The CIA World Factbook is more COMPLETE than Wikidata for "who holds power" (it always lists a chief of

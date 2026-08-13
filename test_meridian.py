@@ -1218,7 +1218,7 @@ def main():
     print("\n=== LEADERS RESILIENT TO WIKIDATA 429 (never blank / garbled again) ===")
     _sa_fb = {"cos": "King and Prime Minister SALMAN bin Abd al-Aziz Al Saud (since 23 January 2015)",
               "hog": "Crown Prince and Prime Minister MUHAMMAD BIN SALMAN Al Saud (since 27 September 2022)"}
-    _oe, _os, _omf = app._wd_entities, app._wd_search_person, app._minister_for
+    _oe, _os, _omf, _ohf = app._wd_entities, app._wd_search_person, app._minister_for, app._heads_for
     import os as _os_mod
     try:
         _os_mod.remove(_os_mod.path.join(app.CACHE_DIR, "leaders_Q99999901.json"))   # deterministic: no stale cache
@@ -1228,9 +1228,10 @@ def main():
         app._wd_entities = lambda *a, **k: {}          # simulate HTTP 429 — Wikidata gives nothing
         app._wd_search_person = lambda *a, **k: None
         app._minister_for = lambda *a, **k: None       # isolate to head-of-state/gov (cabinet is a Wikipedia source, unaffected by a Wikidata 429)
+        app._heads_for = lambda *a, **k: None          # and isolate from the Wikipedia heads list, so this tests the Factbook fallback proper
         _r = app.Api().country_leaders("Q99999901", "Saudi Arabia", _sa_fb)
     finally:
-        app._wd_entities, app._wd_search_person, app._minister_for = _oe, _os, _omf
+        app._wd_entities, app._wd_search_person, app._minister_for, app._heads_for = _oe, _os, _omf, _ohf
     _names = [L.get("name", "") for L in _r.get("leaders", [])]
     _clean = len(_names) == 2 and all(_names) and not any("crown salman" in n.lower() for n in _names)
     ran[0] += 1
@@ -1238,6 +1239,39 @@ def main():
         fails.append(("leaders-429", "Saudi Arabia", "King + MBS, clean names", str(_names),
                       "a rate-limited fetch must fall back to clean Factbook names, keeping a distinct head of government"))
     print(f"  {'ok ' if _clean else 'FAIL'} rate-limited Saudi -> {_names}")
+
+    # AUTHORITATIVE OVERRIDE: Wikidata P6 and the Factbook both lag a reshuffle, so when the daily 'current
+    # heads of state and government' list names a DIFFERENT current holder, country_leaders must trust the list
+    # (the real bug: the UK PM stuck on Keir Starmer when Andy Burnham had taken over).
+    print("\n=== HEADS LIST OVERRIDES A STALE HEAD OF GOVERNMENT ===")
+    _oe2, _os2, _omf2, _ohf2, _oimg = (app._wd_entities, app._wd_search_person,
+                                       app._minister_for, app._heads_for, app._wiki_person_img)
+    try:
+        _os_mod.remove(_os_mod.path.join(app.CACHE_DIR, "leaders_Q99999902.json"))
+    except Exception:
+        pass
+    try:
+        app._wd_entities = lambda *a, **k: {}                  # no Wikidata -> heads come from the Factbook...
+        app._wd_search_person = lambda *a, **k: None
+        app._minister_for = lambda *a, **k: None
+        app._wiki_person_img = lambda *a, **k: "http://img/x.jpg"
+        app._heads_for = lambda c: {"hos": {"name": "Charles III", "title": "King", "article": "Charles III"},
+                                    "hog": {"name": "Andy Burnham", "title": "Prime Minister", "article": "Andy Burnham"}}
+        _uk = app.Api().country_leaders("Q99999902", "United Kingdom",
+                                        {"cos": "King CHARLES III",
+                                         "hog": "Prime Minister Keir STARMER (since 5 July 2024)"})
+    finally:
+        (app._wd_entities, app._wd_search_person, app._minister_for,
+         app._heads_for, app._wiki_person_img) = _oe2, _os2, _omf2, _ohf2, _oimg
+    _uk_names = {L.get("title", ""): L.get("name", "") for L in _uk.get("leaders", [])}
+    _ok_uk = (_uk_names.get("Prime Minister") == "Andy Burnham"
+              and "Keir Starmer" not in _uk_names.values())
+    ran[0] += 1
+    if not _ok_uk:
+        fails.append(("heads-override", "United Kingdom", "PM=Andy Burnham (not Starmer)", str(_uk_names),
+                      "the daily heads-of-state list must override a stale Wikidata/Factbook head of government"))
+    print(f"  {'ok ' if _ok_uk else 'FAIL'} stale Starmer -> {_uk_names.get('Prime Minister')}")
+
     for labs, want in LEAN_CASES:
         got = app._lean_from_alignments(labs)
         ok = got == want
@@ -1875,7 +1909,8 @@ def main():
              + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
-             + 1)   # + facility word (airport) is not a place
+             + 1    # + facility word (airport) is not a place
+             + 1)   # + heads-of-state list overrides a stale head of government
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
