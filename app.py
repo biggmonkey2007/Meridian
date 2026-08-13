@@ -693,6 +693,20 @@ def _end_stop(t):
     return tr + "."
 
 
+def _cap_first(t):
+    """Capitalize the first letter of a wire line. Channel posts are often pulled mid-thought and start
+    lowercase ('an ethnic Tajik commander…'), which reads like a broken fragment; a leading capital makes it a
+    proper sentence. Only touches a lowercase letter in the first two characters (past an opening quote), so
+    'iPhone'/'eBay' mid-text and already-capitalized lines are untouched."""
+    if not t:
+        return t
+    m = re.search(r"[A-Za-z]", t)
+    if m and m.start() <= 1 and t[m.start()].islower():
+        i = m.start()
+        return t[:i] + t[i].upper() + t[i + 1:]
+    return t
+
+
 def _tg_clean(text):
     t = re.sub(r"<br\s*/?>", "\n", text)
     t = re.sub(r"</p>", "\n", t)
@@ -732,7 +746,7 @@ def _tg_clean(text):
         if not re.search(r"[A-Za-z0-9]", ln):                         # left as stray emoji/punctuation -> noise
             continue
         out.append(ln)
-    return _end_stop(_fix_stray_quotes(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip())))))
+    return _cap_first(_end_stop(_fix_stray_quotes(_strip_trunc(_fix_speaker_colon(_strip_lead_flag(re.sub(r"\n{2,}", "\n", "\n".join(out)).strip()))))))
 
 
 def _tg_page(ch, before=None):

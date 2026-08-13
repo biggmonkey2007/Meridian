@@ -870,6 +870,22 @@ body.topo-active .zoomers{bottom:130px}
 :root[data-theme="dark"] .pol-spec .pol-seg.on{background:#4d86c4}
 :root[data-theme="dark"] .pol-mark,
 :root[data-theme="dark"] .pol-approx{color:#7fb0e0}
+/* DARK MODE — clean sweep of the remaining light-built widgets so every panel is consistent in dark. */
+:root[data-theme="dark"] .mtr-track{background:#2a3542}
+:root[data-theme="dark"] .persp-tab{background:var(--panel-2);color:var(--ink-2)}
+:root[data-theme="dark"] .persp-tab.on{background:#2f6db3;color:#fff}
+:root[data-theme="dark"] #btn-wire.on{background:#26364a;color:#7fb0e6}
+:root[data-theme="dark"] .cv-mute{background:var(--chip)}
+:root[data-theme="dark"] .xlate{background:#1e2b3a;border-color:#33506e;color:#8fb4dd}
+:root[data-theme="dark"] .st-card{background:var(--panel-2);border-color:var(--line)}
+:root[data-theme="dark"] .p-close:hover,
+:root[data-theme="dark"] .p-min:hover{background:#2c3743}
+:root[data-theme="dark"] .flag-img,
+:root[data-theme="dark"] .lead-img{background:#2a3542}
+:root[data-theme="dark"] .pf-dem{background:#16311f;color:#7fd6a0}
+:root[data-theme="dark"] .pf-flaw{background:#332a12;color:#e0b968}
+:root[data-theme="dark"] .pf-hyb{background:#3a2416;color:#e09a6a}
+:root[data-theme="dark"] .pf-auth{background:#3a1a1a;color:#e88a84}
 
 .xp-clip-poster{cursor:pointer}
 .xp-clip-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.4);transition:background .15s}
@@ -916,9 +932,10 @@ body.topo-active .zoomers{bottom:130px}
 .cv-range{flex:1;accent-color:#C0392B;cursor:pointer;height:4px}
 .st-post-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;flex-wrap:wrap}
 .tr-btns{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:0 0 auto}
-.tr-b{font-size:10px;font-weight:700;padding:3px 10px;background:#fff;color:var(--ink-2);border:0;border-right:1px solid var(--line);cursor:pointer}
+.tr-b{font-size:10px;font-weight:700;padding:3px 10px;background:var(--panel-2);color:var(--ink-2);border:0;border-right:1px solid var(--line);cursor:pointer}
 .tr-b:last-child{border-right:0}
-.tr-b.on{background:#2b5c8a;color:#fff}
+.tr-b:hover{color:var(--ink)}
+.tr-b.on{background:#2f6db3;color:#fff}
 .st-post-q.translating{opacity:.5;transition:opacity .12s}
 .src-outlet{cursor:pointer}
 .on-news{margin:2px 0 8px 6px;padding-left:9px;border-left:2px solid var(--line)}
@@ -2739,7 +2756,6 @@ function renderProfile(name, fb, wp, leaders){
   } else {
     out = `<div class="note">A live profile for ${esc(shortCountry(name))} couldn’t be loaded right now (offline or unavailable).</div>`;
   }
-  out += `<div id="ctry-news" class="ctry-news"></div>`;
   out += `<div id="ctry-stmts" class="ctry-stmts"></div>`;
   if(typeof analysisMode!=="undefined" && analysisMode==="expert" && typeof expertHTML==="function") out += expertHTML(name, leaders);
   return out;
@@ -3579,6 +3595,27 @@ const EXPERT_DOSSIER = {
 
 const REGION_LABEL = { "middle-east":"the Middle East", "europe":"Europe", "east-n-southeast-asia":"East & Southeast Asia", "south-asia":"South Asia", "central-asia":"Central Asia", "africa":"Africa", "south-america":"South America", "central-america-n-caribbean":"Central America & the Caribbean", "north-america":"North America", "australia-oceania":"Oceania" };
 function chipHTML(c){ return `<button class="xp-chip" data-concept="${esc(c[0])}"><span class="xc-n">${esc(c[0])}</span>${c[1]?`<span class="xc-d">${esc(c[1])}</span>`:""}</button>`; }
+// Strategic analysis for EVERY country that lacks a hand-written dossier: synthesized from the curated political
+// profile (government, ruling power, economy), the country's live situation, and the regional lens — a real
+// analytical brief rather than a placeholder. Hand-written EXPERT_DOSSIER entries still take priority.
+function synthAnalysis(name, short, reg, regLabel){
+  const secs=[];
+  const p = (typeof POLITICS!=="undefined") ? POLITICS[name] : null;
+  const ctx = (typeof CTX!=="undefined") ? CTX[name] : null;
+  if(p){
+    const gov=(p.gov||"").trim();
+    let g = `${short} is ${/^[aeiou]/i.test(gov)?"an":"a"} ${gov.toLowerCase()}`;
+    if(p.ruling) g += ` (${p.ruling})`;
+    g += ".";
+    if(p.note) g += " " + p.note;
+    secs.push({h:"Government & power", b:g});
+    if(p.econ) secs.push({h:"Economy", b:`Its economy is ${p.econ.toLowerCase()}${p.system?` — ${p.system.toLowerCase()}`:""}.`});
+  }
+  if(ctx && ctx.sit) secs.push({h:"Where things stand", b:ctx.sit});
+  if(reg && reg.frame) secs.push({h:`Position in ${regLabel}`, b:reg.frame});
+  if(!secs.length) secs.push({h:"Overview", b:`A deep-dive resource for ${short} — see the live in-depth brief and the tap-through explainers below.`});
+  return secs;
+}
 function expertHTML(name, leaders){
   const d = EXPERT_DOSSIER[name];
   const region = regionOf(name);
@@ -3588,14 +3625,14 @@ function expertHTML(name, leaders){
   let out = `<div class="xp-wrap" data-xp-country="${esc(name)}"><span class="xp-flag">◆ Advanced dossier · ${esc(short)}</span>`;
   out += `<div class="xp-lens">${esc(d? d.lens : (reg? reg.frame : ("A deep-dive resource for "+short+", assembled from public sources.")))}</div>`;
   // contents nav
-  const nav = [["xs-analysis","Analysis"],["xs-actors","Actors"],["xs-deep","In-depth"],["xs-voices","Voices & clips"],["xs-region","Region"]];
+  const nav = [["xs-analysis","Analysis"],["xs-actors","Actors"],["xs-deep","In-depth"],["xs-region","Region"]];
   out += `<div class="xp-nav">`+nav.map(n=>`<button class="xp-jump" data-xp-jump="${n[0]}">${esc(n[1])}</button>`).join("")+`</div>`;
 
 
   // 1) STRATEGIC ANALYSIS
   out += `<div id="xs-analysis" class="xp-block"><div class="xp-block-h"><span class="xp-num">01</span>Strategic analysis</div>`;
   if(d){ d.sections.forEach(s=>{ out += `<div class="xp-sec"><div class="xp-h">${esc(s.h)}</div><div class="xp-b"><p>${esc(s.b)}</p></div></div>`; }); }
-  else { out += `<div class="xp-b"><p>A hand-written Meridian dossier for ${esc(short)} is still being authored. Below you'll find the regional lens, a live in-depth brief in Meridian's own words, and tap-through explainers for every key actor and concept — the full scaffolding to analyze ${esc(short)} at depth.</p></div>`; }
+  else { synthAnalysis(name, short, reg, regLabel).forEach(s=>{ out += `<div class="xp-sec"><div class="xp-h">${esc(s.h)}</div><div class="xp-b"><p>${esc(s.b)}</p></div></div>`; }); }
   out += `</div>`;
 
   // 2) ACTORS & CONCEPTS (country-specific)
@@ -3635,13 +3672,13 @@ async function enrichExpert(name){
   const cur=document.getElementById("xp-live"); if(!cur) return;
   if(!arr.length){ cur.innerHTML=`<div class="xp-b" style="color:var(--ink-3)">No encyclopedic deep-dives were found for ${esc(shortCountry(name))} right now.</div>`; return; }
   // The FULL text goes in — never a mid-word "…". Long paragraphs are clamped to a few lines with a "Read
-  // more" toggle that expands them in place. Sources are cited ONCE, together, at the foot of the section.
-  const srcLinks = arr.map(a=>`<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc((a.label.split(/ [&]/)[0]||a.title).trim())}</a>`).join(" · ");
+  // more" toggle that expands them in place. No per-card source stamp — the dossier is credited once, quietly,
+  // at the very foot of the panel (the "Meridian analysis, summarized from public reference sources" line).
   cur.innerHTML = arr.map((a,i)=>
     `<div class="xp-live-card"><div class="xlc-label">${esc(a.label)}</div><div class="xlc-h">${esc(a.title)}</div>`
     + `<div class="xlc-x clamp" id="xlc-x-${i}">${esc(a.extract)}</div>`
     + `<button type="button" class="xlc-more" id="xlc-more-${i}" hidden>Read more…</button></div>`
-  ).join("") + `<div class="xlc-sources">Summaries based on Wikipedia (CC BY-SA) — ${srcLinks}</div>`;
+  ).join("");
   arr.forEach((a,i)=> _wireReadMore("xlc-x-"+i, "xlc-more-"+i));
   // REWRITE each brief into Meridian's OWN words with the copyright-free summarizer (the same one behind the
   // news "In brief"). When a summarizer is available the card becomes original prose; when it isn't, the full
@@ -3900,7 +3937,8 @@ async function openConcept(title){
     titleEl.textContent=j.title||title;
     ex.textContent=j.extract;
     const _url=(j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || ("https://en.wikipedia.org/wiki/"+encodeURIComponent(title));
-    if(j.thumbnail && j.thumbnail.source){ img.src=j.thumbnail.source.replace(/\/\d+px-/,"/720px-"); img.style.display=""; }
+    const _im = (j.originalimage && j.originalimage.source) || (j.thumbnail && j.thumbnail.source ? j.thumbnail.source.replace(/\/\d+px-/,"/720px-") : "");
+    if(_im){ img.src=_im; img.style.display=""; } else { img.style.display="none"; }
     link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
     // reword into Meridian's own words when a summarizer is available; else the attributed Wikipedia text stands
     try{
