@@ -700,7 +700,11 @@ body.topo-active .zoomers{bottom:130px}
 :root[data-theme="dark"] .st-post-m{color:#8aa896}
 :root[data-theme="dark"] .st-verb-badge{box-shadow:0 0 0 2px var(--panel-2)}
 /* expert mode */
-.seg-mode button[data-mode="expert"][aria-pressed="true"]{background:#2b4a73}
+.seg-mode button[data-mode="expert"][aria-pressed="true"]{background:#2b4a73;color:#fff}
+/* dark mode: the active pill's text was forced dark (for the light 'Basic' pill), which left 'Advanced'
+   dark-on-dark-blue. Give the active Basic pill a readable light chip, and Advanced a brighter blue + white. */
+:root[data-theme="dark"] .seg button[data-mode="beginner"][aria-pressed="true"]{background:#e7ecf3;color:#0f151c}
+:root[data-theme="dark"] .seg-mode button[data-mode="expert"][aria-pressed="true"]{background:#3f6ea8;color:#fff}
 .xp-wrap{margin-top:16px;border-top:2px solid #e3eaf3;padding-top:13px}
 .xp-flag{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#2b4a73,#3a6098);color:#fff;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:6px}
 .xp-lens{margin:11px 0 4px;font-size:14px;line-height:1.5;color:var(--ink);font-weight:600;font-style:italic;border-left:3px solid #3a6098;padding-left:11px}
@@ -1109,11 +1113,6 @@ video{color-scheme:dark}
       <div class="wordmark">Meridian</div>
     </div>
   </div>
-  <button class="icon-btn" id="btn-theme" title="Dark / light mode" aria-label="Toggle dark mode" style="margin-left:2px;flex:0 0 auto">
-    <svg class="th-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.2v2.1M12 19.7v2.1M4.5 4.5l1.5 1.5M18 18l1.5 1.5M2.2 12h2.1M19.7 12h2.1M4.5 19.5l1.5-1.5M18 6l1.5-1.5"/></svg>
-    <svg class="th-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-  </button>
-
   <div class="hdr-center">
     <div class="seg seg-mode" id="seg-mode" role="group" aria-label="Analysis depth">
       <button data-mode="beginner" aria-pressed="true">Basic</button>
@@ -1125,6 +1124,10 @@ video{color-scheme:dark}
     <div class="live"><span class="pip"></span>Live</div>
     <span class="win-static">Last 24h</span>
     <div class="clock" id="clock">--:--:-- <span>UTC</span></div>
+    <button class="icon-btn" id="btn-theme" title="Dark / light mode" aria-label="Toggle dark mode">
+      <svg class="th-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.2v2.1M12 19.7v2.1M4.5 4.5l1.5 1.5M18 18l1.5 1.5M2.2 12h2.1M19.7 12h2.1M4.5 19.5l1.5-1.5M18 6l1.5-1.5"/></svg>
+      <svg class="th-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
     <button class="icon-btn" id="btn-globe" title="Globe view" aria-label="Toggle globe view">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.7 2.7 2.7 15.3 0 18c-2.7-2.7-2.7-15.3 0-18"/></svg>
     </button>
@@ -3005,7 +3008,7 @@ function tuneCartoForTopoVector(){
   _gCartoIds.forEach(id=>{ const l=mlMap.getLayer(id); if(l && l.type==="line" && /boundary|admin/.test(id)){ try{
     const country=/country|_0|_1\b/.test(id);
     mlMap.setPaintProperty(id,"line-color","#5c636d");
-    mlMap.setPaintProperty(id,"line-opacity", country ? 0.5 : 0.28);
+    mlMap.setPaintProperty(id,"line-opacity", country ? 0.68 : 0.34);
     mlMap.setPaintProperty(id,"line-blur",0);
     mlMap.setPaintProperty(id,"line-width",["interpolate",["linear"],["zoom"], 3,0.5, 7,0.8, 12,1.1]);
     mlMap.setLayoutProperty(id,"line-cap","round"); mlMap.setLayoutProperty(id,"line-join","round");
@@ -3175,10 +3178,10 @@ function setGlobeBasemap(k){
   // wash on the clean map, cooler + more transparent over the busy topographic relief, brighter over the dark
   // satellite photo. Fill stays translucent (the border below reads through it); the outline stays thin.
   if(mlMap.getLayer("g-hl-fill")){
-    const HL = k==="topo"      ? {fill:"#7db4f2", fo:0.13, line:"#8fc2ff", lw:1.1, lo:0.78}
-             : k==="satellite" ? {fill:"#93c4ff", fo:0.17, line:"#a9d2ff", lw:1.3, lo:0.8}
-             : k==="osmintl"   ? {fill:"#8bb6ee", fo:0.16, line:"#5b95e0", lw:1.1, lo:0.60}
-             :                   {fill:"#8fb8ef", fo:0.16, line:"#5b95e0", lw:1.2, lo:0.62};
+    const HL = k==="topo"      ? {fill:"#ffffff", fo:0.22, line:"#ffffff", lw:1.4, lo:0.92}   // WHITE selection over the terrain
+             : k==="satellite" ? {fill:"#8fc0ff", fo:0.20, line:"#58a6ff", lw:1.9, lo:0.98}   // bright blue border all the way round the country, distinct from the white admin lines
+             : k==="osmintl"   ? {fill:"#8bb6ee", fo:0.20, line:"#5b95e0", lw:1.3, lo:0.72}
+             :                   {fill:"#8fb8ef", fo:0.20, line:"#5b95e0", lw:1.3, lo:0.72};
     try{
       mlMap.setPaintProperty("g-hl-fill","fill-color",HL.fill);
       mlMap.setPaintProperty("g-hl-fill","fill-opacity",HL.fo);
@@ -3225,7 +3228,7 @@ function startGlobePulse(){
     // ends (ph=0 and ph=1), so the restart is invisible — no abrupt stop/re-start.
     const grow = 1-(1-ph)*(1-ph);
     const fade = Math.min(1, ph/0.16);
-    try{ mlMap.setPaintProperty("g-pulse","circle-radius", 4 + grow*16); mlMap.setPaintProperty("g-pulse","circle-opacity", 0.5*(1-ph)*fade); }catch(e){}
+    try{ mlMap.setPaintProperty("g-pulse","circle-radius", 3 + grow*12); mlMap.setPaintProperty("g-pulse","circle-opacity", 0.5*(1-ph)*fade); }catch(e){}
     _gPulseRAF=requestAnimationFrame(tick);
   };
   _gPulseRAF=requestAnimationFrame(tick);
