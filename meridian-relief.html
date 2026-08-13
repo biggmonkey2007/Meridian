@@ -441,11 +441,17 @@ a.src-chip:hover{border-color:var(--ink-3);background:var(--chip)}
 .view-tx{font-size:12.5px;line-height:1.5;color:#2b333c}
 
 /* detail: geography / cities */
-.geo-sub{font-size:11px;color:var(--ink-3);font-weight:600;margin:10px 0 6px;letter-spacing:.02em}
-.cap-row{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid var(--line);background:var(--panel-2);border-radius:9px}
-.cap-star{color:#C9A227;font-size:15px;line-height:1}
-.cap-name{font-size:13.5px;font-weight:700;color:var(--ink)}
-.cap-sub{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-top:1px}
+.geo-sub{font-size:10.5px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin:15px 0 8px}
+.cap-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:12px;box-shadow:0 1px 4px rgba(20,30,45,.05)}
+.cap-star{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#C9A227;background:rgba(201,162,39,.13)}
+.cap-star svg{fill:currentColor}
+.cap-tx{min-width:0}
+.cap-name{font-size:15px;font-weight:800;color:var(--ink);line-height:1.2;letter-spacing:-.01em}
+.cap-sub{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-top:2px}
+.geo-chips{display:flex;flex-wrap:wrap;gap:7px}
+.geo-chip{font-size:12px;font-weight:600;color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:5px 12px;line-height:1.3;white-space:nowrap}
+.geo-chip.port{padding-left:9px}
+.geo-chip.port::before{content:"\2693";font-size:10px;margin-right:5px;color:var(--ink-3)}
 .city-chips{display:flex;flex-wrap:wrap;gap:6px}
 .city-chip2{font-size:12px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
 .news-cities{display:flex;flex-direction:column;gap:6px}
@@ -669,6 +675,25 @@ body.topo-active .zoomers{bottom:130px}
 .st-post-m{display:block;font-size:10px;font-weight:700;color:#5b7c66;margin-top:3px}
 .st-ai-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .st-ai-hint{font-size:11px;color:var(--ink-3);line-height:1.4;flex:1;min-width:140px}
+/* dark mode: these cards were styled for a light background (light fills + hardcoded light borders); in dark
+   mode the text vars flip light, so light-on-light washed out. Repaint fills/borders/tints for the dark panel. */
+:root[data-theme="dark"] .st-card2{background:var(--panel-2);border-color:var(--line)}
+:root[data-theme="dark"] .st-line{border-left-color:#33414f}
+:root[data-theme="dark"] .st-line:hover{color:#66a8ff;border-left-color:#66a8ff}
+:root[data-theme="dark"] .st-realq{color:#6fce90}
+:root[data-theme="dark"] .st-official,
+:root[data-theme="dark"] .st-verb{background:rgba(46,139,87,.12);border-color:#2f5a41}
+:root[data-theme="dark"] .st-off-h,
+:root[data-theme="dark"] .st-own-h,
+:root[data-theme="dark"] .st-plat{color:#9fe0b4}
+:root[data-theme="dark"] .st-plat{background:rgba(46,139,87,.22)}
+:root[data-theme="dark"] .st-off-item,
+:root[data-theme="dark"] .st-post{border-bottom-color:var(--line)}
+:root[data-theme="dark"] .st-off-item:hover .st-off-t,
+:root[data-theme="dark"] .st-post:hover .st-post-q{color:#66a8ff}
+:root[data-theme="dark"] .st-off-note,
+:root[data-theme="dark"] .st-post-m{color:#8aa896}
+:root[data-theme="dark"] .st-verb-badge{box-shadow:0 0 0 2px var(--panel-2)}
 /* expert mode */
 .seg-mode button[data-mode="expert"][aria-pressed="true"]{background:#2b4a73}
 .xp-wrap{margin-top:16px;border-top:2px solid #e3eaf3;padding-top:13px}
@@ -2602,7 +2627,17 @@ function renderProfile(name, fb, wp, leaders){
   // to Wikipedia when the Factbook has no substantial background.
   const _bg = fb ? fbField(fb,["Introduction","Background"]) : "";
   const overview = (_bg && _bg.length >= 250) ? _bg : ((wp && wp.extract) ? wp.extract : _bg);
-  if(overview){ const t = overview.length>640 ? overview.slice(0,640).replace(/\s+\S*$/,"")+"…" : overview; out += `<div class="sec-label">Country overview</div><div class="ctx-sit">${esc(t)}</div>`; }
+  if(overview){
+    // A professional overview is never chopped mid-sentence. Show the opening history and END ON A WHOLE
+    // SENTENCE (no "…"): trim to the last '.'/'!'/'?' before the cap; if the whole thing is short, show it all.
+    let t = String(overview).replace(/\s+/g," ").trim();
+    const CAP = 900;
+    if(t.length > CAP){
+      const m = t.slice(0, CAP).match(/^[\s\S]*[.!?](?=\s|$)/);
+      t = (m && m[0].length > CAP*0.5) ? m[0].trim() : (t.slice(0, CAP).replace(/\s+\S*$/,"").trim()+".");
+    }
+    out += `<div class="sec-label">Country overview</div><div class="ctx-sit">${esc(t)}</div>`;
+  }
   if(leaders && leaders.length){
     out += `<div class="sec-label">Leadership</div><div class="lead-bar">`+leaders.map(L=>{
       const _ch = esc((L.name||"?").trim().charAt(0).toUpperCase());
@@ -4756,9 +4791,6 @@ function selectCountry(name){
   const cityList = CITIES[name] || [];
   const capital = cityList.find(c=>c[3]===1);
   const majors = cityList.filter(c=>c[3]!==1);
-  // unique cities currently in the news (from this country's events)
-  const newsSeen = new Set(); const newsCities = [];
-  localEvents.forEach(e=>{ const c=e.place.split(",")[0].trim(); if(!newsSeen.has(c)){ newsSeen.add(c); newsCities.push({city:c, ev:e.id, cat:e.cat, title:e.title}); } });
   let body = `<div class="p-eyebrow">National news desk</div>
     <div class="ctry-head">${flagImg(ISO2[name]||"")}<h2 class="p-title" style="font-size:24px;margin:0">${esc(deskTitle(name))}</h2><button id="ctry-star" class="ctry-star" type="button" aria-label="Star this country">${_STAR_SVG}</button></div>
     <div id="ctry-profile" class="ctry-profile"><span class="spin"></span>Loading live country profile…</div>`;
@@ -4768,15 +4800,10 @@ function selectCountry(name){
   }
   if(cityList.length){
     body += `<div class="sec-label">Geography</div>`;
-    if(capital) body += `<div class="cap-row"><span class="cap-star">★</span><div><div class="cap-name">${esc(capital[0])}</div><div class="cap-sub">Capital</div></div></div>`;
-    if(majors.length) body += `<div class="geo-sub">Major cities</div><div class="city-plain">${majors.map(c=>esc(c[0])).join(", ")}</div>`;
+    if(capital) body += `<div class="cap-row"><span class="cap-star">${_STAR_SVG}</span><div class="cap-tx"><div class="cap-name">${esc(capital[0])}</div><div class="cap-sub">Capital</div></div></div>`;
+    if(majors.length) body += `<div class="geo-sub">Major cities</div><div class="geo-chips">${majors.map(c=>`<span class="geo-chip">${esc(c[0])}</span>`).join("")}</div>`;
     const portList = PORTS[name] || [];
-    if(portList.length) body += `<div class="geo-sub">Key ports</div><div class="city-plain">${portList.map(p=>esc(p[0])).join(", ")}</div>`;
-  }
-  if(newsCities.length){
-    body += `<div class="sec-label">Cities in the news</div><div class="news-cities">`+
-      newsCities.map(nc=>`<div class="news-city" data-ev="${nc.ev}"><span class="nc-dot" style="background:${CAT[nc.cat].hex}"></span><div><div class="nc-name">${esc(nc.city)}</div><div class="nc-title">${esc(nc.title)}</div></div></div>`).join("")+
-      `</div>`;
+    if(portList.length) body += `<div class="geo-sub">Key ports</div><div class="geo-chips">${portList.map(p=>`<span class="geo-chip port">${esc(p[0])}</span>`).join("")}</div>`;
   }
   if(outlets){
     body += `<div class="p-sub">${outlets.length} leading outlets · tap to open</div>`;
