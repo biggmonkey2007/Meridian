@@ -46,7 +46,10 @@ Set-ItemProperty $key EstimatedSize  ([int][math]::Round((Get-Item $exe).Length 
 Set-ItemProperty $key NoModify 1 -Type DWord
 Set-ItemProperty $key NoRepair 1 -Type DWord
 
+# Auto-launch the freshly-installed build so an update can be tested right away (no manual re-open).
+Start-Process -FilePath $exe -WorkingDirectory $installDir
+
 Write-Host ""
-Write-Host "Meridian installed to $installDir"
-Write-Host "Launch it from the Start Menu or the Desktop shortcut."
+Write-Host "Meridian installed to $installDir and launched."
+Write-Host "Also available from the Start Menu or the Desktop shortcut."
 Write-Host "Uninstall any time from Settings > Apps > Meridian."

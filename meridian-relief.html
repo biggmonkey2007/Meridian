@@ -809,7 +809,7 @@ body.topo-active .zoomers{bottom:130px}
 .lead-bar{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:13px 9px;padding:4px 0 10px}
 .lead-card{text-align:center;min-width:0}
 .lead-img{width:100%;aspect-ratio:104/126;object-fit:cover;border-radius:11px;background:#e7ecf1;display:block;box-shadow:0 1px 5px rgba(20,30,45,.2)}
-.lead-ph{display:flex;align-items:center;justify-content:center;font-size:38px;color:#9aa6b2;font-family:var(--serif)}
+.lead-ph{display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:600;letter-spacing:1px;color:var(--ink-3);font-family:var(--serif);background:linear-gradient(155deg,var(--chip),var(--panel-2))}
 .lead-name{font-size:12px;font-weight:700;color:var(--ink);margin-top:7px;line-height:1.25}
 .lead-role{font-size:10.5px;color:var(--ink-2);margin-top:1px;line-height:1.2}
 /* curated geography labels */
@@ -2195,6 +2195,13 @@ const starredEvents = {};   // country -> raw items from country_news (survive t
 const _STAR_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3.6l2.55 5.17 5.7.83-4.13 4.02.98 5.68L12 16.98l-5.1 2.32.98-5.68L3.75 9.6l5.7-.83z"/></svg>';
 function stripTags(s){ let x=String(s||"").replace(/<[^>]+>/g," "); if(typeof document!=="undefined"){ const ta=document.createElement("textarea"); ta.innerHTML=x; x=ta.value; } return x.replace(/\s+/g," ").trim(); }
 function capFirst(s){ s=String(s||""); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+// First + last initials for the photo-less avatar tile ("Ahmed Kouchouk" -> "AK") — reads as an intentional
+// monogram rather than a broken image when a leader genuinely has no free portrait anywhere.
+function leaderInitials(nm){
+  const p=String(nm||"").trim().split(/\s+/).filter(Boolean);
+  if(!p.length) return "?";
+  return ((p[0][0]||"") + (p.length>1 ? (p[p.length-1][0]||"") : "")).toUpperCase();
+}
 function isTitleWord(w){ return /^(president|prime|minister|supreme|leader|king|queen|emir|sultan|chancellor|chief|prince|princess|sheikh|grand|duke|governor|governor-general|captain|regent|co-prince|sovereign|acting|interim|transitional|head|state|council|chairperson|chairman|chairwoman|presidential|leadership|federal|vice|deputy|of|the|and)$/i.test(String(w).replace(/[^A-Za-z\-]/g,"")); }
 const _NAME_PARTICLES=new Set(["bin","al","of","the","von","van","de","da","del","el","ibn","abu","abd","ben","bint","la"]);
 function parseLeader(fbStr, fallbackRole){
@@ -2748,7 +2755,7 @@ function renderProfile(name, fb, wp, leaders){
   }
   if(leaders && leaders.length){
     out += `<div class="sec-label">Leadership</div><div class="lead-bar">`+leaders.map(L=>{
-      const _ch = esc((L.name||"?").trim().charAt(0).toUpperCase());
+      const _ch = esc(leaderInitials(L.name));
       const av = L.img ? `<img class="lead-img" src="${esc(L.img)}" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer" data-name="${esc(L.name||"")}" data-ch="${_ch}" onerror="leadImgTryNext(this)">` : `<div class="lead-img lead-ph" data-name="${esc(L.name||"")}" data-ch="${_ch}">${_ch}</div>`;
       return `<div class="lead-card">${av}<div class="lead-name">${esc(L.name)}</div><div class="lead-role">${esc(L.title)}</div></div>`;
     }).join("")+`</div>`;
