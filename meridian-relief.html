@@ -2712,7 +2712,16 @@ async function leadImgTryNext(img){
       if(src){ img.src=fixImg(src); return; }
     }
   }catch(e){}
+  if(dropIfPhotolessMinister(img)) return;   // a CABINET minister with no photo anywhere -> drop the tile
   const ch=(img.getAttribute("data-ch")||"?"); const d=document.createElement("div"); d.className="lead-img lead-ph"; d.textContent=ch; if(img.parentNode) img.parentNode.replaceChild(d, img);
+}
+// A cabinet minister with no resolvable portrait ANYWHERE (Wikipedia + Wikidata both empty) is dropped from
+// the grid — a clean line-up of real faces beats one broken tile. Heads of state/government are always kept.
+function dropIfPhotolessMinister(el){
+  if((el.getAttribute("data-role")||"")!=="Cabinet") return false;
+  const card=el.closest && el.closest(".lead-card");
+  if(card){ card.remove(); return true; }
+  return false;
 }
 // The CIA Factbook writes SURNAMES in ALL-CAPS ("Nicolae CEAUSESCU", "ABD AL-AZIZ ... AL SAUD") and uses
 // "--" for an em-dash. That reads as shouting and looks unprofessional, so we normalize the overview to clean
@@ -2756,7 +2765,7 @@ function renderProfile(name, fb, wp, leaders){
   if(leaders && leaders.length){
     out += `<div class="sec-label">Leadership</div><div class="lead-bar">`+leaders.map(L=>{
       const _ch = esc(leaderInitials(L.name));
-      const av = L.img ? `<img class="lead-img" src="${esc(L.img)}" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer" data-name="${esc(L.name||"")}" data-ch="${_ch}" onerror="leadImgTryNext(this)">` : `<div class="lead-img lead-ph" data-name="${esc(L.name||"")}" data-ch="${_ch}">${_ch}</div>`;
+      const av = L.img ? `<img class="lead-img" src="${esc(L.img)}" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer" data-name="${esc(L.name||"")}" data-ch="${_ch}" data-role="${esc(L.role||"")}" onerror="leadImgTryNext(this)">` : `<div class="lead-img lead-ph" data-name="${esc(L.name||"")}" data-ch="${_ch}" data-role="${esc(L.role||"")}">${_ch}</div>`;
       return `<div class="lead-card">${av}<div class="lead-name">${esc(L.name)}</div><div class="lead-role">${esc(L.title)}</div></div>`;
     }).join("")+`</div>`;
   }
@@ -3764,9 +3773,12 @@ async function upgradeLeaderPhotos(){
       img.className="lead-img"; img.src=fixImg(src); img.alt=""; img.decoding="async";
       img.setAttribute("referrerpolicy","no-referrer");
       img.setAttribute("data-name",nm); img.setAttribute("data-ch",ph.getAttribute("data-ch")||"?");
+      img.setAttribute("data-role",ph.getAttribute("data-role")||"");
       img.setAttribute("data-wt","1");                // both sources tried — onerror falls straight to the letter
       img.setAttribute("onerror","leadImgTryNext(this)");
       if(ph.parentNode) ph.parentNode.replaceChild(img, ph);
+    } else if(!src && !ph._done){
+      dropIfPhotolessMinister(ph);                    // no portrait anywhere -> drop a minister's tile, keep heads as initials
     }
   }));
 }
@@ -4677,7 +4689,11 @@ async function renderRealEvent(d){
       const desc=(meta && (meta.desc||meta.description))||"";
       const paras=(meta && meta.paragraphs)||[];   // used only to FIND people below — never displayed verbatim
       // the dek (article's own blurb) is fair use as a lead; a body paragraph is not, so it never falls back to paras.
-      const dek=finishText(bodyMinusHeadline(d.title, d.sum||desc||""));
+      // Lead with the article's OWN standalone blurb (og:description) whenever it's fuller than the feed teaser:
+      // a bare one-line teaser left edge stories (a JFK-Center reopening, a court ruling) unexplained — "I have
+      // no idea what's happening." The blurb is 2-3 sentences of the publisher's own summary and says what happened.
+      const blurb=(desc && desc.length > (d.sum||"").length + 20) ? desc : (d.sum||desc||"");
+      const dek=finishText(bodyMinusHeadline(d.title, blurb));
       // COPYRIGHT-SAFE: we never republish the source's article body. OUR original summary is the single body;
       // the dek only leads while it generates, or stands alone if no summary is produced.
       if(d.summary){ showBrief(d.summary, dek); }

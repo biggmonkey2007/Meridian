@@ -522,6 +522,12 @@ GEO_CASES = [
      "A community in Nigeria is getting help to deal with oil spills. The initiative is backed by CARITAS Canada.",
      "Nigeria", "SHIPPED: dotted CANADA off 'CARITAS Canada' — an aid group's home country is not the scene; "
      "the located 'in Nigeria' must win (the AI WHERE prompt now says the same for the summary-pass pinpoint)"),
+    ("Israel's democracy is fraying, a new ToI poll finds", "",
+     "Israel", "SHIPPED BUG: 'ToI' (an abbreviation of The Times of Israel) matched the village of Toi, Japan — "
+     "'toi' is now a NEVER-city word, so the story dots Israel from its own name"),
+    ("Kennedy Center reopens after renovation", "",
+     "United States", "SHIPPED BUG: 'Kennedy' matched Kennedy, Colombia; the Kennedy Center is in Washington — "
+     "'kennedy' is a NEVER-city word and 'kennedy center' is in _MANUAL_PLACES"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
@@ -1372,15 +1378,29 @@ def main():
         _mw_cas = app._map_worthy("Gunman kills 9 at a local market", "", _city)   # hard-news override
         app._ai_scope = lambda t: ""
         _mw_new = app._map_worthy("A fresh unsummarised story about a place", "", _city)  # no scope yet -> shown
+        # SOFT NEWS never reaches the WORLD map (only a starred country's own feed): a kangaroo drowning or
+        # stranded holidaymakers are dropped even with a real scene+scope, while a war-reparations demand at the
+        # UN — which merely shares the word "compensation" — is kept. (The starred-feed path never calls this.)
+        app._ai_scope = lambda t: "regional"; app._ai_where = lambda t: "Sydney, Australia"
+        _mw_soft = app._map_worthy("Kangaroo drownings in a canal spark community concern", "",
+                                   (-33.8, 151.2, "Sydney, Australia", "Australia"))
+        _mw_strand = app._map_worthy("Qantas passengers stranded in Johannesburg for days demand compensation", "",
+                                     (-26.2, 28.0, "Johannesburg, South Africa", "South Africa"))
     finally:
         app._ai_scope, app._ai_where = _o_sc, _o_w
-    _mw_ok = (not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
+    _soft_precise = (app._soft_news("Kangaroo drownings spark community concern", "")
+                     and app._soft_news("Qantas passengers stranded demand refunds", "")
+                     and not app._soft_news("Ukraine demands compensation for Russian war damage at UN", "")
+                     and not app._soft_news("Israel strikes Hezbollah positions, 12 killed", ""))
+    _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
+              and (not _mw_soft) and (not _mw_strand) and _soft_precise)
     ran[0] += 1
     if not _mw_ok:
         fails.append(("map-worthy", "importance gate",
-                      "broad+local DROP; scene/casualty/unrated KEEP",
-                      f"broad={_mw_broad} scene={_mw_scene} local={_mw_local} casualty={_mw_cas} new={_mw_new}",
-                      "the world map hides broad features & minor-local, keeps real scenes/casualties/unrated"))
+                      "broad+local+soft DROP; scene/casualty/unrated KEEP; reparations not soft",
+                      f"broad={_mw_broad} scene={_mw_scene} local={_mw_local} casualty={_mw_cas} new={_mw_new} "
+                      f"soft={_mw_soft} strand={_mw_strand} soft_precise={_soft_precise}",
+                      "the world map hides broad features, minor-local & soft news, keeps real scenes/casualties"))
     print(f"  {'ok ' if _mw_ok else 'FAIL'} broad={'DROP' if not _mw_broad else 'keep'} scene={'KEEP' if _mw_scene else 'drop'} "
           f"local={'DROP' if not _mw_local else 'keep'} local+casualty={'KEEP' if _mw_cas else 'drop'} unrated={'KEEP' if _mw_new else 'drop'}")
 
@@ -1878,6 +1898,8 @@ def main():
                  and "[" not in _t1 and _t1.endswith("last month.")     # "[...]" stamp + dangling fragment dropped
                  and _t2.endswith("say.")                               # no stamp -> gentle end-stop, not trimmed
                  and app._sharpen_desc("against Iran earlier this year. TJP reports that Iran kept its missile capabilities.").startswith("TJP reports")   # lower-case sentence TAIL dropped -> starts at the whole sentence
+                 and app._sharpen_desc("Students went on a field trip to the museum...") == "Students went on a field trip to the museum."   # a teaser "..." is dropped and the sentence is finished, never shipped mid-thought
+                 and not app._sharpen_desc("The council met to discuss the budget and then...").endswith("...")  # trailing ellipsis never survives to the card
                  and app._sharpen_desc("imagery also shows significant damage to the base.")[:1].isupper())  # a lone lower-case fragment is capitalized, not shipped mid-thought
     ran[0] += 1
     if not _sharp_ok:

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.7"
+APP_VERSION = "1.4.8"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -157,6 +157,21 @@ def _clip(s, n=360):
     return (s[:w] if w > n * 0.6 else s[:n]).rstrip()
 
 
+def _clip_sentence(s, n=460):
+    """Like _clip, but end on a WHOLE sentence so a card never trails off '…' mid-thought. Cut at the last
+    ./!/? before n (keeping a closing quote/paren); only if there's no sentence end in range fall back to a
+    word boundary (and _end_stop then gives it a period)."""
+    s = (s or "").strip()
+    if len(s) <= n:
+        return s
+    head = s[:n]
+    m = re.search(r"^[\s\S]*[.!?][\"'”’)\]]*(?=\s|$)", head)
+    if m and len(m.group(0)) > n * 0.5:
+        return m.group(0).strip()
+    w = head.rfind(" ")
+    return (head[:w] if w > n * 0.6 else head).rstrip()
+
+
 def _share_id(url, title=""):
     """A short, stable, URL-safe id for a story's shareable page — the SAME story always maps to the same
     id (keyed by the article URL, or the title when there's none), so a re-shared link keeps its emblem."""
@@ -170,7 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d19"   # d19: rebuild the feed so the sentence-fragment fix + name-based dedup reach cached events
+_DATA_VER = "d20"   # d20: resweep so the soft-news filter (kangaroo/stranded-passenger), the ToI/Kennedy geo
+                    #      fixes, and the trailing-"…" sentence fix all reach already-cached events
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -1006,7 +1022,8 @@ def _sharpen_desc(text, n=460):
     t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
     t = _TRAIL_ATTRIB.sub("", t).strip(" ,;:–—-")   # "…, Reuters reports." -> drop the trailing attribution
     t = _start_at_sentence(t)                        # never open on a lower-case sentence fragment
-    return _clip(_end_stop(t), n)
+    t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.) — clip below ends on a whole sentence instead
+    return _end_stop(_clip_sentence(t, n))           # end on a COMPLETE sentence, never mid-thought with "…"
 
 
 # Prepositions / articles / coordinating conjunctions that essentially NEVER validly end a sentence (each
@@ -5261,6 +5278,26 @@ def _hard_news(title, desc=""):
     return False
 
 
+# SOFT / HUMAN-INTEREST news the world map doesn't want (the STARRED-country feed still carries it): consumer
+# travel gripes, animal-welfare and "community concern" pieces. A reliable keyword backstop for when the AI
+# scope pass didn't mark it "local" — SHIPPED: a Qantas passenger-compensation story and a kangaroo-drowning
+# story both became world dots. Gated AFTER _hard_news, so a plane CRASH or a real disaster is never caught.
+_SOFT_NEWS = re.compile(
+    r"\b("
+    r"(?:passengers?|travell?ers?|tourists?|holidaymakers?)\s+(?:stranded|stuck|demand|left\s+stranded)"
+    r"|stranded\s+(?:passengers?|travell?ers?|tourists?)"
+    r"|flight\s+(?:delays?|cancellations?)|delayed\s+flights?"
+    r"|kangaroos?|koalas?|wombats?|platypus|possums?"
+    r"|animal\s+welfare|wildlife\s+(?:concern|rescue|welfare)|stray\s+(?:dogs?|cats?)"
+    r"|community\s+concern|goes?\s+viral|heart-?warming|feel-?good"
+    r")\b", re.I)
+
+
+def _soft_news(title, desc):
+    """True for consumer-travel gripes, animal-welfare and human-interest fluff — not world-map material."""
+    return bool(_SOFT_NEWS.search((title or "") + " " + (desc or "")))
+
+
 def _map_worthy(title, desc, loc):
     """The IMPORTANCE GATE for the WORLD map (the STARRED-country feed keeps everything). `loc` is the
     _locate tuple (or None). Hide a story that is minor-LOCAL, or a broad analysis with no place to pin —
@@ -5268,6 +5305,8 @@ def _map_worthy(title, desc, loc):
     the summary pass drive it, so it only bites once a story is summarised (brand-new -> shown, then gated)."""
     if _hard_news(title, desc):
         return True
+    if _soft_news(title, desc):
+        return False                                   # travel/consumer/animal-welfare human-interest
     if _ai_scope(title) == "local":
         return False                                   # a true-but-minor LOCAL story
     # The AI reviewed it (scope set) but named NO single scene (WHERE was NONE -> _ai_where empty), and the
@@ -6040,7 +6079,12 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # dotted West, TEXAS; "Southern African bloc raises alarm over severe El Nino" dotted El
                      # Niño, MEXICO. "west"/"el nino" are never the scene; "West Bank"/"West Virginia" are longer
                      # grams and still match.
-                     "west", "el nino", "el niño"}
+                     "west", "el nino", "el niño",
+                     # A SOURCE ABBREVIATION or a PERSON'S NAME is not an obscure foreign town. SHIPPED: an
+                     # Israeli-politics poll story ("new ToI poll", ToI = The Times of Israel) dotted Toi, JAPAN;
+                     # a Kennedy Center story dotted Kennedy, COLOMBIA (a Bogotá district). "Kennedy Center" is a
+                     # longer gram (a _MANUAL_PLACE -> Washington) and still matches; bare "kennedy" never does.
+                     "toi", "kennedy"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark / an
 # ADJECTIVE in a proper-noun phrase — a dot ONLY when the sentence locates something there ("in Sparks").
 # SHIPPED: "chipmaker SPARKS fears" -> Sparks, Nevada; "BRENT crude" -> Brent, London; a Trump "'GOLDEN
@@ -6076,6 +6120,10 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "silicon valley": (37.387, -122.058, "United States of America"),
     "wall street": (40.706, -74.009, "United States of America"),
     "hollywood": (34.098, -118.327, "United States of America"),
+    # US landmarks the gazetteer would otherwise send to a same-named foreign town (Kennedy, Colombia).
+    "kennedy center": (38.8956, -77.0557, "United States of America"),
+    "kennedy centre": (38.8956, -77.0557, "United States of America"),
+    "kennedy space center": (28.573, -80.649, "United States of America"),
     "west bank": (31.95, 35.3, "Palestine"),
     "gaza strip": (31.42, 34.35, "Palestine"),
     "donbas": (48.5, 37.8, "Ukraine"),
