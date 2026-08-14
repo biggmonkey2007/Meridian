@@ -653,8 +653,7 @@ body.topo-active .zoomers{bottom:130px}
 .st-card2{display:flex;gap:11px;align-items:flex-start;background:#f8fafc;border:1px solid #e7ecf2;border-radius:11px;padding:11px 12px}
 .st-card2 .st-av{width:46px;height:46px}
 .st-lines{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-.st-line{display:block;text-decoration:none;font-size:12.5px;line-height:1.42;color:var(--ink);font-weight:600;border-left:2px solid #cfdae7;padding-left:8px}
-.st-line:hover{color:#1668d6;border-left-color:#1668d6}
+.st-line{display:block;font-size:12.5px;line-height:1.42;color:var(--ink);font-weight:600;border-left:2px solid #cfdae7;padding-left:8px}
 .st-lmeta{display:block;font-size:10.5px;font-weight:600;color:var(--ink-3);margin-top:1px}
 .st-realq{color:#1f6b3a;font-weight:700}
 /* verbatim official releases */
@@ -684,7 +683,6 @@ body.topo-active .zoomers{bottom:130px}
    mode the text vars flip light, so light-on-light washed out. Repaint fills/borders/tints for the dark panel. */
 :root[data-theme="dark"] .st-card2{background:var(--panel-2);border-color:var(--line)}
 :root[data-theme="dark"] .st-line{border-left-color:#33414f}
-:root[data-theme="dark"] .st-line:hover{color:#66a8ff;border-left-color:#66a8ff}
 :root[data-theme="dark"] .st-realq{color:#6fce90}
 :root[data-theme="dark"] .st-official,
 :root[data-theme="dark"] .st-verb{background:rgba(46,139,87,.12);border-color:#2f5a41}
@@ -859,9 +857,8 @@ body.topo-active .zoomers{bottom:130px}
 .pol-spec .pol-seg.on{background:#2b5c8a;box-shadow:0 0 0 2px rgba(43,92,138,.22)}
 .pol-spec-lab{display:flex;justify-content:space-between;font-size:8.5px;color:var(--ink-3);margin-top:4px}
 .pol-mark{font-size:12px;font-weight:800;color:#2b5c8a;margin-top:2px}
-.pol-note{font-size:12px;line-height:1.5;color:var(--ink-2);margin-top:8px;background:#f6f8fb;border-radius:8px;padding:9px 11px}
+.pol-note{font-size:12px;line-height:1.55;color:var(--ink-2);margin-top:9px}
 /* dark mode: these political-landscape fills were hardcoded light -> repaint for the dark panel */
-:root[data-theme="dark"] .pol-note{background:var(--panel-2);color:var(--ink-2)}
 :root[data-theme="dark"] .pol-sys{background:var(--chip);color:var(--ink)}
 :root[data-theme="dark"] .pol-spec .pol-seg{background:#2a3542}
 :root[data-theme="dark"] .pol-spec .pol-seg.on{background:#4d86c4}
@@ -2670,15 +2667,42 @@ function politicsHTML(name, fb){
 // initial-letter avatar so the panel never shows a broken-image icon or an empty box.
 // Photo cascade so a leader picture ALWAYS resolves: the P18/Commons image is tried first; if it fails to
 // load, we try a Wikipedia thumbnail by name; only if BOTH fail do we fall back to the initial-letter tile.
+// Find a portrait for a leader/minister: the Wikipedia page image first, then — for the many ministers whose
+// Wikipedia page is a photoless stub — the Wikidata P18 Commons portrait. Returns a URL or "".
+async function findLeaderPhoto(nm){
+  if(!nm) return "";
+  const toks=nm.split(/\s+/);
+  const tries=[nm]; if(toks.length>3) tries.push(toks.slice(0,3).join(" "));
+  for(const q of tries){
+    try{
+      const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(q));
+      if(r.ok){ const j=await r.json(); const s=(j.thumbnail&&j.thumbnail.source)||(j.originalimage&&j.originalimage.source); if(s) return s; }
+    }catch(e){}
+  }
+  try{
+    const sr=await fetch("https://www.wikidata.org/w/api.php?format=json&origin=*&action=wbsearchentities&language=en&type=item&limit=3&search="+encodeURIComponent(nm));
+    if(sr.ok){
+      const ids=(((await sr.json()).search)||[]).map(h=>h.id).slice(0,3);
+      if(ids.length){
+        const er=await fetch("https://www.wikidata.org/w/api.php?format=json&origin=*&action=wbgetentities&props=claims&ids="+ids.join("|"));
+        if(er.ok){ const ents=((await er.json()).entities)||{};
+          for(const id of ids){ const cl=((ents[id]||{}).claims)||{};
+            const human=(cl.P31||[]).some(c=>((((c.mainsnak||{}).datavalue||{}).value)||{}).id==="Q5");
+            const p18=(cl.P18||[])[0];
+            if(human && p18){ const fn=((p18.mainsnak||{}).datavalue||{}).value; if(fn) return "https://commons.wikimedia.org/wiki/Special:FilePath/"+encodeURIComponent(fn)+"?width=240"; }
+          }
+        }
+      }
+    }
+  }catch(e){}
+  return "";
+}
 async function leadImgTryNext(img){
   try{
     if(img.getAttribute("data-wt") !== "1"){
       img.setAttribute("data-wt", "1");
-      const nm=(img.getAttribute("data-name")||"").trim();
-      if(nm){
-        const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(nm));
-        if(r.ok){ const j=await r.json(); const src=(j.thumbnail&&j.thumbnail.source)||(j.originalimage&&j.originalimage.source); if(src){ img.src=src; return; } }
-      }
+      const src=await findLeaderPhoto((img.getAttribute("data-name")||"").trim());
+      if(src){ img.src=fixImg(src); return; }
     }
   }catch(e){}
   const ch=(img.getAttribute("data-ch")||"?"); const d=document.createElement("div"); d.className="lead-img lead-ph"; d.textContent=ch; if(img.parentNode) img.parentNode.replaceChild(d, img);
@@ -3723,26 +3747,16 @@ async function upgradeLeaderPhotos(){
   await Promise.all(phs.map(async ph=>{
     if(ph._tried) return; ph._tried=true;
     const nm=(ph.getAttribute("data-name")||"").trim(); if(!nm) return;
-    const toks=nm.split(/\s+/);
-    const tries=[nm]; if(toks.length>3) tries.push(toks.slice(0,3).join(" "));
-    for(const q of tries){
-      try{
-        const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(q));
-        if(!r.ok) continue;
-        const j=await r.json();
-        const src=(j.thumbnail&&j.thumbnail.source)||(j.originalimage&&j.originalimage.source);
-        if(src && !ph._done){
-          ph._done=true;
-          const img=document.createElement("img");
-          img.className="lead-img"; img.src=fixImg(src); img.alt=""; img.decoding="async";
-          img.setAttribute("referrerpolicy","no-referrer");
-          img.setAttribute("data-name",nm); img.setAttribute("data-ch",ph.getAttribute("data-ch")||"?");
-          img.setAttribute("data-wt","1");            // Wikipedia already tried — onerror falls straight to the letter
-          img.setAttribute("onerror","leadImgTryNext(this)");
-          if(ph.parentNode) ph.parentNode.replaceChild(img, ph);
-          return;
-        }
-      }catch(e){}
+    const src=await findLeaderPhoto(nm);              // Wikipedia page image, then Wikidata P18
+    if(src && !ph._done){
+      ph._done=true;
+      const img=document.createElement("img");
+      img.className="lead-img"; img.src=fixImg(src); img.alt=""; img.decoding="async";
+      img.setAttribute("referrerpolicy","no-referrer");
+      img.setAttribute("data-name",nm); img.setAttribute("data-ch",ph.getAttribute("data-ch")||"?");
+      img.setAttribute("data-wt","1");                // both sources tried — onerror falls straight to the letter
+      img.setAttribute("onerror","leadImgTryNext(this)");
+      if(ph.parentNode) ph.parentNode.replaceChild(img, ph);
     }
   }));
 }
@@ -3837,7 +3851,7 @@ async function setupStatements(name){
         html+=`<div class="st-cov-h">In the news · last 48h</div><div class="st-list">`+people.map(p=>{
           const L=leaders.find(x=>x.name===p.name);
           const av=(L&&L.img)?`<div class="st-av has-img" style="background-image:url('${esc(String(L.img).replace(/'/g,''))}')"></div>`:`<div class="st-av">${esc((p.name||"?").trim().charAt(0))}</div>`;
-          const lines=p.items.map(it=>`<a class="st-line" href="${esc(it.link)}" target="_blank" rel="noopener">${it.quote?`<span class="st-realq">“${esc(it.quote)}”</span> `:""}${esc(it.title)}<span class="st-lmeta">${esc(it.source||"")}${it.pub?" · "+esc(newsAgo(it.pub)):""}</span></a>`).join("");
+          const lines=p.items.map(it=>`<div class="st-line">${it.quote?`<span class="st-realq">“${esc(it.quote)}”</span> `:""}${esc(it.title)}<span class="st-lmeta">${esc(it.source||"")}${it.pub?" · "+esc(newsAgo(it.pub)):""}</span></div>`).join("");
           return `<div class="st-card2">${av}<div class="st-main"><div class="st-who"><span class="st-name">${esc(p.name)}</span>${L&&L.title?`<span class="st-title">${esc(L.title)}</span>`:""}</div><div class="st-lines">${lines}</div></div></div>`;
         }).join("")+`</div>`;
       }
