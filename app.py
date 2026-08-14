@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.6"
+APP_VERSION = "1.4.7"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -174,7 +174,8 @@ _DATA_VER = "d19"   # d19: rebuild the feed so the sentence-fragment fix + name-
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
-_LEADER_VER = "l8"      # l8: heads of state/gov from Wikipedia's daily 'current heads' list (fixes stale PMs)
+_LEADER_VER = "l9"      # l9: re-resolve everyone with fresh photos (l6-l8 were no-ops — a duplicate _LEADER_VER
+                        # later in the file had shadowed this one; now split into _LEADER_NAME_VER)
 
 
 def _aiwhere_path(title):
@@ -7005,7 +7006,8 @@ _LEADER_ROLE = (r"(prime[\s-]?minister|premier|president|chancellor|foreign\s+mi
 _LEADER_POSS = re.compile(r"\b([A-Z][A-Za-z.\-]+)['’]s\s+(?:new\s+|acting\s+|interim\s+)?" + _LEADER_ROLE, re.I)
 _LEADER_DEM  = re.compile(r"\b([A-Z][a-z]+)\s+(?:new\s+|acting\s+|interim\s+)?" + _LEADER_ROLE, re.I)
 _LEADER_OF   = re.compile(_LEADER_ROLE + r"\s+of\s+(?:the\s+)?([A-Z][A-Za-z]+(?:\s[A-Z][a-z]+){0,2})", re.I)
-_LEADER_VER  = "l1"
+_LEADER_NAME_VER = "l1"   # separate cache version for the legacy _leader_name path — must NOT be named
+                          # _LEADER_VER, or (defined later in the file) it silently overrode the real one above.
 
 
 def _leader_name(country, role):
@@ -7016,7 +7018,7 @@ def _leader_name(country, role):
     role = (role or "").strip().lower()
     if not country or not role or country not in COUNTRY_COORDS or not _llm_available():
         return ""
-    cache = os.path.join(CACHE_DIR, "leader_" + hashlib.sha1((_LEADER_VER + "|" + country.lower() + "|" + role).encode("utf-8")).hexdigest()[:16] + ".json")
+    cache = os.path.join(CACHE_DIR, "leader_" + hashlib.sha1((_LEADER_NAME_VER + "|" + country.lower() + "|" + role).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 7 * 86400):        # leaders change — a shorter TTL than most caches
         try:
             return json.load(open(cache, encoding="utf-8")).get("n", "")

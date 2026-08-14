@@ -43,8 +43,39 @@ stand up the hosted enrichment API described in `../SCALING.md` and add matching
 shim in `meridian-relief.html`; every call site already routes through `aiBridge()`, so nothing else changes.
 
 ## App icons / splash
-Drop a 1024×1024 icon and a splash image in and run `npx @capacitor/assets generate` (add
-`@capacitor/assets` as a dev dep) to populate both platforms.
+Already wired. `python make_mobile_icons.py` renders the Meridian globe into `resources/icon.png` (1024²,
+opaque — iOS forbids alpha) and `resources/splash.png` (2732²); `npm run icons` then runs
+`@capacitor/assets` to fan them out to every platform size. This runs automatically inside `npm run add:ios`
+/ `add:android`. Re-run `npm run icons` after changing the mark or brand colors.
+
+## Version
+`APP_VERSION` in `../app.py` is the single source of truth. `python set_version.py` (aliased `npm run
+version`, and part of `sync` / `add:*`) copies it into `package.json`, `android/app/build.gradle`
+(`versionName` + a derived integer `versionCode`), and `ios/.../Info.plist` (`CFBundleShortVersionString` +
+`CFBundleVersion`). Bump `APP_VERSION`, run it, and every surface stays in lock-step.
+
+## Ship to the App Store / Play Store
+Store copy, keywords, screenshot list, age rating, and the privacy answers both stores demand live in
+[`store/listing.md`](store/listing.md) and [`store/privacy.md`](store/privacy.md).
+
+**Android (Play):**
+```bash
+npm run add:android          # once: creates android/, icons, version
+npm run sync                 # after any UI/feed change
+npm run open:android         # Android Studio -> Build > Generate Signed App Bundle (.aab)
+```
+Upload the `.aab` in Play Console, fill Data safety from `store/privacy.md`, paste the listing, submit.
+
+**iOS (App Store — needs a Mac + Xcode + Apple Developer account):**
+```bash
+npm run add:ios
+npm run sync
+npm run open:ios             # Xcode -> set your Team/signing -> Product > Archive -> Distribute
+```
+In App Store Connect, answer App Privacy = "Data Not Collected", paste the listing, add screenshots, submit.
+
+Both `ios/` and `android/` are generated (gitignored); `resources/`, the scripts, config, and `store/` are
+the committed source, so the projects regenerate identically on any machine.
 
 [Capacitor]: https://capacitorjs.com
 [`../DEPLOY.md`]: ../DEPLOY.md

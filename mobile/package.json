@@ -1,13 +1,15 @@
 {
   "name": "meridian-mobile",
-  "version": "1.0.0",
+  "version": "1.4.7",
   "private": true,
   "description": "Capacitor wrapper that ships Meridian's web UI as native iOS + Android apps, pointed at the hosted feed.",
   "scripts": {
     "build": "python build_www.py",
-    "sync": "npm run build && npx cap sync",
-    "add:ios": "npm run build && npx cap add ios && npx cap sync",
-    "add:android": "npm run build && npx cap add android && npx cap sync",
+    "icons": "python make_mobile_icons.py && npx @capacitor/assets generate --assetPath resources --iconBackgroundColor #0d1219 --iconBackgroundColorDark #0d1219 --splashBackgroundColor #0d1219 --splashBackgroundColorDark #0d1219",
+    "version": "python set_version.py",
+    "sync": "npm run build && npx cap sync && npm run version",
+    "add:ios": "npm run build && npx cap add ios && npm run icons && npm run version && npx cap sync",
+    "add:android": "npm run build && npx cap add android && npm run icons && npm run version && npx cap sync",
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android"
   },
@@ -17,6 +19,7 @@
     "@capacitor/ios": "^6.1.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.1.0"
   }
 }

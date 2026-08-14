@@ -3160,6 +3160,7 @@ function setGlobeBasemap(k){
       // render on top at EVERY zoom (no language switch), while the raster covers the wedge at world scale.
       const firstSym = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l.type==="symbol")||{}).id;
       const belowLabels = firstSym || (mlMap.getLayer("g-borders") ? "g-borders" : undefined);
+      const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
       // The always-resident clean RASTER gives an instant, artifact-free base while zoomed way out; the crisp,
       // resolution-independent VECTOR takes over from z3 up. (This used to hold to z4 to mask the globe "dark
       // wedge" — but that wedge is really the space background showing through a gap in the g-sphere fill, now
@@ -3168,9 +3169,11 @@ function setGlobeBasemap(k){
       // Clean relief only — TOPO skips this pale CARTO overview so its green land + blue sea show at world scale.
       if(!isTopo && !mlMap.getSource("g-overview")){
         mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
-        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowLabels);
+        // Insert the world-scale raster BELOW the water fill (not just below labels): the selected-country
+        // tint sits just under water too, so keeping the raster beneath it means the highlight still shows when
+        // zoomed all the way out. Labels + the vector water still render on top, so nothing else changes.
+        mlMap.addLayer({id:"g-overview",type:"raster",source:"g-overview",maxzoom:3,paint:{"raster-fade-duration":0}}, belowWater);
       }
-      const belowWater = (mlMap.getStyle().layers.find(l=>l.source==="carto" && l["source-layer"]==="water" && l.type==="fill")||{}).id || belowLabels;
       if(isTopo){
         // TRUE TOPOGRAPHY — colour by ELEVATION LEVELS off a real DEM (AWS Terrarium): green lowlands -> tan
         // uplands -> brown mountains -> snow peaks, GPU-rendered so the levels are clean and sharp. ONE pass
