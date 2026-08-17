@@ -528,6 +528,10 @@ GEO_CASES = [
     ("Kennedy Center reopens after renovation", "",
      "United States", "SHIPPED BUG: 'Kennedy' matched Kennedy, Colombia; the Kennedy Center is in Washington — "
      "'kennedy' is a NEVER-city word and 'kennedy center' is in _MANUAL_PLACES"),
+    ("Attacks on Zaporozhye NPP expose true nature of Kiev regime", "",
+     "Zaporizhzhia", "SHIPPED BUG: dotted KIEV. NER mislabelled 'Zaporozhye NPP' as a two-word PERSON and the "
+     "covers_more veto deleted it even though 'Attacks ON Zaporozhye' locates it — leaving only 'Kiev regime', "
+     "an attributive label, as the scene. The located facility (the plant) must win, not the government's seat"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)

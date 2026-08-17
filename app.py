@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.9"
+APP_VERSION = "1.4.10"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,9 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d21"   # d21: resweep so the baked per-article "In brief", the mid-sentence-truncation trim, the
-                    #      merge title/body-pairing fix and the Google-News logo filter all reach cached events
-_SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
+_DATA_VER = "d22"   # d22: the Groq model 404'd, so NO summary ever generated — swept so every event re-summarizes
+                    #      on the working model, with neutral source-attribution and the Zaporizhzhia-NPP geo fix
+_SUM_PROMPT_VER = "16"  # 16: attribute contested claims to their source (state/partisan wires, Telegram); neutral voice
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 _LEADER_VER = "l9"      # l9: re-resolve everyone with fresh photos (l6-l8 were no-ops — a duplicate _LEADER_VER
@@ -244,8 +244,11 @@ def _summary_cfg():
     url = (os.environ.get("SUMMARY_API_URL")
            or ("https://api.groq.com/openai/v1/chat/completions" if is_groq
                else "https://api.openai.com/v1/chat/completions")).strip()
+    # Groq retired the Llama-3.1/3.3 line (the old default 404s now — "model_not_found" — which silently
+    # killed EVERY summary). openai/gpt-oss-20b is the current fast, capable Groq model; it's a reasoning
+    # model, so _llm_complete asks for low reasoning effort and gives it token headroom.
     model = (os.environ.get("SUMMARY_MODEL")
-             or ("llama-3.1-8b-instant" if is_groq else "gpt-4o-mini")).strip()
+             or ("openai/gpt-oss-20b" if is_groq else "gpt-4o-mini")).strip()
     return key, url, model
 
 
@@ -300,15 +303,24 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None):
             return ""
         url, model, key, timeout = loc[0], loc[1], "local", 45   # local server ignores the auth token
     try:
-        body = json.dumps({"model": model, "temperature": temperature, "max_tokens": max_tokens,
-                           "messages": [{"role": "system", "content": system},
-                                        {"role": "user", "content": user}]}).encode("utf-8")
+        payload = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
+                   "messages": [{"role": "system", "content": system},
+                                {"role": "user", "content": user}]}
+        # REASONING MODELS (Groq's gpt-oss): they burn output tokens on hidden reasoning FIRST, so a tight
+        # max_tokens leaves an EMPTY answer. Ask for low reasoning effort and lift the ceiling so the visible
+        # brief always fits after the thinking. (Only gpt-oss honours these; other models ignore them.)
+        if "gpt-oss" in model:
+            payload["reasoning_effort"] = "low"
+            payload["max_tokens"] = max(max_tokens, 1200) + 700     # room for reasoning + the full brief
+            timeout = max(timeout, 40)
+        body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + key,
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
-        return ((j.get("choices") or [{}])[0].get("message", {}).get("content", "") or "").strip()
+        msg = (j.get("choices") or [{}])[0].get("message", {}) or {}
+        return (msg.get("content") or "").strip()
     except Exception:
         return ""
 
@@ -335,15 +347,18 @@ def _finish_brief(s):
     return out if len(out) >= 15 else s
 
 
-def _summarize(title, text):
+def _summarize(title, text, source=""):
     """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
     copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
-    LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link."""
+    LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link.
+    `source` is the reporting outlet (TASS, a Telegram channel, Reuters) — handed to the model so a contested
+    claim from a state/partisan wire is ATTRIBUTED ('Russia's TASS says…'), never stated as neutral fact."""
     text = (text or "").strip()
+    source = (source or "").strip()
     if not (title or text) or not _llm_available():
         return ""
     text = text[:4500]
-    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + source + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             return _drop_redundant_bullets(_drop_empty_bullets(_fix_speaker_colon(
@@ -387,9 +402,24 @@ def _summarize(title, text):
               "- Do NOT open with a wire dateline or place-stamp like 'TEHRAN —' or 'WASHINGTON (Reuters) —'; "
               "start straight with the news.\n"
               "- Output nothing else — no headings, no title, no closing line.\n\n"
-              "Facts only — no opinion, no speculation, no 'the article says'/'reportedly', and never point "
-              "out what the source leaves out (simply omit anything not given). Stay copyright-free: rephrase "
-              "everything from scratch; never copy four or more consecutive words from the source, no quotes.\n\n"
+              "Report what verifiably happened directly, and do NOT hedge a plain, uncontested fact with "
+              "'reportedly'. No opinion or speculation of your OWN, and never point out what the source leaves "
+              "out (simply omit anything not given). Stay copyright-free: rephrase everything from scratch and "
+              "never copy four or more consecutive words from the source. A SHORT quoted phrase of two or three "
+              "words is allowed when it is attributed and distinctive (the senator called it 'a provocation'); "
+              "never quote a whole sentence.\n\n"
+              "ATTRIBUTION & NEUTRALITY — this matters as much as accuracy. Much of this wire is one government's "
+              "or channel's account. Treat any CONTESTED claim, accusation, one-sided characterisation or "
+              "political framing as a CLAIM, not a fact: attribute it to WHO is making it, and name the outlet "
+              "when the whole story is one side's telling. Write 'a Russian senator said', 'Moscow claims', "
+              "'according to Russia's TASS', 'Ukraine's military says', 'Israel's army said', 'Hamas claims' — "
+              "NEVER state one party's accusation, casualty figure or loaded label as established fact. In your "
+              "OWN voice stay neutral and de-escalatory: do not adopt a source's loaded epithet ('the Kiev "
+              "regime', 'Nazi', 'terrorist entity', 'martyr', 'liberated') — either drop it or attribute it to "
+              "the source that used it. When the SOURCE OUTLET below is a state or partisan wire and the story is "
+              "its government's line, make that plain ('Russian state media said…'). This applies to EVERY "
+              "source equally — Russian, Ukrainian, Israeli, Iranian, Western outlets and Telegram channels "
+              "alike — so the reader always knows whose account they are reading.\n\n"
               "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
               "ONE real place the event PHYSICALLY happened. Apply these rules IN ORDER:\n"
               "1) If the story is a broad analysis, round-up, trend or feature spanning MANY places with no single "
@@ -424,6 +454,7 @@ def _summarize(title, text):
               "Examples: a foreign minister warning of retaliation -> global; a big shooting -> national; "
               "'illegal sand extraction erodes a beach' -> local. This SCOPE line is metadata, not part of the "
               "brief.\n\n"
+              "SOURCE OUTLET: " + (source or "unknown") + "\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     s = _llm_complete(system, prompt, max_tokens=620, temperature=0.3)   # headroom for up to ~3 short paragraphs
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
@@ -3214,16 +3245,17 @@ class Api:
         except Exception as ex:
             return {"leaders": [], "error": str(ex)}
 
-    def summarize_event(self, title, url="", text=""):
+    def summarize_event(self, title, url="", text="", source=""):
         """Meridian's OWN copyright-free summary of a story (3-4 original sentences). If given only a URL it
         reads the article text first — which is NEVER shown verbatim, only summarized in new words. Cached.
-        Returns {"summary": ""} when no LLM key is configured, so the UI keeps the safe attributed lead+link."""
+        `source` (the reporting outlet) is passed through so a state/partisan wire's contested claims are
+        ATTRIBUTED, not stated as fact. Returns {"summary": ""} when no LLM key is configured."""
         try:
             body = (text or "").strip()
             if not body and url and str(url).startswith("http"):
                 d = self.article_detail(url) or {}
                 body = " ".join((d.get("paragraphs") or [])[:10]).strip() or (d.get("desc") or "")
-            return {"summary": _summarize(title or "", body)}
+            return {"summary": _summarize(title or "", body, source)}
         except Exception:
             return {"summary": ""}
 
@@ -3236,14 +3268,15 @@ class Api:
         def one(ev):
             try:
                 u = (ev.get("url") or "").strip()
+                src = (ev.get("source") or ev.get("channel") or "").strip()   # outlet/channel -> attributes contested claims
                 s = ""
                 if u.startswith("http") and "t.me/" not in u:
-                    s = (self.summarize_event(ev.get("title") or "", u) or {}).get("summary", "")   # real article -> summarize it
+                    s = (self.summarize_event(ev.get("title") or "", u, "", src) or {}).get("summary", "")   # real article -> summarize it
                 # Scrape blocked, empty, or a news.google.com REDIRECT with no body? Still write a brief from the
                 # wire teaser we already hold (RSS <description>). This is what gives EVERY article a real "In
                 # brief" — no story is left showing the raw, truncated teaser because its page couldn't be read.
                 if not s and len((ev.get("sum") or "")) >= 60:
-                    s = _summarize(ev.get("title") or "", ev.get("sum") or "")
+                    s = _summarize(ev.get("title") or "", ev.get("sum") or "", src)
                 # BAKE OUR brief straight into the feed event. Warming the cache alone left every card depending
                 # on a click-time call that raced the scrape and, when it lost, showed the raw wire teaser
                 # ("…oil is down today a…"). With the brief on the event, world_events serves OUR summary for
@@ -5544,9 +5577,10 @@ def _collapse_colocated(events, window_h=6):
 
 _AI_DEDUP_VER = "d4"    # bump on any prompt/model change — invalidates cached verdicts
 # The same-event judgment ('is a Black Sea resort strike the same as a Gelendzhik beach drone attack?') needs
-# real reasoning: the fast 8B summary model answers NO, a 70B gets it right. Use the stronger FREE Groq model
-# for this one call when the provider is Groq; other providers keep their configured model.
-_DEDUP_MODEL = "llama-3.3-70b-versatile"
+# real reasoning: the fast small model answers NO, a bigger one gets it right. Use the stronger FREE Groq
+# model for this one call when the provider is Groq; other providers keep their configured model.
+# (Groq retired llama-3.3-70b-versatile; openai/gpt-oss-120b is the current strong reasoning model.)
+_DEDUP_MODEL = "openai/gpt-oss-120b"
 
 
 def _ai_dedup_facet(e):
@@ -6318,7 +6352,10 @@ _FACILITIES = {
     "morozovsk air base": (48.308, 41.791, "Russia"), "millerovo air base": (48.951, 40.302, "Russia"),
     # Ukraine
     "zaporizhzhia nuclear power plant": (47.512, 34.586, "Ukraine"),
-    "zaporizhzhia npp": (47.512, 34.586, "Ukraine"), "kakhovka dam": (46.778, 33.369, "Ukraine"),
+    "zaporizhzhia npp": (47.512, 34.586, "Ukraine"),
+    # the Russian spelling RT/TASS print — the plant itself, not the city 50 km away
+    "zaporozhye npp": (47.512, 34.586, "Ukraine"), "zaporozhye nuclear power plant": (47.512, 34.586, "Ukraine"),
+    "kakhovka dam": (46.778, 33.369, "Ukraine"),
     "chernobyl": (51.389, 30.099, "Ukraine"), "crimean bridge": (45.311, 36.520, "Ukraine"),
     "kerch bridge": (45.311, 36.520, "Ukraine"), "saky air base": (45.093, 33.599, "Ukraine"),
     # Middle East
@@ -7228,7 +7265,12 @@ def _ner_vetoes(spans, cs, ce, weak, supported, located):
         if cs < e and s < ce:                       # character overlap
             covers_more = (s < cs or e > ce)
             if lab == "PERSON":
-                if covers_more:
+                # An EXPLICIT locational cue ("attacks ON Zaporozhye NPP", "strike IN Kabul") outranks a NER
+                # PERSON guess even when the span is multi-word: NER routinely swallows a mislabelled FACILITY
+                # ("Zaporozhye NPP", "Afipsky Refinery") into a two-token PERSON entity, and the old covers_more
+                # veto deleted the located place anyway — a Zaporozhye-NPP attack then dotted "Kiev regime"
+                # instead. A geo-preposition in front is far harder evidence than the surname guess.
+                if covers_more and not located:
                     return True          # a full name ("Lindsey Graham") — certainly a person
                 if not supported and not located:
                     return True          # a lone capitalised name with nothing backing it up
@@ -7537,6 +7579,7 @@ _DISPLAY_NAMES = {
     "sana a international airport": "Sana'a International Airport",
     "sanaa international airport": "Sana'a International Airport",
     "zaporizhzhia npp": "Zaporizhzhia NPP", "zaporizhzhia nuclear power plant": "Zaporizhzhia NPP",
+    "zaporozhye npp": "Zaporizhzhia NPP", "zaporozhye nuclear power plant": "Zaporizhzhia NPP",
     "npp": "NPP",
 }
 

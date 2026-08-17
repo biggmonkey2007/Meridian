@@ -3727,7 +3727,7 @@ async function enrichExpert(name){
   const _api = aiBridge();
   if(_api && _api.summarize_event){
     arr.forEach((a,i)=>{
-      Promise.resolve(_api.summarize_event(a.title, a.url, a.extract)).then(r=>{
+      Promise.resolve(_api.summarize_event(a.title, a.url, a.extract, a.source||"")).then(r=>{
         if(!cur || !document.body.contains(cur)) return;
         const tx=document.getElementById("xlc-x-"+i);
         if(tx && r && r.summary && r.summary.trim().length>60){
@@ -3965,7 +3965,7 @@ async function openConcept(title){
     try{
       const _api=aiBridge();
       if(_api && _api.summarize_event){
-        const r=await _api.summarize_event(j.title||title, _url, j.extract);
+        const r=await _api.summarize_event(j.title||title, _url, j.extract, "Wikipedia");
         if(ov.classList.contains("open") && ov._t===title && r && r.summary && r.summary.trim().length>60){
           ex.textContent=r.summary.trim();
           const _kick=ov.querySelector(".cx-kicker"); if(_kick) _kick.textContent="Concept · in Meridian's words";
@@ -4675,7 +4675,7 @@ async function renderRealEvent(d){
     else {
       if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
       if(api && api.summarize_event && (d.sum||"").length>=120){
-        Promise.resolve(api.summarize_event(d.title||"", "", d.sum)).then(r=>{
+        Promise.resolve(api.summarize_event(d.title||"", "", d.sum, d.source||d.channel||"")).then(r=>{
           if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
         }).catch(()=>{});
       }
@@ -4703,7 +4703,7 @@ async function renderRealEvent(d){
         // blocked or empty scrape still produces OUR complete brief instead of leaving the clipped teaser up.
         const stext=(paras.slice(0,10).join(" ")||desc||d.sum||"").trim();
         if(api.summarize_event && stext.length>=60){
-          Promise.resolve(api.summarize_event(d.title||"", "", stext)).then(r=>{
+          Promise.resolve(api.summarize_event(d.title||"", "", stext, d.source||d.channel||"")).then(r=>{
             if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
           }).catch(()=>{});
         }
@@ -5609,7 +5609,7 @@ function warmStory(d){
   const go = p => { try{ Promise.resolve(p).catch(()=>{}); }catch(e){} };
   warmPhoto(d);                                                // the picture — prefetched + stored on d
   if(d.url && api.article_detail)  go(api.article_detail(d.url));
-  if(d.url && api.summarize_event) go(api.summarize_event(d.title||"", d.url||""));   // warm our summary
+  if(d.url && api.summarize_event) go(api.summarize_event(d.title||"", d.url||"", "", d.source||d.channel||""));   // warm our summary
   if(api.event_media)              go(api.event_media(d.title, 6));
   if(api.event_people)             go(api.event_people(d.title||"", d.sum||""));
 }
