@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.8"
+APP_VERSION = "1.4.9"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d20"   # d20: resweep so the soft-news filter (kangaroo/stranded-passenger), the ToI/Kennedy geo
-                    #      fixes, and the trailing-"…" sentence fix all reach already-cached events
+_DATA_VER = "d21"   # d21: resweep so the baked per-article "In brief", the mid-sentence-truncation trim, the
+                    #      merge title/body-pairing fix and the Google-News logo filter all reach cached events
 _SUM_PROMPT_VER = "15"  # bump when the summary prompt/format changes, so cached summaries regenerate
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -1009,6 +1009,26 @@ def _fix_stray_quotes(t):
     return t.strip()
 
 
+def _to_last_sentence(t):
+    """A wire description truncated MID-SENTENCE is cut back to the last COMPLETE sentence, so the card never
+    shows a chopped stub with a tacked-on period ('…oil is down today a.', '…probably am.'). Feeds routinely
+    hand us a clean first sentence followed by a chopped one ('…nuclear weapon. "I know that oil is down
+    today a'); we keep the whole part and drop the chopped tail. Only when there is NO earlier whole sentence
+    to fall back to do we keep the fragment as-is — the baked AI 'In brief' is what fixes those. Length-
+    independent, unlike _clip_sentence, which only trims when the text runs past its char budget."""
+    t = (t or "").strip()
+    if not t:
+        return t
+    m = re.search(r"^[\s\S]*[.!?][\"'”’)\]]*(?=\s|$)", t)   # greedy: the LAST sentence-ender that a space/end follows
+    if not m:
+        return t                                  # no whole sentence anywhere -> single fragment, keep (last resort)
+    whole = m.group(0).strip()
+    tail = t[m.end():].strip()
+    if tail and len(whole) >= 40:                 # real chopped tail after a substantial sentence -> drop the tail
+        return whole
+    return t
+
+
 def _sharpen_desc(text, n=460):
     """The summary shown under an article, made professional: promo/handles gone, inline image/agency
     credits stripped ('… [Abu Adem Muhammed – Anadolu Agency]'), and a terminal full stop when it ends
@@ -1022,8 +1042,9 @@ def _sharpen_desc(text, n=460):
     t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
     t = _TRAIL_ATTRIB.sub("", t).strip(" ,;:–—-")   # "…, Reuters reports." -> drop the trailing attribution
     t = _start_at_sentence(t)                        # never open on a lower-case sentence fragment
-    t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.) — clip below ends on a whole sentence instead
-    return _end_stop(_clip_sentence(t, n))           # end on a COMPLETE sentence, never mid-thought with "…"
+    t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.)
+    t = _to_last_sentence(t)                         # a mid-sentence truncation -> cut back to the last WHOLE sentence
+    return _end_stop(_clip_sentence(t, n))           # then length-clip; end on a COMPLETE sentence, never mid-thought
 
 
 # Prepositions / articles / coordinating conjunctions that essentially NEVER validly end a sentence (each
@@ -3215,10 +3236,20 @@ class Api:
         def one(ev):
             try:
                 u = (ev.get("url") or "").strip()
+                s = ""
                 if u.startswith("http") and "t.me/" not in u:
-                    self.summarize_event(ev.get("title") or "", u)              # real article -> summarize it
-                elif ev.get("tg") and len((ev.get("sum") or "")) >= 120:
-                    _summarize(ev.get("title") or "", ev.get("sum") or "")       # any post with a real body -> AI-rewrite it (copyright-free)
+                    s = (self.summarize_event(ev.get("title") or "", u) or {}).get("summary", "")   # real article -> summarize it
+                # Scrape blocked, empty, or a news.google.com REDIRECT with no body? Still write a brief from the
+                # wire teaser we already hold (RSS <description>). This is what gives EVERY article a real "In
+                # brief" — no story is left showing the raw, truncated teaser because its page couldn't be read.
+                if not s and len((ev.get("sum") or "")) >= 60:
+                    s = _summarize(ev.get("title") or "", ev.get("sum") or "")
+                # BAKE OUR brief straight into the feed event. Warming the cache alone left every card depending
+                # on a click-time call that raced the scrape and, when it lost, showed the raw wire teaser
+                # ("…oil is down today a…"). With the brief on the event, world_events serves OUR summary for
+                # every story with no per-click work — and the hosted/mobile feed inherits it for free.
+                if s:
+                    ev["summary"] = s
                 # THE PICTURE. A story that shipped without its own image needs a story_photo lookup at click
                 # time (1-5s — the black-hero wait). Resolve it HERE so its underlying person/place lookups are
                 # cached; the client's prefetch then returns instantly and the hero paints the moment you click.
@@ -3229,9 +3260,9 @@ class Api:
                 pass
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-                list(ex.map(one, list(events)[:300]))   # the WHOLE feed: the importance gate needs a SCOPE for
-                #   every story (a low-ranked local one at position 162 must still be scored so it can be gated),
-                #   not just the top clicks. Background + cached 30 days, so it's a one-time cost per new story.
+                list(ex.map(one, list(events)[:400]))   # the WHOLE feed (the map caps at 400): every story needs
+                #   both a baked brief AND a SCOPE for the importance gate — a low-ranked local one at position 380
+                #   must still be scored so it can be gated. Background + cached 30 days: one-time cost per new story.
         except Exception:
             pass
 
@@ -4288,7 +4319,30 @@ def _spawn_summary_prewarm(api, h, data):
             _PREWARMED.clear()
             _PREWARMED.add(key)
     events = list(data.get("events") or [])
-    threading.Thread(target=api._prewarm_summaries, args=(events,), daemon=True).start()
+
+    def _work():
+        # Summarize the feed (warms the 30-day cache AND bakes ev["summary"] onto each event), then re-save the
+        # served json so world_events hands OUR brief to the card directly — no click-time generation.
+        try:
+            api._prewarm_summaries(events)
+        finally:
+            if any(e.get("summary") for e in events):
+                try:
+                    cache = os.path.join(CACHE_DIR, "world_%dh.json" % h)
+                    # Don't clobber a NEWER feed a concurrent rebuild may have written — its own prewarm bakes it.
+                    on_disk = None
+                    if os.path.exists(cache):
+                        try:
+                            on_disk = json.load(open(cache, encoding="utf-8"))
+                        except Exception:
+                            on_disk = None
+                    if on_disk is None or on_disk.get("generated") == data.get("generated"):
+                        tmp = cache + ".tmp"
+                        json.dump(data, open(tmp, "w", encoding="utf-8"))
+                        os.replace(tmp, cache)      # atomic: a polling client reads the old OR new file, never a torn one
+                except Exception:
+                    pass
+    threading.Thread(target=_work, daemon=True).start()
 
 
 # Country name -> FIPS 10-4 code, for GDELT's sourcecountry: filter (which is NOT ISO). Keyed by the
@@ -5055,6 +5109,11 @@ def _good_img(u):
         # logos / brand marks / flags
         "/logo", "-logo", "logo.", "logo_", "_logo", "site-logo", "header-logo", "brand-", "/brand",
         "sprite", "favicon", "blank.", "watermark", "/flag", "-flag.", "flag-",
+        # Google branding — a Google-News RSS item's url is a news.google.com REDIRECT, whose og:image is the
+        # multicolour Google News mark (it shipped as a Spain wildfire story's hero). gstatic.com is Google's
+        # static-asset/branding CDN — never a news photo. (lh*.googleusercontent.com proxies REAL cached photos,
+        # so it is deliberately NOT blocked.)
+        "gstatic.com", "news.google.", "googlelogo", "google_news", "google-news", "googlenews",
         # country FLAGS, coats of arms, and LOCATOR MAPS (Wikipedia's lead image for a country is usually one
         # of these) — a flag/map is never the "picture" of a news story. Real photos are jpg/png/webp, so an
         # .svg is always a flag/logo/map. Never show one; fall back to the coloured category card instead.
@@ -5363,8 +5422,19 @@ def _cite_source(primary, dup):
     _shown = primary.get("_shown_hrs")
     if _shown is None:
         _shown = primary.get("hrs", 0) or 0
-    if (dup.get("hrs") or 0) > _shown + 0.05:
-        for k in ("title", "source", "domain", "url", "sum"):
+    if (dup.get("hrs") or 0) > _shown + 0.05 and dup.get("title") and dup.get("url"):
+        # Promote the earlier reporter's WHOLE identity as ONE unit — headline, teaser, link and byline
+        # together. SHIPPED BUG: title/url were swapped in but 'sum' was only overwritten "if dup.get('sum')",
+        # so an earlier report that carried NO wire description left the EARLIER story's headline sitting above
+        # the LATER, DIFFERENT story's body — a "DPRK slams US-ROK drills" headline over a US gasoline-price
+        # paragraph. Pair them: the teaser and flags always match the headline now shown (empty teaser is fine —
+        # the baked brief, regenerated from THIS url, fills it), never a Frankenstein of two stories.
+        primary["title"] = dup["title"]
+        primary["url"] = dup["url"]
+        primary["sum"] = dup.get("sum") or ""
+        primary["summary"] = dup.get("summary") or ""      # drop any stale brief; it belongs to the old headline
+        primary["involved"] = _involved_countries(dup["title"], primary.get("country") or "") or primary.get("involved")
+        for k in ("source", "domain"):
             if dup.get(k):
                 primary[k] = dup[k]
         primary["_shown_hrs"] = dup.get("hrs")

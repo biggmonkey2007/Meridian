@@ -1524,7 +1524,13 @@ def main():
     _lc = getattr(app, "_LARGEST_CITY", {})
     _flagurl = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Flag_of_Kuwait.svg/1280px-Flag_of_Kuwait.svg.png"
     _pf_ok = (bool(_lc) and _lc.get("Ukraine") == "kyiv" and _lc.get("Kuwait") == "kuwait city"
-              and _lc.get("Iran") == "tehran" and not app._good_img(_flagurl))
+              and _lc.get("Iran") == "tehran" and not app._good_img(_flagurl)
+              # a Google-News RSS item's url is a news.google.com REDIRECT whose og:image is the Google News
+              # mark (it shipped as a Spain wildfire hero); gstatic.com is Google branding — both rejected,
+              # while a real cached photo on the googleusercontent proxy is still kept.
+              and not app._good_img("https://news.google.com/img/logo.png")
+              and not app._good_img("https://www.gstatic.com/news/logo.svg")
+              and app._good_img("https://lh3.googleusercontent.com/proxy/abc=w800"))
     ran[0] += 1
     if not _pf_ok:
         fails.append(("photo-fallback", "country hero", "city photo, flag rejected",
@@ -1763,6 +1769,27 @@ def main():
                       "an earlier-reporting cited outlet must become the shown primary"))
     print(f"  {'ok ' if _fr_ok else 'FAIL'} first reporter promoted -> primary={_prim['source']}")
 
+    # PROMOTION PAIRS HEADLINE + BODY. SHIPPED BUG: title/url were promoted but 'sum' only "if dup.get('sum')",
+    # so an earlier report with NO wire description left the EARLIER headline over the LATER, different story's
+    # body — "DPRK slams US-ROK drills" sitting over a US gasoline-price paragraph. The promoted headline and
+    # teaser must always come from the SAME story (empty is fine — the baked brief refills it).
+    _gas = {"source": "MEM", "domain": "mem.com", "url": "https://mem.com/gas", "country": "United States",
+            "involved": ["United States", "Iran"], "hrs": 2.0,
+            "title": "US gasoline prices climb above $4 a gallon",
+            "sum": "The average gasoline price in the US climbed above $4 per gallon."}
+    _dprk = {"source": "CGTN", "domain": "cgtn.com", "url": "https://cgtn.com/dprk", "hrs": 3.0, "sum": "",
+             "title": "DPRK slams upcoming US-ROK drills as rehearsal for aggressive war"}
+    app._cite_source(_gas, _dprk)
+    _pair_ok = ("DPRK" in _gas["title"]                          # earlier reporter's headline promoted
+                and "gasoline" not in (_gas["sum"] or "").lower()   # ...and the OTHER story's body did NOT stay
+                and _gas["url"] == "https://cgtn.com/dprk")       # link matches the shown headline
+    ran[0] += 1
+    if not _pair_ok:
+        fails.append(("merge", "promotion-pairs-title-body", "no Frankenstein card",
+                      f"title={_gas['title'][:30]!r} sum={_gas['sum'][:30]!r}",
+                      "a promoted headline must never sit above a different story's body"))
+    print(f"  {'ok ' if _pair_ok else 'FAIL'} promotion pairs title+body -> sum={_gas['sum']!r}")
+
     # CASUALTY FINGERPRINT — two reports that match on BOTH killed AND injured are the same incident even
     # when they sit far apart with different wording (one on 'Black Sea', one on the named town). No geo
     # constraint, so a merge the plain same-place rule can never make. Also guards the injured extractor.
@@ -1900,6 +1927,10 @@ def main():
                  and app._sharpen_desc("against Iran earlier this year. TJP reports that Iran kept its missile capabilities.").startswith("TJP reports")   # lower-case sentence TAIL dropped -> starts at the whole sentence
                  and app._sharpen_desc("Students went on a field trip to the museum...") == "Students went on a field trip to the museum."   # a teaser "..." is dropped and the sentence is finished, never shipped mid-thought
                  and not app._sharpen_desc("The council met to discuss the budget and then...").endswith("...")  # trailing ellipsis never survives to the card
+                 # a SHORT teaser truncated mid-sentence is cut back to the last WHOLE sentence, never shipped as a
+                 # stub with a tacked-on period ("…oil is down today a.") — the shipped bug across many cards.
+                 and app._sharpen_desc("The US said keeping oil prices low is its top priority, ahead of Iran's nuclear program. “I know that oil is down today a...").endswith("nuclear program.")
+                 and app._sharpen_desc("A gunman opened fire at a market. At least nine people died. Police say the suspect fle") == "A gunman opened fire at a market. At least nine people died."
                  and app._sharpen_desc("imagery also shows significant damage to the base.")[:1].isupper())  # a lone lower-case fragment is capitalized, not shipped mid-thought
     ran[0] += 1
     if not _sharp_ok:
@@ -1945,6 +1976,7 @@ def main():
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
+             + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
              + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
              + 1    # + port-profile json extractor
