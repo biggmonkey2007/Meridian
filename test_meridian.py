@@ -536,6 +536,10 @@ GEO_CASES = [
      "Lebanon", "SHIPPED BUG: dotted the village of South Lebanon, OHIO (pop 4,346) and labelled it 'South "
      "Lebanon, United States'. 'south lebanon'/'southern lebanon' are curated to the Lebanon war zone, and the "
      "compass+country guard sends any '<compass> <country>' US town to the country when the story names it"),
+    ("Russia is shipping drone parts to Iran through the Caspian Sea, helping Tehran replenish its stockpiles", "",
+     "Caspian Sea", "SHIPPED BUG: dotted Washington/Tehran. A transit 'through the Caspian Sea' physically "
+     "happens ON the sea — 'through'/'via' are now locating prepositions, so the water route is the scene, not "
+     "the sender/receiver/background actor"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
@@ -1399,7 +1403,12 @@ def main():
     _soft_precise = (app._soft_news("Kangaroo drownings spark community concern", "")
                      and app._soft_news("Qantas passengers stranded demand refunds", "")
                      and not app._soft_news("Ukraine demands compensation for Russian war damage at UN", "")
-                     and not app._soft_news("Israel strikes Hezbollah positions, 12 killed", ""))
+                     and not app._soft_news("Israel strikes Hezbollah positions, 12 killed", "")
+                     # ONE person's personal journey is not region-changing; aggregate conflict news IS kept.
+                     and app._soft_news("Palestinian American returns to West Bank to defend his home under siege by Israeli settlers", "")
+                     and app._soft_news("Meet the family who refused to leave their village", "")
+                     and not app._soft_news("Israeli settlers attack a Palestinian village in the West Bank", "")
+                     and not app._soft_news("Zelensky returns to Kyiv to lead the war effort", ""))
     _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
               and (not _mw_soft) and (not _mw_strand) and _soft_precise)
     ran[0] += 1
@@ -1939,7 +1948,22 @@ def main():
                  # stub with a tacked-on period ("…oil is down today a.") — the shipped bug across many cards.
                  and app._sharpen_desc("The US said keeping oil prices low is its top priority, ahead of Iran's nuclear program. “I know that oil is down today a...").endswith("nuclear program.")
                  and app._sharpen_desc("A gunman opened fire at a market. At least nine people died. Police say the suspect fle") == "A gunman opened fire at a market. At least nine people died."
-                 and app._sharpen_desc("imagery also shows significant damage to the base.")[:1].isupper())  # a lone lower-case fragment is capitalized, not shipped mid-thought
+                 and app._sharpen_desc("imagery also shows significant damage to the base.")[:1].isupper()  # a lone lower-case fragment is capitalized, not shipped mid-thought
+                 # FULL BLOCK on leading junk: flag emojis (regional indicators that render as "IROM"), a
+                 # lightning bolt, a double-dash and a promo word hiding BEHIND them all get peeled off.
+                 and app._sharpen_desc("\U0001F1EE\U0001F1F7\U0001F1F4\U0001F1F2 ⚡ — NEW: UKMTO reports a vessel was struck near Hormuz.") == "UKMTO reports a vessel was struck near Hormuz."
+                 and app._sharpen_desc("\U0001F1FA\U0001F1E6 UPDATE — Ukrainian forces repelled an assault near Pokrovsk.") == "Ukrainian forces repelled an assault near Pokrovsk."
+                 # Google-News aggregator boilerplate is not a story -> treated as EMPTY, never shown as a brief.
+                 and app._sharpen_desc("Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News.") == "")
+    # WHO IS REPORTING — factual, even-handed ownership notes; ordinary/independent outlets get none.
+    _srcnote_ok = (app._source_note("TASS", "tass.com") == "Russian state media"
+                   and app._source_note("CGTN", "cgtn.com") == "Chinese state media"
+                   and app._source_note("Al Jazeera", "aljazeera.com") == "Qatari state-funded"
+                   and app._source_note("BBC", "bbc.co.uk") == "UK public broadcaster"
+                   and app._source_note("Reuters", "reuters.com") == ""            # independent -> no label
+                   and app._indepth_source("The New York Times", "nytimes.com")    # in-depth outlet -> longer brief
+                   and not app._indepth_source("Rerum Novarum", "rerumnovarum.substack.com"))
+    _sharp_ok = _sharp_ok and _srcnote_ok
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",

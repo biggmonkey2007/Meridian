@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.11"
+APP_VERSION = "1.4.12"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,9 +185,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d23"   # d23: re-geolocate EVERY dot on the new system — "south Lebanon" no longer lands in Ohio; a
-                    #      "<compass> <country>" US town resolves to the country when the story names it
-_SUM_PROMPT_VER = "16"  # 16: attribute contested claims to their source (state/partisan wires, Telegram); neutral voice
+_DATA_VER = "d24"   # d24: resweep for the source-origin note, the leading-emoji/promo/Google-News cleaning, the
+                    #      Caspian-transit + human-interest filters — and re-geolocate/re-summarize every dot.
+_SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
+                        #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
 _LEADER_VER = "l9"      # l9: re-resolve everyone with fresh photos (l6-l8 were no-ops — a duplicate _LEADER_VER
@@ -347,18 +348,20 @@ def _finish_brief(s):
     return out if len(out) >= 15 else s
 
 
-def _summarize(title, text, source=""):
+def _summarize(title, text, source="", depth=False):
     """Meridian's OWN copyright-free summary — 2-3 original sentences generated from the facts (facts aren't
     copyrightable; the wording is newly written, not copied). Cached 30 days per story. Returns "" when no
     LLM key is configured or on any error, so the caller falls back to the safe attributed lead + link.
     `source` is the reporting outlet (TASS, a Telegram channel, Reuters) — handed to the model so a contested
-    claim from a state/partisan wire is ATTRIBUTED ('Russia's TASS says…'), never stated as neutral fact."""
+    claim from a state/partisan wire is ATTRIBUTED ('Russia's TASS says…'), never stated as neutral fact.
+    `depth` = the outlet reports at length (NYT, WaPo, Reuters…), so the brief may run a little longer to
+    carry its quotes/figures — it reads more of the article and lifts the paragraph cap."""
     text = (text or "").strip()
     source = (source or "").strip()
     if not (title or text) or not _llm_available():
         return ""
-    text = text[:4500]
-    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + source + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    text = text[:7000 if depth else 4500]
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + ("D" if depth else "") + source + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             return _drop_redundant_bullets(_drop_empty_bullets(_fix_speaker_colon(
@@ -383,7 +386,12 @@ def _summarize(title, text, source=""):
               "third, paragraph of plain prose that gives the next most important context or detail. Match the "
               "length to the story: a simple item stays ONE paragraph; a big, layered story may run to about "
               "three short paragraphs. Never pad — every sentence must earn its place.\n"
-              "3. BULLETS — optionally add 1 or 2 bullets ONLY for a hard specific worth pulling out (a key "
+              + ("IN-DEPTH SOURCE: this report comes from a publication that covers stories at length, and the "
+                 "text below is rich. You MAY run a little longer — up to about FIVE short paragraphs — to carry "
+                 "the key quotes, figures and context it provides. Prefer a concrete attributed quote of a few "
+                 "words and hard numbers over generalities. Still TIGHT: every sentence earns its place, no "
+                 "padding, and the copyright rule below is absolute.\n" if depth else "")
+              + "3. BULLETS — optionally add 1 or 2 bullets ONLY for a hard specific worth pulling out (a key "
               "number, a name, a decisive detail). Every bullet must ADD something the lede did NOT already "
               "say — NEVER restate a number, place or fact that is already in the prose above (do not add a "
               "'Casualties:' bullet repeating a toll the lede gave, or a 'Location:' bullet repeating where it "
@@ -456,7 +464,7 @@ def _summarize(title, text, source=""):
               "brief.\n\n"
               "SOURCE OUTLET: " + (source or "unknown") + "\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    s = _llm_complete(system, prompt, max_tokens=620, temperature=0.3)   # headroom for up to ~3 short paragraphs
+    s = _llm_complete(system, prompt, max_tokens=(1000 if depth else 620), temperature=0.3)   # depth: ~5 short paras
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
@@ -976,7 +984,13 @@ def _clean_channel(name):
 # link, "READ: <url>", "Follow @Handle for more news". A headline — and its summary — is a sentence, not a
 # call to action. Strip it from BOTH so a link or a "go follow @them" never becomes a dot or a story body.
 _PROMO_URL    = re.compile(r"(?:https?://|www\.)\S+|\bt\.co/\S+", re.I)
-_PROMO_LEAD   = re.compile(r"^\s*(?:breaking|just\s?in|update|developing|exclusive|alert|flash|watch)\s*[-:–—]+\s*", re.I)
+_PROMO_LEAD   = re.compile(r"^\s*(?:breaking|just\s?in|update|developing|exclusive|alert|flash|watch|new|now|urgent|live|hot|latest)\s*[-:–—]+\s*", re.I)
+# Aggregator BOILERPLATE that is not a story at all — Google News' channel blurb ("Comprehensive up-to-date
+# news coverage, aggregated from sources all over the world by Google News") lands as an article's og:desc and
+# was shown verbatim as the brief. Treat any text carrying it as EMPTY so the card summarizes the real body.
+_JUNK_DESC = re.compile(
+    r"comprehensive,?\s+up-?to-?date\s+news\s+coverage|aggregated\s+from\s+sources\s+all\s+over\s+the\s+world"
+    r"|\bby\s+google\s+news\b|view\s+full\s+coverage\s+on\s+google\s+news|read\s+full\s+coverage", re.I)
 _PROMO_TAIL   = re.compile(
     r"[\s\-–—|]*follow\s+(?:@[\w.]+|us)\b.*$"                                  # "Follow @Handle …" / "Follow us …"
     r"|[\s\-–—|]*(?:subscribe|join our (?:channel|telegram|whatsapp))\b.*$"    # channel plugs
@@ -1066,7 +1080,17 @@ def _sharpen_desc(text, n=460):
     mid-air ('… researchers say' -> '… researchers say.'). RSS descriptions skipped these — only Telegram
     text was cleaned — so wire copy reached the card raw. End-stop BEFORE the clip so a complete short
     description keeps its period; a truly truncated one loses it and the UI adds an ellipsis instead."""
-    t = _strip_lead_flag(_CREDIT_BRACKET.sub(" ", _strip_promo(text or "")))
+    if _JUNK_DESC.search(text or ""):
+        return ""                           # aggregator boilerplate ("…by Google News") is not a story
+    t = _CREDIT_BRACKET.sub(" ", _strip_promo(text or ""))
+    # LEADING-JUNK LOOP — a promo word can hide BEHIND a leading emoji/flag/dash ("🇮🇷🇴🇲 ⚡ — NEW: …"): the
+    # first _strip_promo saw the emoji at ^ and skipped "NEW:", then the flag strip peeled the emoji off and
+    # left "NEW:" stranded. Peel flag+emoji+dash and re-strip the promo lead until nothing more comes off, so
+    # NO emoji, flag, "IROM"-style regional-indicator letters, dash, or promo word can open the card. Ever.
+    prev = None
+    while prev != t:
+        prev = t
+        t = _PROMO_LEAD.sub("", _LEAD_DATELINE.sub("", _strip_lead_flag(t)))
     t = re.sub(r"\s{2,}", " ", t).strip()
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
@@ -2806,6 +2830,9 @@ class Api:
         events = events[:400]                  # raised from 260 — a busy war day has more than 260 real stories
         for _e in events:
             _e.pop("_hard", None)              # transient sort key — not part of the served feed
+            # WHO IS REPORTING — a factual ownership note (computed AFTER merges/promotions, so it matches the
+            # outlet actually shown). Lets the card flag "TASS · Russian state media" so a reader weighs slant.
+            _e["srcnote"] = _source_note(_e.get("source"), _e.get("domain"))
         try:
             _assign_clips(events, _tg_all_posts())   # each clip belongs to ONE dot, feed-wide
         except Exception:
@@ -2881,6 +2908,7 @@ class Api:
                     "place": place, "country": ev_country, "hrs": round(hrs, 1),
                     "source": _domain_name(a.get("domain") or ""),
                     "domain": a.get("domain") or "", "url": url,
+                    "srcnote": _source_note(_domain_name(a.get("domain") or ""), a.get("domain") or ""),
                     "image": img if _good_img(img) else "",
                     "sum": _sharpen_desc(a.get("desc") or ""),
                     "involved": (_involved_countries(title, ev_country) or [ev_country]),
@@ -3249,13 +3277,15 @@ class Api:
         """Meridian's OWN copyright-free summary of a story (3-4 original sentences). If given only a URL it
         reads the article text first — which is NEVER shown verbatim, only summarized in new words. Cached.
         `source` (the reporting outlet) is passed through so a state/partisan wire's contested claims are
-        ATTRIBUTED, not stated as fact. Returns {"summary": ""} when no LLM key is configured."""
+        ATTRIBUTED, not stated as fact; it also decides whether the outlet earns a longer, in-depth brief.
+        Returns {"summary": ""} when no LLM key is configured."""
         try:
+            _dp = _indepth_source(source, _domain_of(url))
             body = (text or "").strip()
             if not body and url and str(url).startswith("http"):
                 d = self.article_detail(url) or {}
-                body = " ".join((d.get("paragraphs") or [])[:10]).strip() or (d.get("desc") or "")
-            return {"summary": _summarize(title or "", body, source)}
+                body = " ".join((d.get("paragraphs") or [])[:(16 if _dp else 10)]).strip() or (d.get("desc") or "")
+            return {"summary": _summarize(title or "", body, source, _dp)}
         except Exception:
             return {"summary": ""}
 
@@ -3276,7 +3306,7 @@ class Api:
                 # wire teaser we already hold (RSS <description>). This is what gives EVERY article a real "In
                 # brief" — no story is left showing the raw, truncated teaser because its page couldn't be read.
                 if not s and len((ev.get("sum") or "")) >= 60:
-                    s = _summarize(ev.get("title") or "", ev.get("sum") or "", src)
+                    s = _summarize(ev.get("title") or "", ev.get("sum") or "", src, _indepth_source(src, ev.get("domain")))
                 # BAKE OUR brief straight into the feed event. Warming the cache alone left every card depending
                 # on a click-time call that raced the scrape and, when it lost, showed the raw wire teaser
                 # ("…oil is down today a…"). With the brief on the event, world_events serves OUR summary for
@@ -5226,6 +5256,65 @@ def _domain_name(domain):
     return (core[:1].upper() + core[1:]) if core else (domain or "Source")
 
 
+# WHO IS REPORTING — a short, FACTUAL note on the outlet's ownership so a reader can weigh its likely slant.
+# It states OWNERSHIP/funding, never a verdict ("propaganda"): state-owned wires ARE state media, a fact that
+# is true whoever the state is. Deliberately EVEN-HANDED — Russian, Chinese, Iranian, Gulf, US-funded and
+# Western public broadcasters are all labelled by the same ownership standard. Each entry is (substrings, note);
+# a substring is matched against the lowercased outlet NAME and its DOMAIN, first match wins. Unknown outlets
+# get NO note (better silent than a guessed label).
+_SOURCE_ORIGIN = [
+    (("tass", "rt.com", " rt ", "russia today", "ria novosti", "ria.ru", "sputnik", "izvestia",
+      "izvestija", "rossiyskaya", "vesti", "zvezda", "regnum", "gazeta.ru"), "Russian state media"),
+    (("cgtn", "xinhua", "global times", "globaltimes", "people's daily", "peoples daily", "china daily",
+      "chinadaily", "cctv", "ecns.cn"), "Chinese state media"),
+    (("press tv", "presstv", "tasnim", "fars news", "farsnews", "fars.", "irna", "mehr news", "mehrnews",
+      "islamic republic news", "tehran times", "khamenei.ir"), "Iranian state media"),
+    (("kcna", "korean central news", "rodong"), "North Korean state media"),
+    (("anadolu", "aa.com.tr", "trt world", "trtworld", "daily sabah", "dailysabah"), "Turkish state media"),
+    (("al jazeera", "aljazeera"), "Qatari state-funded"),
+    (("wam", "emirates news agency", "the national ae", "thenationalnews"), "UAE state media"),
+    (("saudi press agency", "spa.gov", "al arabiya", "alarabiya", "asharq"), "Saudi-owned media"),
+    (("prensa latina", "granma", "cubadebate"), "Cuban state media"),
+    (("telesur",), "Venezuelan state-funded"),
+    (("wafa", "palestine news"), "Palestinian Authority media"),
+    (("syrian arab news", "sana.sy", " sana "), "Syrian state media"),
+    (("bbc",), "UK public broadcaster"),
+    (("voice of america", "voanews", "radio free europe", "rferl", "radio liberty", "radio free asia"),
+     "US government-funded"),
+    (("deutsche welle", "dw.com"), "German public broadcaster"),
+    (("france 24", "france24", "rfi ", "radio france"), "French public broadcaster"),
+    (("npr", "pbs"), "US public broadcaster"),
+]
+
+
+def _source_note(source, domain=""):
+    """A short factual ownership note for an outlet ('Russian state media', 'UK public broadcaster') or "" if
+    it's an ordinary/unknown outlet. Lets a reader gauge likely slant without the app taking a side."""
+    hay = " " + (source or "").lower().strip() + " " + (domain or "").lower().strip() + " "
+    for subs, note in _SOURCE_ORIGIN:
+        if any(s in hay for s in subs):
+            return note
+    return ""
+
+
+# Outlets that report AT LENGTH — a brief from one of these may run a little longer to carry the quotes,
+# figures and context they actually provide (see _summarize). Matched like _source_note. A wire snippet or a
+# thin aggregator is NOT here, so its brief stays tight.
+_INDEPTH_SOURCES = (
+    "new york times", "nytimes", "washington post", "washingtonpost", "wall street journal", "wsj",
+    "the guardian", "theguardian", "reuters", "associated press", "ap news", "apnews", "afp",
+    "bloomberg", "the economist", "financial times", " ft.com", "the atlantic", "bbc", "npr",
+    "politico", "foreign policy", "foreignpolicy", "der spiegel", "spiegel", "le monde", "the times",
+    "los angeles times", "latimes", "the new yorker", "propublica", "axios", "cnn", "abc news", "cbs news",
+    "nbc news", "haaretz", "times of israel", "timesofisrael", "kyiv independent", "kyivindependent",
+)
+
+
+def _indepth_source(source, domain=""):
+    hay = " " + (source or "").lower().strip() + " " + (domain or "").lower().strip() + " "
+    return any(s in hay for s in _INDEPTH_SOURCES)
+
+
 # Outlets the user has HIDDEN from the map — no dots, no citations. Matched as a lowercase substring of an
 # article's domain or source name, so "theguardian.com" also hides www./amp. variants. Code default plus a
 # user-editable muted_sources.txt (one entry per line, # comments) in DATA_DIR — if that file exists it
@@ -5382,6 +5471,16 @@ _SOFT_NEWS = re.compile(
     r"|kangaroos?|koalas?|wombats?|platypus|possums?"
     r"|animal\s+welfare|wildlife\s+(?:concern|rescue|welfare)|stray\s+(?:dogs?|cats?)"
     r"|community\s+concern|goes?\s+viral|heart-?warming|feel-?good"
+    # HUMAN-INTEREST PROFILE — ONE person's personal journey/struggle is not region-changing news (a
+    # "Palestinian American returns to defend his home" story). Narrowly worded so AGGREGATE conflict news
+    # ("settlers attack a village", "10 killed in a raid") is NOT caught: it needs the personal 'his/her/their
+    # home/family' frame, or an explicit "meet the…"/"one man's story" profile lead-in.
+    r"|(?:returns?|returning|travell?ed|travels?|flies|flew|journeys?|heads?\s+back|comes?\s+back|went\s+back)"
+    r"\s+(?:\w+\s+){0,5}?to\s+(?:defend|save|rebuild|reclaim|protect|fight\s+for|be\s+with|reunite\s+with)"
+    r"\s+(?:his|her|their)\s+(?:home|homes|family|land|village|town|people|community|farm|house)"
+    r"|meet\s+the\s+(?:man|woman|family|father|mother|refugee|survivor|teen|boy|girl|grandmother|grandfather|widow)"
+    r"|one\s+(?:man|woman|family|father|mother|refugee|survivor|villager|farmer|girl|boy)(?:'s|’s)\s+(?:story|journey|fight|struggle|battle|mission|quest|ordeal|life)"
+    r"|a\s+(?:father|mother|widow|refugee|survivor|grandmother|grandfather|daughter|son)(?:'s|’s)\s+(?:story|journey|fight|struggle|battle|ordeal|mission)"
     r")\b", re.I)
 
 
@@ -6762,7 +6861,11 @@ def _co_short(name):
             "United Arab Emirates": "UAE"}.get(name, name)
 
 
-_GEO_PREP = {"in", "at", "near", "across", "outside", "throughout", "around", "amid", "inside", "over", "above"}
+_GEO_PREP = {"in", "at", "near", "across", "outside", "throughout", "around", "amid", "inside", "over", "above",
+             # TRANSIT prepositions: an event that moves "through"/"via" a place happens THERE — a shipment
+             # "through the Caspian Sea" is on the Caspian, not at the sender/receiver. SHIPPED BUG: "Russia
+             # shipping to Iran through the Caspian Sea" dotted Tehran (and earlier Washington), not the sea.
+             "through", "via"}
 # "the <these> OF X" declares X a place — enough locational context to accept a small (weak) town.
 _PLACE_OF_NOUNS = {"town", "village", "city", "port", "district", "province", "region", "outskirts",
                    "suburb", "suburbs", "municipality", "borough", "county", "settlement", "hamlet",
