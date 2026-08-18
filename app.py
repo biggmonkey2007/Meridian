@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.10"
+APP_VERSION = "1.4.11"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d22"   # d22: the Groq model 404'd, so NO summary ever generated — swept so every event re-summarizes
-                    #      on the working model, with neutral source-attribution and the Zaporizhzhia-NPP geo fix
+_DATA_VER = "d23"   # d23: re-geolocate EVERY dot on the new system — "south Lebanon" no longer lands in Ohio; a
+                    #      "<compass> <country>" US town resolves to the country when the story names it
 _SUM_PROMPT_VER = "16"  # 16: attribute contested claims to their source (state/partisan wires, Telegram); neutral voice
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -6230,6 +6230,12 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "kennedy space center": (28.573, -80.649, "United States of America"),
     "west bank": (31.95, 35.3, "Palestine"),
     "gaza strip": (31.42, 34.35, "Palestine"),
+    # Lebanon's regions as the wire writes them — the war zone UNIFIL/Israel report on. Curated here so the
+    # exact phrase "south Lebanon" pins southern Lebanon, NOT the village of South Lebanon, Ohio (pop 4,346)
+    # that GeoNames offers under the same two words. SHIPPED BUG: dotted Ohio, labelled "South Lebanon, US".
+    "south lebanon": (33.36, 35.37, "Lebanon"), "southern lebanon": (33.36, 35.37, "Lebanon"),
+    "north lebanon": (34.44, 35.84, "Lebanon"), "northern lebanon": (34.44, 35.84, "Lebanon"),
+    "east lebanon": (33.85, 35.90, "Lebanon"), "eastern lebanon": (33.85, 35.90, "Lebanon"),
     "donbas": (48.5, 37.8, "Ukraine"),
     "crimea": (45.3, 34.4, "Ukraine"),
     # Far-east Russian refinery cities/regions the wire names in Ukrainian long-range drone-strike news but
@@ -7279,6 +7285,24 @@ def _ner_vetoes(spans, cs, ce, weak, supported, located):
     return False
 
 
+_COMPASS_WORDS = {"north", "south", "east", "west", "northern", "southern", "eastern", "western",
+                  "central", "upper", "lower", "northeast", "northwest", "southeast", "southwest"}
+_COUNTRY_WORD_MAP = None
+
+
+def _country_word_map():
+    """Lowercase SINGLE-word country names -> canonical COUNTRY_COORDS key, MINUS names that are also common
+    US places or ordinary words (georgia the state, jordan/chad/guinea as US towns/forenames, turkey/china as
+    words). Used by the compass+country guard so it converts 'South Lebanon' -> Lebanon but never trips on a
+    genuine US story."""
+    global _COUNTRY_WORD_MAP
+    if _COUNTRY_WORD_MAP is None:
+        ambiguous = {"georgia", "jordan", "chad", "guinea", "turkey", "china", "niger", "mali"}
+        _COUNTRY_WORD_MAP = {co.lower(): co for co in COUNTRY_COORDS
+                             if " " not in co and co.lower() not in ambiguous}
+    return _COUNTRY_WORD_MAP
+
+
 def _statement_country(words):
     """'Trump threatens to decimate Iran' -> United States (nothing has happened in Iran yet).
     Only fires when the official is the SUBJECT (near the start) and a saying-verb follows."""
@@ -8224,6 +8248,21 @@ def _geolocate(title, sourcecountry, desc="", url=""):
                 return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
         best = _pick_place(hits, words)
+        # "<Compass> <Country>" is a foreign REGION that GeoNames ALSO lists as a small US town — "South
+        # Lebanon" is southern Lebanon, not the village of South Lebanon, Ohio. Convert ONLY when the story
+        # itself names that country elsewhere (in its desc, or in the title beyond the town span), so a genuine
+        # "West Jordan, Utah" local story stays put. SHIPPED BUG: an "Israeli activity in south Lebanon" dot
+        # (UNIFIL, Israel) landed in Ohio and was labelled "South Lebanon, United States".
+        if best[5] == "United States of America" and best[1] == "city":
+            _p = (best[7] or "").split()
+            if len(_p) == 2 and _p[0] in _COMPASS_WORDS:
+                _fco = _country_word_map().get(_p[1])
+                if _fco and _fco in COUNTRY_COORDS:
+                    _bp = best[0]
+                    _elsewhere = any(w == _p[1] for k, w in enumerate(words) if k not in (_bp, _bp + 1))
+                    if _elsewhere or re.search(r"\b" + re.escape(_p[1]) + r"\b", (desc or "").lower()):
+                        _la, _ln = COUNTRY_COORDS[_fco]
+                        return _la, _ln, best[4].split(",")[0] + ", " + _co_short(_fco), _fco
         # A country named only as the OTHER SIDE of a conflict ('conflict WITH Russia') is a PARTY, not the
         # scene. If that's what the rules picked and the story names a DIFFERENT country/demonym as its
         # subject, prefer that. SHIPPED: 'Siding with West in conflict with Russia unacceptable for Serbs'

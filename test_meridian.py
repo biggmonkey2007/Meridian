@@ -532,6 +532,10 @@ GEO_CASES = [
      "Zaporizhzhia", "SHIPPED BUG: dotted KIEV. NER mislabelled 'Zaporozhye NPP' as a two-word PERSON and the "
      "covers_more veto deleted it even though 'Attacks ON Zaporozhye' locates it — leaving only 'Kiev regime', "
      "an attributive label, as the scene. The located facility (the plant) must win, not the government's seat"),
+    ("The past two weeks have seen a marked increase in Israeli military activity in south Lebanon", "",
+     "Lebanon", "SHIPPED BUG: dotted the village of South Lebanon, OHIO (pop 4,346) and labelled it 'South "
+     "Lebanon, United States'. 'south lebanon'/'southern lebanon' are curated to the Lebanon war zone, and the "
+     "compass+country guard sends any '<compass> <country>' US town to the country when the story names it"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
