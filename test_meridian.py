@@ -674,6 +674,18 @@ CLIP_CASES = [
     ("Russian attack on corn ship off Ukraine's Odesa kills 10",
      "Footage of the burning cargo ship off Odesa after the Russian missile strike.", True,
      "the ACTUAL ship footage shares 'ship' beyond the place and must still attach"),
+    # A SHARED TOPIC + SHARED PLACE IS NOT THE SAME STORY. Three different Strait-of-Hormuz oil stories all
+    # share {oil, shipping, cargo, trade} and the Strait, but are distinct events — topic-generic words and
+    # the place-name must not attach one's media to another.
+    ("Iraq's oil marketing company said Abu Dhabi's main energy company was among firms buying its crude and sending cargoes out through the Strait of Hormuz.",
+     "Chinese state-owned shipping giants COSCO and CMES have stopped sending oil tankers through the Strait of Hormuz and Bab al-Mandeb due to security risks, Reuters reports.", False,
+     "SHIPPED BUG: an 'Iraq sells crude via Hormuz' dot pulled a 'China avoids Hormuz' clip — shared only {oil, shipping} + the Strait"),
+    ("Iraq's oil marketing company said Abu Dhabi's main energy company was among firms buying its crude and sending cargoes out through the Strait of Hormuz.",
+     "U.S. officials say Oman is making progress in talks with Iran to allow more commercial shipping through the Strait of Hormuz, easing pressure on global energy markets, WSJ reports.", False,
+     "the Oman/US nuclear-talks clip is a different story from the Iraq crude sale — same topic + place is not the same event"),
+    ("Chinese shipping giants COSCO and CMES stop sending tankers through the Strait of Hormuz over security fears",
+     "Footage: a COSCO tanker reroutes around the Cape as CMES halts Strait of Hormuz transits.", True,
+     "the SAME story (COSCO/CMES pulling out) shares the distinctive company names beyond the place and must attach"),
 ]
 
 # Two DIFFERENT events must not be merged. (headline_a, headline_b, same_event?, why)

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.13"
+APP_VERSION = "1.4.14"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d25"   # d25: resweep for the higher bar (lone-accident + festival/lifestyle filters), crypto-spam
-                    #      drop, Google-News-logo hero fix, the "- Reuters" byline strip, and fuller national-paper briefs.
+_DATA_VER = "d26"   # d26: re-assign every clip/photo with the tighter media matcher (same EVENT, not just same
+                    #      topic + place) — and resweep the feed so all dots re-run under the current system.
 _SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -4019,6 +4019,25 @@ def _init_weak_match():
         _WEAK_MATCH.add(_stem(w))
 
 
+# TOPIC-GENERIC words — the vocabulary EVERY story on a subject shares, so they cannot prove two posts are the
+# SAME event. "Iraq sells crude via Hormuz" and "China avoids Hormuz" share {oil, shipping, cargo, trade, firm}
+# and the Strait, yet are different stories. Distinct from _GENERIC_WORDS (conflict filler). DELIBERATELY
+# EXCLUDES concrete subjects that DO pin an event — "tanker"/"ship"/"refinery"/"supermarket"/"pub"/"fire".
+_TOPIC_GENERIC = set(_stem(w) for w in (
+    "oil gas crude fuel energy petroleum diesel gasoline petrol lng shipping cargo cargoes freight export "
+    "exports import imports trade shipment shipments barrel barrels pipeline terminal market markets price "
+    "prices supply commercial global economy economic company companies firm firms giant giants buyer buyers "
+    "seller sellers deal deals sanction sanctions tariff tariffs official officials source sources report "
+    "reports reported statement says said told claim claims reuters bloomberg wsj afp anadolu "
+    # locational/connective function words that leak through _sigwords and must never count as a subject
+    "through via across into onto amid among between within toward towards along about after over "
+    # generic transaction/motion verbs — every trade/shipping story has them; not a shared SUBJECT
+    "send sending sent buy buying bought sell selling sold stop stops stopped stopping allow allows allowed "
+    "make makes making made move moves moving moved ease easing eased bring brings brought raise raises raising "
+    "plan plans planned seek seeks progress talks talk meeting meet"
+).split())
+
+
 def _clip_matches(event_title, clip_text):
     """Does this clip belong to this story? Three gates, all needed:
        1) the clip must BE ABOUT the event — see below,
@@ -4037,30 +4056,39 @@ def _clip_matches(event_title, clip_text):
     if not _WEAK_MATCH:
         _init_weak_match()
     subject = _tg_headline(clip_text) or (clip_text or "")
-    shared_names = (_proper_words(event_title) & _proper_words(subject)) - _WEAK_MATCH
-    if not shared_names:
-        return False
     ev = _geolocate(event_title, "", "")
     cl = _geolocate(subject, "", subject)
-    # country/demonym words identify nothing in a war where every story says "Russian" and "Ukraine"
-    shared_words = (_sigwords(event_title) & _sigwords(subject)) - _GENERIC_WORDS - _WEAK_MATCH
-    # A SHARED LOCATION IS NOT A SHARED SUBJECT. Two Ukraine stories both set in Odesa — a ship struck
-    # OFF the coast, and a street PROTEST — are both in Ukraine and both say "Odesa", but the protest is
-    # not footage of the ship attack. Strip the event's OWN place before judging distinctiveness; if the
-    # only thing shared is that place, the clip merely happens to be in the same town.
+    # A SHARED PLACE IS NOT A SHARED SUBJECT, and neither is TOPIC-GENERIC vocabulary. Two different stories
+    # set at the same spot on the same topic — "Iraq sells crude via the Strait of Hormuz" and "China stops
+    # shipping oil through the Strait of Hormuz" — share the place-name AND {oil, shipping, cargo, trade}, yet
+    # they are DIFFERENT events. Strip BOTH the location (of either story) and the topic words from the shared
+    # names and words, so a match needs a shared SPECIFIC subject: a company/person/ship/city, or a distinctive
+    # non-topic word (the "tankers" that ties two Sea-of-Azov posts, the "supermarket" hit in Zaporozhye).
     ev_place = (ev[2] if ev else "") or ""
-    place_toks = _proper_words(ev_place) | _sigwords(ev_place)
-    if not ((shared_names | shared_words) - place_toks):
-        return False
-    # SAME COUNTRY IS NOT ENOUGH ON ITS OWN. Two unrelated US stories that both merely name "Trump" (or any
-    # ubiquitous figure) are NOT the same event — a shared name needs a shared TOPIC to prove it. SHIPPED:
-    # a "Trump slams California's minimum wage" dot pulled in Trump clips about Hamas and about a Minnesota
-    # cyberattack, purely on the shared name + same country. Require a SECOND distinctive token: another
-    # name, or a content word the two stories share (beyond the event's own place).
-    strong = len(shared_names) >= 2 or bool((shared_words - place_toks) - shared_names)
-    if ev and cl and ev[3] and cl[3] == ev[3] and strong:
-        return True
-    return len(shared_names) >= 2 and len(shared_words) >= 2
+    cl_place = (cl[2] if cl else "") or ""
+    place_toks = (_proper_words(ev_place) | _sigwords(ev_place)
+                  | _proper_words(cl_place) | _sigwords(cl_place))
+    _shared_proper = _proper_words(event_title) & _proper_words(subject)
+    shared_names = _shared_proper - _WEAK_MATCH - place_toks
+    # the distinctive WORDS must be CONTENT words, not the shared names again — a lone ubiquitous name (Trump)
+    # that is also a sigword must not sneak in as a "shared word" and pass the single-word bar.
+    shared_words = ((_sigwords(event_title) & _sigwords(subject))
+                    - _GENERIC_WORDS - _WEAK_MATCH - _TOPIC_GENERIC - place_toks - _shared_proper)
+    if not (shared_names or shared_words):
+        return False                                   # nothing SPECIFIC shared beyond the place + the topic
+    # SAME PLACE or SAME COUNTRY: one shared distinctive name OR word is the same event (the Odesa ship footage,
+    # the Zaporozhye supermarket aftermath). SAME PLACE is checked too because a shared body of water gets a
+    # different nominal COUNTRY depending on the actor named ("Russian tankers" -> Russia, "Ukrainian drones"
+    # -> Ukraine) even though both posts are the ONE strike in the Sea of Azov. CROSS-BORDER (a person-led
+    # story, Trump on Lindsey Graham): a strong NAME match stands in for the missing shared location.
+    same_place = bool(ev_place and cl_place and ev_place == cl_place)
+    same_country = bool(ev and cl and ev[3] and cl[3] == ev[3])
+    # A single ubiquitous NAME alone (Trump + same country) is NOT the same event — it needs a shared
+    # distinctive WORD, or a SECOND name. A single distinctive WORD (the "tanker"/"supermarket"/"pub") is
+    # enough because it names the actual subject, not just a person the two stories both mention.
+    if same_place or same_country:
+        return len(shared_names) >= 2 or len(shared_words) >= 1
+    return len(shared_names) >= 2
 
 
 def _clip_score(event_title, clip_text):
