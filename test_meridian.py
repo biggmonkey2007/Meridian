@@ -1408,7 +1408,16 @@ def main():
                      and app._soft_news("Palestinian American returns to West Bank to defend his home under siege by Israeli settlers", "")
                      and app._soft_news("Meet the family who refused to leave their village", "")
                      and not app._soft_news("Israeli settlers attack a Palestinian village in the West Bank", "")
-                     and not app._soft_news("Zelensky returns to Kyiv to lead the war effort", ""))
+                     and not app._soft_news("Zelensky returns to Kyiv to lead the war effort", "")
+                     # LOCAL LIFESTYLE — a festival/concert is not world news; a deadly stampede at one IS.
+                     and app._soft_news("Free Beer Festival Hits Belo Horizonte Saturday With 30 Local Brews", "")
+                     and app._soft_news("Rio jazz festival returns this weekend", "")
+                     and not app._soft_news("Stampede at a festival kills 10", "")
+                     # a LONE ACCIDENTAL death is local; a mass toll or a violent death stays on the map.
+                     and app._soft_news("Electricity worker dies in electrocution incident", "")
+                     and app._soft_news("Driver killed in road accident", "")
+                     and not app._soft_news("20 die in a road accident in Nigeria", "")
+                     and not app._soft_news("Soldiers killed in a Russian strike", ""))
     _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
               and (not _mw_soft) and (not _mw_strand) and _soft_precise)
     ran[0] += 1
@@ -1962,7 +1971,18 @@ def main():
                    and app._source_note("BBC", "bbc.co.uk") == "UK public broadcaster"
                    and app._source_note("Reuters", "reuters.com") == ""            # independent -> no label
                    and app._indepth_source("The New York Times", "nytimes.com")    # in-depth outlet -> longer brief
+                   and app._indepth_source("Premium Times", "premiumtimesng.com")  # a national paper -> fuller brief too
                    and not app._indepth_source("Rerum Novarum", "rerumnovarum.substack.com"))
+    # SPAM / SCAM / channel-plug posts (a crypto-signals ad, a WhatsApp-invite pump) are dropped; real news kept.
+    _spam_ok = (app._is_spam("Join this Bitcoin platform for BTC market signals before everyone else catches on. JOIN AND READ HERE: https://chat.whatsapp.com/FK21")
+                and app._is_spam("DM us to join our VIP signals group for guaranteed profit")
+                and not app._is_spam("Bitcoin hits $90k as US SEC approves a spot ETF, Reuters reports")
+                and not app._is_spam("Russia strikes Kyiv, 12 killed"))
+    _srcnote_ok = _srcnote_ok and _spam_ok
+    # BYLINE STRIP — a short "… - Reuters" headline loses its outlet suffix too (was only stripped over 55 chars),
+    # while a compound ("anti-corruption") and a tiny head ("War - what is it") are left intact.
+    _srcnote_ok = _srcnote_ok and (app._clean_headline("UAE says Iran launched two missiles at it - Reuters") == "UAE says Iran launched two missiles at it"
+                                   and app._clean_headline("Suspect detained in anti-corruption sweep") == "Suspect detained in anti-corruption sweep")
     _sharp_ok = _sharp_ok and _srcnote_ok
     ran[0] += 1
     if not _sharp_ok:

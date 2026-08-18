@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.12"
+APP_VERSION = "1.4.13"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d24"   # d24: resweep for the source-origin note, the leading-emoji/promo/Google-News cleaning, the
-                    #      Caspian-transit + human-interest filters — and re-geolocate/re-summarize every dot.
+_DATA_VER = "d25"   # d25: resweep for the higher bar (lone-accident + festival/lifestyle filters), crypto-spam
+                    #      drop, Google-News-logo hero fix, the "- Reuters" byline strip, and fuller national-paper briefs.
 _SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -1320,6 +1320,29 @@ def _thumb_ok(url):
         return False
 
 
+# A PROMOTIONAL / SCAM / CHANNEL-PLUG post is not news — a crypto-"signals" ad, a "JOIN AND READ HERE"
+# WhatsApp invite, a get-rich pump. These strong signals rarely appear in a real news post, so a match drops
+# the WHOLE post (not just cleans it). Kept tight: a legit "US SEC approves a Bitcoin ETF" story has none of
+# an invite link, a "trading signals" plug, or pump language.
+_SPAM_RE = re.compile(
+    r"chat\.whatsapp\.com|t\.me/joinchat|t\.me/\+|wa\.me/"                              # group-invite links
+    r"|\b(?:btc|crypto|bitcoin|forex|fx|trading|market|stock)\s+signals?\b"             # "BTC market signals"
+    r"|\bjoin\s+(?:this|our|the|and\s+read)\b[^.\n]{0,60}?"
+    r"(?:platform|group|channel|community|signals?|crypto|bitcoin|forex|trading|vip|telegram|whatsapp)"
+    r"|before\s+(?:everyone|anyone)\s+else\s+catches"                                    # "…before everyone else catches on"
+    r"|\b(?:100x|1000x|10x)\b|to\s+the\s+moon|get\s+rich|financial\s+freedom"
+    r"|guaranteed\s+(?:profit|returns?|income)|risk-?free\s+(?:profit|returns?)"
+    r"|\bdm\s+(?:me|us)\b[^.\n]{0,40}(?:join|invest|signals?|profit|earn)"
+    r"|(?:sign\s?up|register)\b[^.\n]{0,40}(?:free|bonus|signals?|earn|profit)"
+    r"|promo\s*code|referral\s+(?:code|link)|use\s+code\s+[A-Z0-9]{4,}",
+    re.I)
+
+
+def _is_spam(text):
+    """A promotional / scam / channel-plug post (crypto-signals ad, WhatsApp-invite pump) — drop it entirely."""
+    return bool(_SPAM_RE.search(text or ""))
+
+
 def _tg_arts(h):
     """Recent geolocatable Telegram posts, shaped like RSS 'arts' so world_events can map them as dots."""
     channels = _tg_channels()
@@ -1346,6 +1369,8 @@ def _tg_arts(h):
             hrs = (now - ts) / 3600.0
             if hrs < 0 or hrs > h:
                 continue
+            if _is_spam(p.get("text") or ""):
+                continue                                # a crypto-signals ad / WhatsApp-invite pump — not news
             head = _tg_headline(p.get("text") or "")
             if not _tg_reliable(head):
                 continue
@@ -2684,6 +2709,8 @@ class Api:
                 continue
             if _is_fluff(title, url) or _is_muted(a.get("domain"), a.get("_src"), url):
                 continue
+            if _is_spam(title + " " + (a.get("desc") or "")):     # crypto-signals ad / invite-link pump — not news
+                continue
             norm = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()[:55]
             if norm in seen_titles:
                 continue
@@ -3280,11 +3307,14 @@ class Api:
         ATTRIBUTED, not stated as fact; it also decides whether the outlet earns a longer, in-depth brief.
         Returns {"summary": ""} when no LLM key is configured."""
         try:
-            _dp = _indepth_source(source, _domain_of(url))
             body = (text or "").strip()
             if not body and url and str(url).startswith("http"):
                 d = self.article_detail(url) or {}
-                body = " ".join((d.get("paragraphs") or [])[:(16 if _dp else 10)]).strip() or (d.get("desc") or "")
+                body = " ".join((d.get("paragraphs") or [])[:16]).strip() or (d.get("desc") or "")
+            # A fuller brief when the OUTLET reports at length OR the SCRAPED BODY is itself substantial — so a
+            # big article from ANY real paper (Premium Times, a national daily) carries at least a paragraph,
+            # not two sentences. A thin wire snippet still gets a tight brief.
+            _dp = _indepth_source(source, _domain_of(url)) or len(body) >= 1600
             return {"summary": _summarize(title or "", body, source, _dp)}
         except Exception:
             return {"summary": ""}
@@ -3346,6 +3376,16 @@ class Api:
             except Exception as ex:
                 return {"error": str(ex)}
             data = _extract_article(page)
+            # A GOOGLE-NEWS REDIRECT never serves the real article to a scraper — urllib lands on Google's
+            # interstitial, whose og:image is the multicolour Google News LOGO and whose "body" is Google
+            # chrome. Blank both so the hero falls back to a real place/subject photo (story_photo) and the
+            # brief is written from the RSS teaser, never "brought to you by Google News". SHIPPED BUG: a
+            # "UAE says Iran launched two missiles" card wore the Google News logo as its photo.
+            if "news.google." in (url or "").lower():
+                data["image"] = ""
+                data["paragraphs"] = []
+                if _JUNK_DESC.search(data.get("desc") or ""):
+                    data["desc"] = ""
             try:
                 json.dump(data, open(cache, "w", encoding="utf-8"))
             except Exception:
@@ -5134,13 +5174,14 @@ def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links, "Follow @x for more news", @handles
     t = re.sub(r"\s+([,.;:!?])", r"\1", t)                       # GDELT spaces before punctuation
-    if len(t) > 55:
-        # strip a trailing " - Outlet". The separator MUST have whitespace before it — an outlet
-        # suffix is " - Reuters", never touching the word. SHIPPED BUG: `\s*` made that space
-        # optional, so the hyphen inside "anti-corruption campaign" counted as a separator and the
-        # headline was chopped to "...detained in anti". Compounds (anti-, pro-, U-turn, COVID-19)
-        # and ranges (2020–2024) have NO space before the dash and are now safe.
-        t = re.sub(r"\s+[-–—|]\s*[^-–—|]{2,32}$", "", t)
+    # strip a trailing " - Outlet" whenever a REAL headline (>= 20 chars) remains before the dash — so a short
+    # "UAE says … at it - Reuters" (~50 chars) loses its byline too, not just long ones. SHIPPED BUG: the old
+    # `len(t) > 55` gate left "- Reuters" on shorter headlines. The separator needs whitespace on BOTH sides
+    # (" - Reuters"), so a compound ("anti-corruption", "U-turn", "COVID-19") or a range ("2020–2024") — none
+    # of which space the dash — is never chopped.
+    _m = re.match(r"^(.*\S)\s+[-–—|]\s+[^-–—|]{2,32}$", t)
+    if _m and len(_m.group(1)) >= 20:
+        t = _m.group(1)
     t = re.sub(r"\s{2,}", " ", t).strip()
     if len(t) <= 200:
         return t
@@ -5307,6 +5348,14 @@ _INDEPTH_SOURCES = (
     "politico", "foreign policy", "foreignpolicy", "der spiegel", "spiegel", "le monde", "the times",
     "los angeles times", "latimes", "the new yorker", "propublica", "axios", "cnn", "abc news", "cbs news",
     "nbc news", "haaretz", "times of israel", "timesofisrael", "kyiv independent", "kyivindependent",
+    # major NATIONAL / quality papers worldwide — they publish full articles, so their briefs run fuller
+    "premium times", "premiumtimes", "the punch", "punchng", "vanguard", "the nation", "thisday", "daily trust",
+    "the guardian nigeria", "daily nation", "the standard", "the east african", "mail & guardian", "news24",
+    "the citizen", "the hindu", "times of india", "hindustan times", "indian express", "dawn", "the daily star",
+    "the diplomat", "al-monitor", "al monitor", "nikkei", "south china morning post", "scmp", "straits times",
+    "the jakarta post", "the korea herald", "yonhap", "kyodo", "the japan times", "el país", "el pais",
+    "le figaro", "der standard", "corriere", "la repubblica", "el universal", "clarín", "clarin", "la nación",
+    "folha", "o globo", "the moscow times", "novaya", "meduza", "rappler", "the irish times",
 )
 
 
@@ -5444,13 +5493,33 @@ _STRATEGIC_FACILITY = re.compile(
     r"arms\s+depot|weapons?\s+depot|munitions?\s+depot|drone\s+factory|missile\s+(?:plant|factory))\b")
 
 
+# A LONE ACCIDENTAL casualty is LOCAL news. An electrocution, a single drowning/road/workplace accident,
+# a fall — these kill someone but change nothing beyond the family, so they must NOT auto-qualify as
+# world-map "hard news" the way a strike or a shooting does. Only a VIOLENT cause or a MASS event does.
+_ACCIDENTAL = re.compile(
+    r"\b(electrocut\w*|drown\w*|road\s+accident|traffic\s+accident|car\s+crash|road\s+crash|workplace\s+accident|"
+    r"industrial\s+accident|construction\s+accident|fell\s+(?:from|to|into)|slipped|collaps\w*|accidental\w*|"
+    r"mishap|lightning|snakebite|snake\s+bite|electrical\s+fault)\b", re.I)
+_VIOLENT_CAUSE = re.compile(
+    r"\b(strike|strikes|struck|attack\w*|shell\w*|shot|shoot\w*|gun\w*|stab\w*|bomb\w*|blast|explos\w*|"
+    r"airstrike|air\s+strike|missile|drone|raid\w*|killed\s+by|murder\w*|assassinat\w*|clash\w*|militant\w*|"
+    r"terror\w*|forces|troops|soldier\w*|gunman|shelling|ambush|massacre|beheaded|lynch\w*|riot\w*)\b", re.I)
+
+
 def _hard_news(title, desc=""):
     """A deterministic 'this matters regardless' net for the importance gate — so the world map NEVER hides a
     mass-casualty event, a top-official statement, or a strike on strategic infrastructure, even if the AI
     rated the wording 'local'. Everything else defers to the AI's SCOPE."""
     t = title or ""
-    if _death_toll(t) or _death_toll(desc or "") or _injured_toll(t):
-        return True                                    # a shooting / attack / disaster with casualties
+    both = t + " " + (desc or "")
+    _toll = _death_toll(t) or _death_toll(desc or "")
+    if _toll or _injured_toll(t):
+        # A LONE ACCIDENTAL death/injury (a workplace electrocution, one road accident) is LOCAL — defer it to
+        # the AI scope instead of forcing it onto the world map. A mass event (3+) or a VIOLENT cause is kept.
+        if (_toll or 0) <= 2 and _ACCIDENTAL.search(both) and not _VIOLENT_CAUSE.search(both):
+            pass
+        else:
+            return True                                # a shooting / attack / disaster with casualties
     if _MAJOR_ACTOR.search(t) and _TG_STMT_VERB.search(t):
         return True                                    # a government / leader / institution on the record
     both = (title or "") + " " + (desc or "")
@@ -5471,6 +5540,23 @@ _SOFT_NEWS = re.compile(
     r"|kangaroos?|koalas?|wombats?|platypus|possums?"
     r"|animal\s+welfare|wildlife\s+(?:concern|rescue|welfare)|stray\s+(?:dogs?|cats?)"
     r"|community\s+concern|goes?\s+viral|heart-?warming|feel-?good"
+    # LOCAL LIFESTYLE / EVENTS — a beer festival, a concert, a fair. Zero geopolitical consequence, so never
+    # a world dot (the STARRED-country feed still carries them). Gated after _hard_news, so a deadly stampede
+    # or an attack AT a festival — which carries casualties — is never caught here.
+    r"|(?:beer|wine|food|music|jazz|art|arts|cultural|street|craft|folk|film|comedy|book|seafood|coffee)\s+(?:festival|fair|fest)"
+    r"|festival\s+(?:hits|opens|returns|kicks\s+off|features|celebrates|draws|brings)"
+    r"|free\s+(?:beer|drinks?|food|entry|concerts?)|local\s+brews?|craft\s+(?:beer|brews?)"
+    r"|(?:concert|gig|carnival|parade|pageant|gala|marathon|fun\s+run|fashion\s+week|comic\s+con|"
+    r"food\s+fair|street\s+fair|county\s+fair|state\s+fair|talent\s+show|beauty\s+pageant)\b"
+    r"|things\s+to\s+do|what'?s\s+on\s+this\s+weekend|weekend\s+guide|line-?up\s+includes"
+    r"|celebrity|red\s+carpet|box\s+office|reality\s+(?:tv|show)|dating\s+show"
+    # A LONE ACCIDENTAL death — one worker electrocuted, a man drowned, a driver in a road accident — is a
+    # local incident, not world news. Needs a SINGLE person-role AND an accidental cause, so a mass toll
+    # ("20 die in a road accident") — which has no role word — and a violent death are never caught here.
+    r"|(?:worker|labou?rer|man|woman|driver|electrician|miner|farmer|pedestrian|resident|villager|student|"
+    r"youth|boy|girl|guard|employee|technician|artisan|trader|conductor|cyclist|motorist|apprentice)\s+"
+    r"(?:\w+\s+){0,4}?(?:electrocut\w*|drown\w*|in\s+(?:an?\s+)?(?:road|traffic|car|workplace|construction|"
+    r"industrial|electrocution|drowning|boat|ferry|mining)\s+(?:accident|incident|mishap|crash))"
     # HUMAN-INTEREST PROFILE — ONE person's personal journey/struggle is not region-changing news (a
     # "Palestinian American returns to defend his home" story). Narrowly worded so AGGREGATE conflict news
     # ("settlers attack a village", "10 killed in a raid") is NOT caught: it needs the personal 'his/her/their
