@@ -1581,7 +1581,11 @@ def main():
               # while a real cached photo on the googleusercontent proxy is still kept.
               and not app._good_img("https://news.google.com/img/logo.png")
               and not app._good_img("https://www.gstatic.com/news/logo.svg")
-              and app._good_img("https://lh3.googleusercontent.com/proxy/abc=w800"))
+              and app._good_img("https://lh3.googleusercontent.com/proxy/abc=w800")
+              # a historical/topographic MAP is not a photo (a 1957 Victoria Harbour map slipped through onto a hero)
+              and not app._good_img("https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/1957_map_of_Victoria_Harbour.jpg/1280px-x.jpg")
+              # city-states/microstates have a curated landmark query so their hero is never a rejected flag/black frame
+              and app._PLACE_PHOTO_QUERY.get("singapore") and app._PLACE_PHOTO_QUERY.get("hong kong"))
     ran[0] += 1
     if not _pf_ok:
         fails.append(("photo-fallback", "country hero", "city photo, flag rejected",

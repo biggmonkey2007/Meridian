@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.19"
+APP_VERSION = "1.4.20"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d31"   # d31: resweep for the location overhaul (Sabah/regions, despite-amid/against context, an AI
-                    #      second-opinion VOTE on disagreements) + baked story photos so heroes paint instantly.
+_DATA_VER = "d32"   # d32: resweep to re-bake hero photos — city-states (Singapore/Hong Kong) now resolve a real
+                    #      skyline via a curated landmark query instead of a rejected flag/black frame; maps filtered.
 _SUM_PROMPT_VER = "18"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -2202,12 +2202,12 @@ class Api:
         if _fresh(cache, 30 * 86400):
             try:
                 cached = json.load(open(cache, encoding="utf-8"))
-                # SELF-HEAL: an old cache may hold a flag/locator-map URL saved before _good_img learned to
-                # reject them (re-validate), or a FULL-RES original saved before we bounded to a thumbnail
-                # (re-thumb) — so stale entries fix themselves on read without wiping the cache.
-                if (not cached.get("url")) or _good_img(cached["url"]):
-                    if cached.get("url"):
-                        cached["url"] = _wiki_thumb(cached["url"], 1280)
+                # SELF-HEAL: keep a GOOD cached url (re-thumbed to a display size), but do NOT trust a cached
+                # url that is now rejected (a flag/map saved before _good_img learned to reject it) OR an EMPTY
+                # result — those fall through and RE-QUERY, so a place that returned nothing before (a city-
+                # state whose only image was a flag) now resolves via the curated landmark. No cache wipe.
+                if cached.get("url") and _good_img(cached["url"]):
+                    cached["url"] = _wiki_thumb(cached["url"], 1280)
                     return cached
             except Exception:
                 pass
@@ -2218,6 +2218,11 @@ class Api:
         # comma INSIDE the brackets, so splitting first left the query as the literal "Odesa (port".
         clean = re.sub(r"\s*\([^)]*\)", "", place).strip()
         head = clean.split(",")[0].strip()
+        # A city-state/microstate has no city article of its own -> query a curated LANDMARK that DOES have a
+        # real photo (Singapore -> the Downtown Core skyline), so the hero is never a rejected flag/black frame.
+        _ov = _PLACE_PHOTO_QUERY.get(clean.lower()) or _PLACE_PHOTO_QUERY.get(head.lower())
+        if _ov:
+            qs.append(_ov)
         if head:
             qs.append(head)
             base = re.sub(r"\s+(oil refinery|refinery|oil depot|depot|air ?base|airbase|airport|"
@@ -5273,6 +5278,7 @@ def _good_img(u):
         # .svg is always a flag/logo/map. Never show one; fall back to the coloured category card instead.
         "flag_of", "flag of", "flag%20of", "/flag_", "coat_of_arms", "coat-of-arms", "coat%20of%20arms",
         ".svg", "orthographic", "locator", "location_map", "location-map", "_map.", "on_the_globe", "(projection", "%28orthographic",
+        "map_of", "map-of", "map%20of", "_map_", "-map-", "old_map", "historical_map", "topographic", "cartogram", "blank_map",
         # house 'brand card' filenames (extend as spotted — keep to the CARD, not the whole domain, so real
         # photos from the same outlet still show)
         "tass_logo", "og-tass", "tass-card", "tass-cover", "tass-og", "rt-logo", "sputnik-logo", "ria-logo",
@@ -6936,6 +6942,19 @@ _LARGEST_CITY = {}
 # Where the largest city is a photoless industrial suburb (Kuwait's Al Ahmadi) or Wikipedia disambiguates
 # the bare name (Libya's "Tripoli"), pin a major, well-photographed city instead. Extend as spotted.
 _MAIN_CITY_OVERRIDE = {"Kuwait": "kuwait city", "Libya": "benghazi"}
+
+# CITY-STATES & MICROSTATES have no separate city article — their Wikipedia page IS the country, whose lead
+# image is a flag/crest/locator map (all rejected), so place_photo returned NOTHING and the hero shipped
+# BLACK (Singapore, Hong Kong did exactly this). Map each to a well-photographed LANDMARK/district article
+# that has a real skyline photo, tried FIRST. Keyed by the lowercased place/city name place_photo receives.
+_PLACE_PHOTO_QUERY = {
+    "singapore": "Downtown Core", "hong kong": "Hong Kong Island", "macau": "Macau Peninsula",
+    "macao": "Macau Peninsula", "monaco": "Monte Carlo", "vatican city": "St. Peter's Square",
+    "vatican": "St. Peter's Square", "san marino": "City of San Marino", "andorra": "Andorra la Vella",
+    "liechtenstein": "Vaduz", "gibraltar": "Rock of Gibraltar", "luxembourg": "Luxembourg City",
+    "bahrain": "Manama", "qatar": "Doha", "brunei": "Bandar Seri Begawan", "maldives": "Malé",
+    "malta": "Valletta", "bahamas": "Nassau, Bahamas", "barbados": "Bridgetown",
+}
 
 
 def _build_largest_city():
