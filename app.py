@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.23"
+APP_VERSION = "1.4.24"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,9 +185,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d35"   # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
+_DATA_VER = "d36"   # d36: resweep so the copyright-hardened brief regenerates and the bare-"Fed" recogniser re-places
+                    #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
+                    # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
-_SUM_PROMPT_VER = "19"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
+_SUM_PROMPT_VER = "20"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -378,9 +380,11 @@ def _summarize(title, text, source="", depth=False):
               "flawless punctuation (no stray, unbalanced or random quotation marks), no garbled fragments, no "
               "source or channel name left in the prose. A busy reader understands it at a glance, yet it reads "
               "as sharp and authoritative as legacy journalism. You NEVER copy the source's wording — every line "
-              "is rephrased from scratch — and you shape each brief to the story instead of forcing a template.")
-    prompt = ("Rewrite the story below as a clean, original news brief for a world-news map, in the spirit of "
-              "Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template.\n"
+              "is composed from scratch in your own words — and you shape each brief to the story instead of "
+              "forcing a template.")
+    prompt = ("Write a BRAND-NEW, original news brief that reports the story below, for a world-news map, in the "
+              "spirit of Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template. This "
+              "is your OWN composition built from the facts, NOT a rewrite or paraphrase of the article.\n"
               "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
               "The reader sees ONLY your brief, so it must stand on its own.\n\n"
               "The brief must ADD to the headline, never just restate it. If the headline already says what "
@@ -423,10 +427,21 @@ def _summarize(title, text, source="", depth=False):
               "- Output nothing else — no headings, no title, no closing line.\n\n"
               "Report what verifiably happened directly, and do NOT hedge a plain, uncontested fact with "
               "'reportedly'. No opinion or speculation of your OWN, and never point out what the source leaves "
-              "out (simply omit anything not given). Stay copyright-free: rephrase everything from scratch and "
-              "never copy four or more consecutive words from the source. A SHORT quoted phrase of two or three "
-              "words is allowed when it is attributed and distinctive (the senator called it 'a provocation'); "
-              "never quote a whole sentence.\n\n"
+              "out (simply omit anything not given).\n"
+              "COPYRIGHT & FAIR USE — this is a legal requirement, not a style note, and it is ABSOLUTE. Your "
+              "brief is an ORIGINAL work of your own authorship; it is NOT a rewrite, paraphrase, abridgement or "
+              "translation of the source article. Facts are free to use — dates, places, numbers, names, who did "
+              "what — so build the brief from the FACTS, stated in wording and sentence structure that are "
+              "entirely your own and do NOT track the source's phrasing or order. You may reproduce a SHORT "
+              "verbatim QUOTE (a distinctive phrase, at most ~15 words) ONLY inside real quotation marks and "
+              "ONLY attributed to the person who said it ('Powell said the Fed would \"proceed carefully\"'); "
+              "never quote the ARTICLE's own prose, only a person's words. NEVER copy four or more consecutive "
+              "words of the source's narration, and never mirror its distinctive sentence shapes. Add ONE short "
+              "paragraph of your OWN neutral CONTEXT/background that a general reader needs (what this body is, "
+              "the wider situation, why it matters) drawn from general knowledge, NOT lifted from the article. "
+              "If the only text you were given IS the source's description, do not echo it — re-express the "
+              "underlying facts from scratch. This keeps the brief fair-use / original across the US, EU, UK, "
+              "Canada and Australia.\n\n"
               "ATTRIBUTION & NEUTRALITY — this matters as much as accuracy. Much of this wire is one government's "
               "or channel's account. Treat any CONTESTED claim, accusation, one-sided characterisation or "
               "political framing as a CLAIM, not a fact: attribute it to WHO is making it, and name the outlet "
@@ -7437,12 +7452,29 @@ _ORG_COUNTRY = {
 }
 _ORG_KEYS = sorted(_ORG_COUNTRY, key=len, reverse=True)
 
+# The US Federal Reserve. "Federal Reserve"/"the Fed" are plain _ORG_COUNTRY keys, but the bare
+# clipped form "Fed" (as wires headline it: "Fed officials signal rate hike", Anadolu-sourced ->
+# dotted TURKEY because the URL section was Turkish and no org matched) is a landmine — "fed up",
+# "well-fed", "fed the troops" are not the central bank. So the bare token only counts as the Fed
+# when a monetary-policy context word rides alongside it (or FOMC, which is unambiguous on its own).
+_FED_CTX = re.compile(r" (rate|rates|hike|hikes|cut|cuts|powell|fomc|monetary|policymaker"
+                      r"|policymakers|taper|tapering|jerome|chair|chairman|reserve) ")
+
+
+def _is_fed_org(low):
+    # `low` is the space-padded, alpha-only fold built in _org_country.
+    if " fomc " in low or " federal open market committee " in low:
+        return True
+    return " fed " in low and _FED_CTX.search(low) is not None
+
 
 def _org_country(title):
     low = " " + re.sub(r"[^a-z ]", " ", _fold(title or "").lower()) + " "
     for k in _ORG_KEYS:
         if (" " + k + " ") in low:
             return _ORG_COUNTRY[k]
+    if _is_fed_org(low):
+        return "United States of America"
     return None
 
 

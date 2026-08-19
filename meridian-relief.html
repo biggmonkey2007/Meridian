@@ -300,6 +300,10 @@ header{
 .summary{font-size:14px;line-height:1.62;color:#2b333c;margin:14px 0}
 .sec-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);font-weight:700;margin:20px 0 9px;padding-top:13px;border-top:1px solid var(--line)}
 .lead{font-size:14px;line-height:1.62;color:#2b333c;font-weight:400;margin:14px 0 2px}
+/* Attribution tag on a fallback lead: the outlet's OWN teaser is standing in for our brief, so name whose
+   words these are (fair-use excerpt), set apart in muted small caps with a trailing em-dash. */
+.lead-attr{font-weight:700;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
+.lead-attr::after{content:" — ";font-weight:400;letter-spacing:normal}
 .evt-co-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px;margin-top:6px}
 .evt-co{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--ink)}
 .evt-co .flag{width:21px;height:15.75px}
@@ -1056,6 +1060,9 @@ body.topo-active .zoomers{bottom:130px}
 video{color-scheme:dark}
 .em-item{margin-bottom:13px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fbfcfe}
 .em-media{display:block;width:100%;max-height:260px;object-fit:cover;background:#0e1621}
+/* A real wire PHOTO in the strip is cover-cropped to the tile; bias the crop toward the TOP so a
+   head-and-shoulders shot keeps the face (the hero above is object-fit:contain and never crops). */
+.em-media.em-photo{object-position:50% 28%}
 /* an over-size Telegram video: its real poster frame, its length, and a way to actually watch it */
 .em-big{position:relative;display:block;text-decoration:none;background:#0e1621}
 .em-big .em-media{opacity:.86;transition:opacity .2s}
@@ -1467,6 +1474,14 @@ function finishText(s){
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
   if(/[.!?"'’”)\]…]$/.test(s)) return s;
   const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s;
+}
+// COPYRIGHT / FAIR USE: when no Meridian brief exists yet, the outlet's OWN teaser stands in as the lead.
+// It must read plainly as the SOURCE's words — a short attributed excerpt — never as our own prose. So we
+// prefix a muted "<source> —" tag. (Our generated brief, when present, replaces this entirely.)
+function leadFallbackHTML(text, src){
+  text=(text||"").trim(); if(!text) return "";
+  const tag = src ? `<span class="lead-attr">${esc(src)}</span> ` : "";
+  return tag + flagifyText(text);
 }
 // Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
 //   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
@@ -4656,7 +4671,7 @@ async function renderRealEvent(d){
     </div>
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}${d.srcnote?`<span class="src-note">${esc(d.srcnote)}</span>`:""}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
-    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?flagifyText(leadText(d.sum)):`<span class="spin"></span> Fetching the full story…`}</p>
+    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?leadFallbackHTML(leadText(d.sum), src):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
@@ -4709,7 +4724,7 @@ async function renderRealEvent(d){
     if(sum){ d.summary=sum; if(lead) lead.style.display="none";
              if(bodyEl) bodyEl.innerHTML=`<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
-           if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); } }
+           if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); } }
     d._terms=undefined; d._aiTerms=undefined;   // body text changed -> re-scan and re-bold the glossed terms
     annotateDetailTerms(d);
   };
@@ -4720,7 +4735,7 @@ async function renderRealEvent(d){
     const dek=finishText(bodyMinusHeadline(d.title, d.sum));
     if(d.summary){ showBrief(d.summary, dek); }
     else {
-      if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
+      if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); }
       if(api && api.summarize_event && (d.sum||"").length>=120){
         Promise.resolve(api.summarize_event(d.title||"", "", d.sum, d.source||d.channel||"")).then(r=>{
           if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
@@ -4745,7 +4760,7 @@ async function renderRealEvent(d){
       // the dek only leads while it generates, or stands alone if no summary is produced.
       if(d.summary){ showBrief(d.summary, dek); }
       else {
-        if(lead){ if(dek){ lead.textContent=dek; lead.style.display=""; } else hideLead(); }
+        if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); }
         // Summarize from the scraped body, else the article blurb, else the story's OWN feed text — so even a
         // blocked or empty scrape still produces OUR complete brief instead of leaving the clipped teaser up.
         const stext=(paras.slice(0,10).join(" ")||desc||d.sum||"").trim();
@@ -4968,7 +4983,7 @@ async function loadEventMedia(d){
                  ${it.dur?`<span class="em-dur">${esc(it.dur)}</span>`:""}
                  <span class="em-watch">▶ Video</span>
                </button>`
-            : `<img class="em-media" loading="lazy" referrerpolicy="no-referrer" src="${esc(it.photo)}" alt="" onerror="const p=this.closest('.em-item'); if(p) p.remove();">`;
+            : `<img class="em-media em-photo" loading="lazy" referrerpolicy="no-referrer" src="${esc(it.photo)}" alt="" onerror="const p=this.closest('.em-item'); if(p) p.remove();">`;
           const sp = capSplit(it.text||""), pt = capParts(sp.body), cid = "emcap-"+d.id+"-"+ix;
           const flags = sp.lead ? `<div class="em-flags">${flagifyText(sp.lead)}</div>` : "";
           const cap = pt.head

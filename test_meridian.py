@@ -197,6 +197,16 @@ GEO_CASES = [
     # A US leader/institution ACTING or DELIBERATING on Iran as the topic is a Washington story, not Tehran.
     ("Pentagon lowers official Iran war death toll, omitting four killed this month", "", "United States",
      "SHIPPED BUG: the Pentagon announcing a figure dotted Tehran — it's a Washington story"),
+    # The US Federal Reserve. The full name already resolved; the bare wire form "Fed" did not, so an
+    # Anadolu-filed "Fed officials signal rate hike" dotted TURKEY. "Fed" only counts with a money-policy word.
+    ("Fed officials signal a rate hike if inflation stays elevated", "", "United States",
+     "SHIPPED BUG: 'Fed' (the central bank) + 'rate hike' is a Washington story — Anadolu-sourced, dotted Turkey"),
+    ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
+     "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
+    ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",
+     "'fed' the VERB with no money-policy word is not the Federal Reserve — must not fly to the US"),
+    ("ECB signals a rate hike as eurozone inflation cools", "", "!United States",
+     "another central bank's rate story must never be captured by the Fed recogniser"),
     ("Trump considers 'massive attack' on Iran as tensions rise", "", "United States",
      "SHIPPED BUG: a leader only CONSIDERING a strike dotted the target — it's news at their seat"),
     ("Trump visits Israel for a peace summit", "", "Israel",
