@@ -1442,7 +1442,11 @@ def main():
                      and app._soft_news("Electricity worker dies in electrocution incident", "")
                      and app._soft_news("Driver killed in road accident", "")
                      and not app._soft_news("20 die in a road accident in Nigeria", "")
-                     and not app._soft_news("Soldiers killed in a Russian strike", ""))
+                     and not app._soft_news("Soldiers killed in a Russian strike", "")
+                     # professional-misconduct / celebrity-legal is local human-interest; a real crime is kept
+                     and app._soft_news("Doctor to the stars cleared over failure to record reason for using labour drug", "")
+                     and app._soft_news("Surgeon struck off after professional misconduct hearing", "")
+                     and not app._soft_news("Doctor charged with murder of five patients", ""))
     _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
               and (not _mw_soft) and (not _mw_strand) and _soft_precise)
     ran[0] += 1
@@ -2009,6 +2013,10 @@ def main():
                  # a RAW URL / "JUST IN -" / "Source:" pointer never survives to the card (the sloppy Disclose teaser)
                  and app._sharpen_desc("JUST IN - UAE halts all trade and financial transactions with Iran. Source: https://x.com/mofauae/status/2089808983880327494?s=46") == "UAE halts all trade and financial transactions with Iran."
                  and "http" not in app._sharpen_desc("Iran fired missiles at the UAE overnight. More at https://t.me/insiderpaper")
+                 # a bare trailing OUTLET byline and an inline self-promo ("DW has more") are furniture, not news
+                 and app._sharpen_desc("Fire in a building housing several hotels in eastern India kills 9 and injures 6 AP News.") == "Fire in a building housing several hotels in eastern India kills 9 and injures 6."
+                 and app._sharpen_desc("At least nine people have died, including some Bangladeshi nationals. DW has more.") == "At least nine people have died, including some Bangladeshi nationals."
+                 and "South China Morning Post" in app._sharpen_desc("The summit was hosted by South China Morning Post founder Robert Kuok in Hong Kong.")  # a real proper noun mid-sentence is kept
                  # a sentence that already ends inside a closing quote must NOT get a second full stop (the '…operating.".' bug)
                  and app._sharpen_desc('JUST IN - Trump says the blockade remains, "The Hormuz Strait is open and operating." Source: https://truthsocial.') == 'Trump says the blockade remains, "The Hormuz Strait is open and operating."'
                  and not app._end_stop('The strait is open and operating."').endswith('".')
@@ -2064,6 +2072,7 @@ def main():
                  and "terrorist" not in _g1[0]["def"].lower()          # fair definition, never a label
                  and _g2 == []                                          # no false-fire on 'AP'/'map'
                  and "Southern Popular Resistance Army" in _det         # org phrase detected for the AI tail
+                 and "Cockroach Janta Party" in app._detect_org_phrases("The Cockroach Janta Party won a victory when the minister resigned.", set())  # a PARTY is an org too -> defined
                  and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
     ran[0] += 1
     if not _gloss_ok:

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.20"
+APP_VERSION = "1.4.21"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,9 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d32"   # d32: resweep to re-bake hero photos — city-states (Singapore/Hong Kong) now resolve a real
-                    #      skyline via a curated landmark query instead of a rejected flag/black frame; maps filtered.
-_SUM_PROMPT_VER = "18"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
+_DATA_VER = "d33"   # d33: resweep so summaries regenerate with the CONTEXT prompt (define unfamiliar orgs/acronyms for a
+                    #      lay reader) and the trailing-outlet/self-promo cleaning; + local-misconduct filter.
+_SUM_PROMPT_VER = "19"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -385,6 +385,12 @@ def _summarize(title, text, source="", depth=False):
               "The reader sees ONLY your brief, so it must stand on its own.\n\n"
               "The brief must ADD to the headline, never just restate it. If the headline already says what "
               "happened and there is no more real detail, write ONE short sentence (or even none) — do NOT pad. "
+              "CONTEXT FOR A GENERAL READER: assume the reader knows nothing about this region or politics. In a "
+              "few plain words, identify any group, party, movement, official, agency or place the story names "
+              "that a newcomer wouldn't recognise — who or what it is and which side it's on ('the Cockroach "
+              "Janta Party, an Indian anti-corruption movement'; 'UNIFIL, the UN peacekeeping force in Lebanon') "
+              "— so the brief EXPLAINS the situation and stands on its own. Never leave a bare name or acronym "
+              "unexplained, and never a source-tag like 'DW'/'AP News' in the prose.\n"
               "Write it in this shape:\n"
               "1. LEDE — 1 to 3 short sentences of plain prose that say what happened. This carries the brief.\n"
               "2. BODY (only if the story is rich enough to need it) — you MAY add a short second, and at most a "
@@ -1036,6 +1042,18 @@ _TRAIL_ATTRIB = re.compile(
     r",\s*(?:(?:[A-Z][\w.&'’-]+(?:\s+[A-Z][\w.&'’-]+){0,3}\s+)?(?:reports?|reported|says?|said|confirms?|"
     r"confirmed|adds?|added|notes?|noted)|sources?\s+(?:say|said|tell|told|reported)|"
     r"(?:the\s+)?officials?\s+(?:say|said|added)|according\s+to\s+[^.,]{2,40})\s*\.?\s*$")   # NO re.I: the
+# A BARE OUTLET NAME the wire left in the copy — "…kills 9 and injures 6 AP News.", "…DW has more.", "DW
+# has more. Fire in…" — is furniture, not news. Curated list so a real proper noun is never chopped; matched
+# both at the END (trailing byline) and as an INLINE self-promo ("DW has more."), the latter common in a
+# MERGED dot where two outlets' teasers were concatenated.
+_OUTLET_NAMES_RE = (r"AP\s*News|Associated\s+Press|Reuters|BBC(?:\s+News)?|CNN|DW|Deutsche\s+Welle|AFP|"
+                    r"Bloomberg|Al\s*Jazeera|Fox\s+News|NBC\s+News|CBS\s+News|ABC\s+News|Sky\s+News|Anadolu|"
+                    r"TASS|RT|Xinhua|CGTN|NPR|PBS|Politico|Axios|The\s+Guardian|New\s+York\s+Times|NYT|"
+                    r"Washington\s+Post|WSJ|Wall\s+Street\s+Journal|Times\s+of\s+Israel|The\s+Hindu|Press\s+TV|"
+                    r"Tasnim|Fars(?:\s+News)?|IRNA|Mehr(?:\s+News)?|Kyodo|Yonhap|SCMP|South\s+China\s+Morning\s+Post|"
+                    r"Rappler|Premium\s+Times|The\s+Punch|Vanguard|Al\s+Arabiya")
+_OUTLET_MORE = re.compile(r"\s*[.,;:–—-]*\s*(?:" + _OUTLET_NAMES_RE + r")\s+has\s+more\b[.\s]*", re.I)
+_TRAIL_OUTLET = re.compile(r"\s*[\s,.;:–—-]+(?:" + _OUTLET_NAMES_RE + r")\s*[.\s]*$")
 # WIRE DATELINE: "TEHRAN – ", "WASHINGTON — ", "BEIRUT, Lebanon — ", "NEW DELHI (Reuters) — ". A brief should
 # just START, not open with a place-stamp. Only strips an ALL-CAPS leading place (>=3 caps) + optional
 # ", Country" + optional "(Agency)" + a spaced dash — so a Title-cased sentence ("Trump — the president —")
@@ -1111,7 +1129,9 @@ def _sharpen_desc(text, n=460):
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
     t = _fix_stray_quotes(t)                # '" Letter grades…' -> 'Letter grades…' (stray quote gone)
+    t = _OUTLET_MORE.sub(". ", t)                    # "DW has more. Fire in…" -> "…. Fire in…" (merged-teaser furniture)
     t = _TRAIL_ATTRIB.sub("", t).strip(" ,;:–—-")   # "…, Reuters reports." -> drop the trailing attribution
+    t = _TRAIL_OUTLET.sub("", t).strip(" ,;:–—-")   # "…injures 6 AP News." -> drop a bare trailing outlet byline
     t = _start_at_sentence(t)                        # never open on a lower-case sentence fragment
     t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.)
     t = _to_last_sentence(t)                         # a mid-sentence truncation -> cut back to the last WHOLE sentence
@@ -1640,7 +1660,8 @@ def _glossary_terms(text, limit=8):
 # shapes, and the AI is told to answer NONE whenever it isn't sure, so nothing is bolded on a guess.
 _ORG_SUFFIX = (r"(?:Forces|Front|Army|Movement|Militia|Militias|Brigade|Brigades|Battalion|Coalition|Alliance|"
                r"Council|Cartel|Federation|Guard|Guards|Corps|Command|Faction|Junta|League|Authority|"
-               r"Directorate|Organisation|Organization|Congress|Network)")
+               r"Directorate|Organisation|Organization|Congress|Network|Party|Bloc|Union|Group|Assembly|"
+               r"Committee|Society|Association|Caliphate|Insurgency|Syndicate|Collective|Vanguard|Regiment)")
 _ORG_PHRASE_RE = re.compile(r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX + r")\b")
 _DEFINE_VER = "t1"   # bump to invalidate cached AI term definitions
 
@@ -5606,6 +5627,13 @@ _SOFT_NEWS = re.compile(
     r"food\s+fair|street\s+fair|county\s+fair|state\s+fair|talent\s+show|beauty\s+pageant)\b"
     r"|things\s+to\s+do|what'?s\s+on\s+this\s+weekend|weekend\s+guide|line-?up\s+includes"
     r"|celebrity|red\s+carpet|box\s+office|reality\s+(?:tv|show)|dating\s+show"
+    # PROFESSIONAL-MISCONDUCT / REGULATORY / CELEBRITY-LEGAL — a doctor cleared by a medical watchdog, a
+    # lawyer struck off, a "to the stars" professional's tribunal. Local human-interest, not region-changing.
+    # (A malpractice case with casualties trips _hard_news first, so it is never caught here.)
+    r"|to\s+the\s+stars\b|professional\s+misconduct|medical\s+(?:council|board|watchdog|tribunal|regulator)"
+    r"|disciplinary\s+(?:hearing|tribunal|action|panel|proceedings|committee)|struck\s+off"
+    r"|misconduct\s+(?:hearing|panel|tribunal|case)|malpractice\s+(?:suit|case|claim|lawsuit)|licen[sc]ing\s+board"
+    r"|(?:cleared|reprimanded|censured|suspended|sanctioned)\s+(?:by\s+(?:the\s+)?(?:medical|bar|nursing|dental|regulatory)|over\s+(?:failure|allegations?))"
     # A LONE ACCIDENTAL death — one worker electrocuted, a man drowned, a driver in a road accident — is a
     # local incident, not world news. Needs a SINGLE person-role AND an accidental cause, so a mass toll
     # ("20 die in a road accident") — which has no role word — and a violent death are never caught here.

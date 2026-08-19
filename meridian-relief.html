@@ -1436,7 +1436,13 @@ function tidyLead(s){
   s=s.replace(/\s*(?:source|link|via|read(?:\s+more)?|full\s+story|more|details?)\s*:?\s*(?:https?:\/\/|www\.)\S*/gi," ");  // "Source: http…"
   s=s.replace(/(?:https?:\/\/|www\.)\S+/gi," ");                                   // any bare URL
   s=s.replace(/\s*[-–—|]?\s*(?:source|link|via|read(?:\s+more)?|full\s+story)\s*:?\s*$/i,"");   // a dangling "Source:" after the url was cut
-  s=s.replace(/\s+([.,;:!?])/g,"$1").replace(/\s{2,}/g," ").trim();
+  // OUTLET FURNITURE — a self-promo ("DW has more") and a bare trailing byline ("… injures 6 AP News.") the
+  // wire left in the copy, common in a MERGED dot where two teasers were concatenated. Curated so a real
+  // proper noun is never chopped.
+  const OUT="AP News|Associated Press|Reuters|BBC(?: News)?|CNN|DW|Deutsche Welle|AFP|Bloomberg|Al ?Jazeera|Fox News|NBC News|CBS News|ABC News|Sky News|Anadolu|TASS|RT|Xinhua|CGTN|NPR|PBS|Politico|Axios|The Guardian|New York Times|NYT|Washington Post|WSJ|Times of Israel|The Hindu|Press TV|Kyodo|Yonhap|SCMP|South China Morning Post";
+  s=s.replace(new RegExp("\\s*[.,;:–—-]*\\s*(?:"+OUT+")\\s+has\\s+more\\b[.\\s]*","gi"),". ");   // inline "DW has more."
+  s=s.replace(new RegExp("\\s*[\\s,.;:–—-]+(?:"+OUT+")\\s*\\.?\\s*$","i"),"");                    // trailing byline
+  s=s.replace(/\s+([.,;:!?])/g,"$1").replace(/\.\s*\.\s*/g,". ").replace(/\s{2,}/g," ").trim();
   return s;
 }
 function leadText(s){
