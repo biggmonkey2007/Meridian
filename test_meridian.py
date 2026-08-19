@@ -553,6 +553,9 @@ GEO_CASES = [
     ("Malaysia fears military miscalculation near Sabah amid US-China rivalry", "",
      "Malaysia", "SHIPPED BUG: dotted CHINA. The scene is 'near Sabah' (a Malaysian Borneo state now in the "
      "gazetteer); the US and China are a rivalry named as context ('amid US-China rivalry'), not the scene"),
+    ("Russian Forces Capture Malaya Tokmachka", "",
+     "Ukraine", "SHIPPED BUG: dotted MALAYA, PHILIPPINES — the wire's RU spelling 'Malaya Tokmachka' matched a "
+     "Philippine town. The Zaporizhzhia-front village (RU Malaya / UA Mala) is now aliased to Ukraine"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
@@ -1446,7 +1449,10 @@ def main():
                      # professional-misconduct / celebrity-legal is local human-interest; a real crime is kept
                      and app._soft_news("Doctor to the stars cleared over failure to record reason for using labour drug", "")
                      and app._soft_news("Surgeon struck off after professional misconduct hearing", "")
-                     and not app._soft_news("Doctor charged with murder of five patients", ""))
+                     and not app._soft_news("Doctor charged with murder of five patients", "")
+                     # a lone citizen's death abroad handled as a consular case is local; a mass event is kept
+                     and app._soft_news("Australian dies in Vietnam", "DFAT confirms it is providing consular assistance to the family")
+                     and not app._soft_news("Nine killed in a Kolkata hotel fire", ""))
     _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
               and (not _mw_soft) and (not _mw_strand) and _soft_precise)
     ran[0] += 1
@@ -1815,7 +1821,11 @@ def main():
                          "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
                         {"title": "Russia fires missiles at Ukraine energy sites overnight", "place": "Ukraine",
                          "country": "Ukraine", "lat": 49.0, "lng": 32.0, "hrs": 2.0, "cat": "security",
-                         "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
+                         "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2
+                    # NAMESAKE GUARD (cold start, no AI): a WRONG-CONTINENT town (Lima, Peru) for a Ukraine war
+                    # story drops to the named nationality's country; a correct nearby village is kept.
+                    and app._locate("Russian forces shell Lima positions", "", "Ukrainian troops held the line", allow_ai=False)[3] == "Ukraine"
+                    and app._locate("Russian Forces Capture Malaya Tokmachka", "", "Ukrainian forces withdrew", allow_ai=False)[3] == "Ukraine")
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
@@ -2073,6 +2083,8 @@ def main():
                  and _g2 == []                                          # no false-fire on 'AP'/'map'
                  and "Southern Popular Resistance Army" in _det         # org phrase detected for the AI tail
                  and "Cockroach Janta Party" in app._detect_org_phrases("The Cockroach Janta Party won a victory when the minister resigned.", set())  # a PARTY is an org too -> defined
+                 and "DFAT" in app._detect_org_phrases("Australian dies in Vietnam, DFAT confirms consular assistance", set())   # a bare acronym -> defined
+                 and app._detect_org_phrases("The US and UK and NATO met the UN and EU on GDP", set()) == []   # common acronyms are NOT flagged
                  and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
     ran[0] += 1
     if not _gloss_ok:

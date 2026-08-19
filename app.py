@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.21"
+APP_VERSION = "1.4.22"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d33"   # d33: resweep so summaries regenerate with the CONTEXT prompt (define unfamiliar orgs/acronyms for a
-                    #      lay reader) and the trailing-outlet/self-promo cleaning; + local-misconduct filter.
+_DATA_VER = "d34"   # d34: resweep re-places every dot with the namesake guard (wrong-continent town -> the named
+                    #      nationality's country) + Zaporizhzhia-front village aliases; acronyms/orgs now defined.
 _SUM_PROMPT_VER = "19"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -1666,9 +1666,23 @@ _ORG_PHRASE_RE = re.compile(r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX + 
 _DEFINE_VER = "t1"   # bump to invalidate cached AI term definitions
 
 
+# ACRONYMS a general reader already knows — never worth a definition. Everything else in caps (DFAT, NTUC,
+# IRGC, DPRK, UNIFIL) is exactly what the user asked to define.
+_COMMON_ACRONYMS = {
+    "US", "USA", "UK", "UN", "EU", "NATO", "AP", "BBC", "CNN", "CEO", "CFO", "COO", "CTO", "GDP", "GPS", "AI",
+    "IT", "TV", "PM", "DNA", "FBI", "CIA", "NSA", "NASA", "WHO", "IMF", "WTO", "OPEC", "EV", "USD", "EUR", "GBP",
+    "ID", "OK", "UAE", "LLC", "INC", "LTD", "FAQ", "VIP", "PDF", "URL", "ATM", "PIN", "SUV", "RSVP", "AKA", "ETA",
+    "DIY", "CEO", "MP", "MPS", "VP", "AG", "DA", "PR", "HR", "QA", "RD", "IPO", "GMT", "UTC", "AM", "PM",
+    "COVID", "AIDS", "HIV", "ISS", "UFO", "SOS", "FYI", "ASAP", "NGO", "NGOS", "GPS", "APEC", "ASEAN", "BRICS",
+    "G7", "G20", "OK", "TBD", "CCTV",
+}
+
+
 def _detect_org_phrases(text, covered, limit=4):
-    """Capitalized 'Proper Name + org word' phrases the curated glossary doesn't already cover — candidates for
-    an on-the-fly AI definition. Deduped; any phrase that overlaps a curated alias is dropped."""
+    """Names a general reader won't know — CANDIDATES for an on-the-fly AI definition: a capitalised
+    'Proper Name + org word' phrase (Cockroach Janta Party, Dnepr Volunteer Corps), OR a bare ACRONYM (DFAT,
+    NTUC, IRGC) that isn't a common one. The user's clue: multiple capitals / an abbreviation almost always
+    marks something to define. Deduped; anything the curated glossary already covers is dropped."""
     seen, out = set(), []
     for m in _ORG_PHRASE_RE.finditer(text or ""):
         phrase = re.sub(r"\s+", " ", m.group(1)).strip(" ,.;:")
@@ -1681,6 +1695,18 @@ def _detect_org_phrases(text, covered, limit=4):
         seen.add(low)
         out.append(phrase)
         if len(out) >= limit:
+            break
+    # bare ACRONYMS (all-caps, 3-6 letters) the reader won't know — DFAT, NTUC, UNIFIL, DPRK, SCMP
+    for m in re.finditer(r"\b([A-Z][A-Z&]{2,5})\b", text or ""):
+        ac = m.group(1)
+        low = ac.lower()
+        if low in seen or ac in _COMMON_ACRONYMS or low in covered:
+            continue
+        if any(low == c or (len(low) >= 4 and low in c) for c in covered):
+            continue
+        seen.add(low)
+        out.append(ac)
+        if len(out) >= limit + 3:
             break
     return out
 
@@ -5634,6 +5660,9 @@ _SOFT_NEWS = re.compile(
     r"|disciplinary\s+(?:hearing|tribunal|action|panel|proceedings|committee)|struck\s+off"
     r"|misconduct\s+(?:hearing|panel|tribunal|case)|malpractice\s+(?:suit|case|claim|lawsuit)|licen[sc]ing\s+board"
     r"|(?:cleared|reprimanded|censured|suspended|sanctioned)\s+(?:by\s+(?:the\s+)?(?:medical|bar|nursing|dental|regulatory)|over\s+(?:failure|allegations?))"
+    # a LONE citizen's death ABROAD handled as a consular case (a foreign-ministry "consular assistance" note,
+    # a tourist who died on holiday) is human-interest, not world news — a mass-casualty event trips _hard_news.
+    r"|consular\s+(?:assistance|case|support|help)|(?:dies?|died|found\s+dead|drowned?)\s+(?:while\s+)?(?:abroad|overseas|on\s+holiday|on\s+vacation|while\s+(?:travell?ing|holidaying|vacationing))"
     # A LONE ACCIDENTAL death — one worker electrocuted, a man drowned, a driver in a road accident — is a
     # local incident, not world news. Needs a SINGLE person-role AND an accidental cause, so a mass toll
     # ("20 die in a road accident") — which has no role word — and a violent death are never caught here.
@@ -6566,6 +6595,12 @@ _PLACE_ALIASES = {
     "chornomorsk": (46.30, 30.65, "Ukraine"), "ilyichevsk": (46.30, 30.65, "Ukraine"),
     "izmail": (45.35, 28.84, "Ukraine"), "reni": (45.46, 28.28, "Ukraine"),
     "ochakov": (46.61, 31.55, "Ukraine"), "ochakiv": (46.61, 31.55, "Ukraine"),
+    # Zaporizhzhia-front villages the wire captures/loses daily, by the spellings it prints (RU "Malaya"
+    # vs UA "Mala") — without these "Malaya Tokmachka" matched Malaya, PHILIPPINES and a Ukraine war story
+    # dotted the wrong continent.
+    "malaya tokmachka": (47.534, 35.901, "Ukraine"), "mala tokmachka": (47.534, 35.901, "Ukraine"),
+    "orekhov": (47.567, 35.786, "Ukraine"), "orikhiv": (47.567, 35.786, "Ukraine"),
+    "tokmak": (47.253, 35.708, "Ukraine"), "hulyaipole": (47.66, 36.25, "Ukraine"), "gulyaipole": (47.66, 36.25, "Ukraine"),
     "zaporozhye": (47.84, 35.14, "Ukraine"), "zaporizhzhia": (47.84, 35.14, "Ukraine"),
     "zaporizhia": (47.84, 35.14, "Ukraine"), "zaporozhia": (47.84, 35.14, "Ukraine"),
     "kharkov": (49.99, 36.23, "Ukraine"), "odessa": (46.48, 30.73, "Ukraine"),
@@ -8971,6 +9006,22 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
                 return g                              # a specific, anchored place -> use the AI's pinpoint
             if r is None or _geo_is_weak(r):
                 return g                              # AI at least got the country; the rules had nothing better
+    # DETERMINISTIC NAMESAKE GUARD (works on COLD START, no AI): the rules pinned a SPECIFIC town whose country
+    # the story NEVER names, while it DOES name other countries — the classic namesake trap (a Ukraine war
+    # capture dotting "Malaya, Philippines"; a Yemen clash dotting "Hays, Kansas"). Rather than ship the wrong
+    # CONTINENT, drop to a country the story actually names. Prefer the LAST-mentioned (usually the target/scene:
+    # "Russia captures a [Ukrainian] village" -> Ukraine; "Ukraine strikes a [Russian] refinery" -> Russia).
+    if r and not _geo_is_weak(r) and r[3] not in ment:
+        # require a DEMONYM (a nationality — "Russian", "Ukrainian") pointing elsewhere, not just a country
+        # named in passing, so a genuine domestic story that merely mentions a foreign country never moves.
+        _demco = [c for (c, _t) in ment_list if c in COUNTRY_COORDS and _t in DEMONYMS]
+        # ...AND only when the resolved place is FAR (>2500 km) from EVERY named nationality's country — a
+        # WRONG-CONTINENT namesake ("Malaya, Philippines" for a Ukraine war story), never a correct village
+        # near the front whose own country simply went unnamed (Mala Tokmachka sits ~900 km from Russia).
+        if _demco and all(_km(r[0], r[1], COUNTRY_COORDS[c][0], COUNTRY_COORDS[c][1]) > 2500 for c in _demco):
+            _pick = _demco[-1]
+            _la, _ln = COUNTRY_COORDS[_pick]
+            r = (_la, _ln, _co_short(_pick), _pick)   # right country now; a live build refines it to the town
     if not allow_ai or not _llm_available():
         return r                                      # cold-start build (or no LLM): rules + cached WHERE only
     _txt = ((title or "") + ". " + (desc or "")).strip()
