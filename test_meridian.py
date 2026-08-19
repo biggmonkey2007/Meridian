@@ -1712,6 +1712,67 @@ def main():
                       "the summary cache must NOT be keyed by _DATA_VER, or every content bump re-summarizes everything"))
     print(f"  {'ok ' if _sumcache_ok else 'FAIL'} brief generated once ({_first}), then served from cache after a _DATA_VER bump ({_second})")
 
+    # CACHE JANITOR — the "auto-clear the waste" timer. A daily sweep reclaims disk from EXPIRED derived caches
+    # (mtime past every 30-day TTL) while NEVER touching live state: the served feed (world_*), a dot's LOCATION
+    # (aiwhere_*), the merge verdicts (dedup_*), or leader identity. It must reclaim disk without moving a dot.
+    print("\n=== CACHE JANITOR (clears stale waste, spares live dots/data) ===")
+    import tempfile as _tf, shutil as _sh, time as _tm
+    _jd = _tf.mkdtemp(); _orig_cache = app.CACHE_DIR
+    try:
+        app.CACHE_DIR = _jd
+        _old = _tm.time() - 50 * 86400; _newm = _tm.time() - 2 * 86400
+        def _mkf(n, mt):
+            _p = os.path.join(_jd, n); open(_p, "w").write("x"); os.utime(_p, (mt, mt))
+        for _n, _mt in [("sum_dead.json", _old), ("geoai_dead.json", _old), ("media_dead.json", _old),
+                        ("sum_fresh.json", _newm), ("world_24h.json", _old), ("aiwhere_x.json", _old),
+                        ("dedup_x.json", _old), ("leaders_Q1.json", _old)]:
+            _mkf(_n, _mt)
+        app._purge_stale_cache()
+        _left = set(os.listdir(_jd))
+        _janitor_ok = ("sum_dead.json" not in _left and "geoai_dead.json" not in _left
+                       and "media_dead.json" not in _left and "sum_fresh.json" in _left        # fresh kept
+                       and "world_24h.json" in _left and "aiwhere_x.json" in _left              # live state spared
+                       and "dedup_x.json" in _left and "leaders_Q1.json" in _left)
+        _mkf("sum_dead2.json", _old)                 # marker guard: an immediate second sweep is a no-op
+        app._purge_stale_cache()
+        _guard_ok = "sum_dead2.json" in set(os.listdir(_jd))
+    finally:
+        app.CACHE_DIR = _orig_cache
+        _sh.rmtree(_jd, ignore_errors=True)
+    _jan_ok = _janitor_ok and _guard_ok
+    ran[0] += 1
+    if not _jan_ok:
+        fails.append(("janitor", "stale-only purge", "stale derived cleared, live state spared, guarded",
+                      f"janitor={_janitor_ok} guard={_guard_ok}",
+                      "the auto-clear must delete only expired derived caches and never a feed/location/dedup file"))
+    print(f"  {'ok ' if _jan_ok else 'FAIL'} stale sum_/geoai_/media_ cleared; world_/aiwhere_/dedup_/leaders_ spared; guarded")
+
+    # CEREBRAS FAILOVER — a primary (Groq) empty return (a daily-cap 429) must roll to Cerebras, not lose the
+    # answer; and a geo second opinion can PREFER Cerebras (an independent model family) yet still fall back.
+    print("\n=== CEREBRAS FAILOVER (backup provider + preferred second opinion) ===")
+    _orig_one2, _orig_ck2, _orig_cfg2 = app._llm_one, app._cerebras_key, app._summary_cfg
+    _seen = []
+    try:
+        app._summary_cfg = lambda: ("gsk-FAKE", "https://primary/x", "primary-model")
+        app._cerebras_key = lambda: "csk-FAKE"
+        def _fake_one(name, key, url, model, system, user, mt, temp):
+            _seen.append(name)
+            return "" if name == "primary" else "BACKUP:" + name
+        app._llm_one = _fake_one
+        _failover = app._llm_complete("s", "u")                 # primary empty -> rolls to cerebras
+        _order = list(_seen); _seen.clear()
+        app._llm_complete("s", "u", prefer="cerebras")          # prefer -> cerebras tried FIRST
+        _pref_first = _seen[0] if _seen else None
+    finally:
+        app._llm_one, app._cerebras_key, app._summary_cfg = _orig_one2, _orig_ck2, _orig_cfg2
+    _cb_ok = (_failover == "BACKUP:cerebras" and _order[:2] == ["primary", "cerebras"] and _pref_first == "cerebras")
+    ran[0] += 1
+    if not _cb_ok:
+        fails.append(("cerebras", "failover+prefer", "primary->cerebras; prefer=cerebras first",
+                      f"failover={_failover!r} order={_order} pref_first={_pref_first!r}",
+                      "a capped primary must roll to Cerebras; prefer must front-load it for the geo second opinion"))
+    print(f"  {'ok ' if _cb_ok else 'FAIL'} primary empty -> {_failover!r}; order={_order}; prefer-first={_pref_first!r}")
+
     # SOURCE MUTE — a muted outlet is hidden from the map (no dots, no citations), matched on domain / name
     # / url; other outlets are untouched. (The default mutes The Guardian per the user.)
     print("\n=== SOURCE MUTE (a hidden outlet never reaches the map) ===")
@@ -2156,6 +2217,8 @@ def main():
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + summary cache is independent of _DATA_VER (a content bump serves the cached brief)
+             + 1   # + cache janitor clears stale waste but spares live feed/location/dedup/leader files
+             + 1   # + Cerebras failover (capped primary -> backup) + preferred geo second opinion
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed

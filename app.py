@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.25"
+APP_VERSION = "1.4.26"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -293,44 +293,90 @@ def _llm_available():
     """Is there ANY free LLM to call — a Groq/OpenAI key, or a local Ollama? Gates every optional AI
     feature (summaries, the geolocation fallback) so they stay purely additive: no LLM -> no cost, no
     behaviour change."""
-    return bool(_summary_cfg()[0]) or bool(_local_llm())
+    return bool(_summary_cfg()[0]) or bool(_cerebras_key()) or bool(_local_llm())
 
 
-def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None):
-    """ONE chat completion over the SAME free path summaries use — Groq (a 'gsk_' key), else OpenAI, else a
-    local Ollama. Returns the assistant text (stripped) or "" on any error. Never raises. Shared so the
-    summary writer and the geolocation fallback go through one place (one UA quirk, one timeout policy).
-    `model` overrides the configured model for the HOSTED path only (a caller that wants a stronger free
-    Groq model for a harder judgment); the local Ollama keeps its own installed model."""
-    key, url, cfg_model = _summary_cfg()
-    model = model or cfg_model
-    timeout = 25
-    if not key:                              # no paid key -> the free, unlimited local model (Ollama)
-        loc = _local_llm()
-        if not loc:
-            return ""
-        url, model, key, timeout = loc[0], loc[1], "local", 45   # local server ignores the auth token
+_CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
+
+
+def _cerebras_key():
+    """A FREE Cerebras Cloud key (starts 'csk-'). Used as a BACKUP LLM when the primary (Groq) is rate-capped,
+    and as an INDEPENDENT second opinion for a dot's location. From CEREBRAS_API_KEY or cerebras_key.txt in
+    DATA_DIR (gitignored). Absent -> Cerebras simply isn't in the chain and nothing changes."""
+    k = (os.environ.get("CEREBRAS_API_KEY") or "").strip()
+    if not k:
+        try:
+            p = os.path.join(DATA_DIR, "cerebras_key.txt")
+            if os.path.exists(p):
+                k = open(p, encoding="utf-8").read().strip()
+        except Exception:
+            pass
+    return k
+
+
+def _llm_providers():
+    """The ordered hosted-LLM chain to try: the primary (Groq/OpenAI from _summary_cfg) first, then Cerebras
+    as a free backup. Each entry is (name, key, url, model). Empty when no hosted key is set (caller may then
+    fall back to a local Ollama)."""
+    out = []
+    key, url, model = _summary_cfg()
+    if key:
+        out.append(("primary", key, url, model))
+    ck = _cerebras_key()
+    if ck:
+        out.append(("cerebras", ck, _CEREBRAS_URL, (os.environ.get("CEREBRAS_MODEL") or "llama-3.3-70b").strip()))
+    return out
+
+
+def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
+    """One completion against ONE provider. Returns the assistant text (stripped) or "" on any error
+    (including a rate-cap 429). Never raises — an empty return is the signal to try the next provider."""
+    timeout = 45 if key == "local" else 25
     try:
         payload = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
                    "messages": [{"role": "system", "content": system},
                                 {"role": "user", "content": user}]}
         # REASONING MODELS (Groq's gpt-oss): they burn output tokens on hidden reasoning FIRST, so a tight
         # max_tokens leaves an EMPTY answer. Ask for low reasoning effort and lift the ceiling so the visible
-        # brief always fits after the thinking. (Only gpt-oss honours these; other models ignore them.)
+        # answer always fits. (Only gpt-oss honours these; Cerebras' Llama and others ignore them.)
         if "gpt-oss" in model:
             payload["reasoning_effort"] = "low"
-            payload["max_tokens"] = max(max_tokens, 1200) + 700     # room for reasoning + the full brief
+            payload["max_tokens"] = max(max_tokens, 1200) + 700
             timeout = max(timeout, 40)
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + key,
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI sit behind Cloudflare, which 403s the default Python-urllib UA
+            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI/Cerebras sit behind Cloudflare, which 403s the default urllib UA
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
         msg = (j.get("choices") or [{}])[0].get("message", {}) or {}
         return (msg.get("content") or "").strip()
     except Exception:
         return ""
+
+
+def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, prefer=None):
+    """ONE chat completion over the free LLM path, with automatic FAILOVER. Tries providers in order —
+    primary (Groq/OpenAI), then Cerebras (a free backup) — and returns the FIRST non-empty answer, so a Groq
+    daily-cap 429 (which comes back empty) rolls straight to Cerebras instead of losing the brief. `model`
+    overrides the model on whichever provider serves the call. `prefer` (e.g. 'cerebras') moves that provider
+    to the FRONT for THIS call — used to get an INDEPENDENT second opinion on a dot's location from a
+    different model family — while still allowing fallback to the others. With no hosted key it falls back to
+    a local Ollama. Returns "" only if EVERY provider fails. Never raises. Shared by summaries, dedup and geo
+    so there is one UA quirk and one timeout policy."""
+    provs = _llm_providers()
+    if prefer:
+        provs.sort(key=lambda p: 0 if p[0] == prefer else 1)     # stable: preferred first, rest keep order
+    if not provs:                                                # no hosted key -> the free local Ollama
+        loc = _local_llm()
+        if not loc:
+            return ""
+        provs = [("local", "local", loc[0], loc[1])]
+    for name, key, url, pmodel in provs:
+        out = _llm_one(name, key, url, model or pmodel, system, user, max_tokens, temperature)
+        if out:
+            return out
+    return ""
 
 
 _END_PUNCT = ".!?\"'’”)]…"   # a brief that ends on one of these reads as a finished thought
@@ -4498,6 +4544,50 @@ def _fresh(path, ttl):
         return False
 
 
+# ---------------------------------------------------------------------------
+# Cache janitor — a self-clocking daily sweep that reclaims disk from EXPIRED cache files ("the waste").
+# It is deliberately conservative: it only deletes a file whose mtime is older than a floor WELL PAST the
+# longest TTL any cache uses (30 days), so a file it removes is already DEAD — _fresh() ignores it and no
+# live dot reads it. It NEVER touches the app's actual state: the served feed windows (world_*), a dot's
+# LOCATION (aiwhere_*), the dedup/merge verdicts (dedup_*), or leader identity are protected by prefix
+# regardless of age. Net effect: disk goes down, dots and data are untouched.
+# ---------------------------------------------------------------------------
+_PURGE_AGE = 45 * 86400     # a cache file untouched this long is past every 30-day TTL -> safe to drop
+_PURGE_EVERY = 86400        # sweep at most once a day
+# Live state — NEVER auto-cleared, whatever its age. Feeds refresh on their own; the rest position/merge dots
+# or are leader identity that panels show. Everything NOT on this list is a cheap, regenerable derived cache.
+_PURGE_PROTECT = ("world_", "hosted_", "starred_", "clipsfeed", "livewire_", "aiwhere_", "dedup_",
+                  "leaders_", "heads_of_state_gov", "dead_leaders", "office_", "minlist_", "leader_",
+                  "person_", "update_check")
+
+
+def _purge_stale_cache():
+    """Delete cache files past every TTL (mtime older than _PURGE_AGE), except the protected live-state
+    prefixes. Self-clocked to ~once/day via a marker file. Purely reclaims disk; changes no dot or datum.
+    Runs in the background refresh thread, wrapped so a failure never affects the feed."""
+    try:
+        marker = os.path.join(CACHE_DIR, ".last_purge")
+        if _fresh(marker, _PURGE_EVERY):        # already swept within the last day -> nothing to do
+            return
+        try:
+            with open(marker, "w", encoding="utf-8") as f:   # claim the run up-front so two threads don't both sweep
+                f.write(str(int(time.time())))
+        except Exception:
+            return
+        cutoff = time.time() - _PURGE_AGE
+        for name in os.listdir(CACHE_DIR):
+            if name.startswith(".") or name.startswith(_PURGE_PROTECT):
+                continue
+            p = os.path.join(CACHE_DIR, name)
+            try:
+                if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
+                    os.remove(p)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _gdelt_doc(query, timespan="24h", maxrecords=250):
     params = urllib.parse.urlencode({
         "query": query, "mode": "artlist", "maxrecords": str(maxrecords),
@@ -4535,6 +4625,7 @@ def _spawn_world_refresh(api, h):
 
     def _run():
         try:
+            _purge_stale_cache()                    # daily disk housekeeping (marker-guarded); never touches live data
             api._build_world_events(h, live=True)   # background: full AI geo + dedup, warms the cache for next time
         except Exception:
             pass
@@ -4554,7 +4645,7 @@ _PREWARM_LOCK = threading.Lock()
 def _spawn_summary_prewarm(api, h, data):
     if not isinstance(data, dict) or not data.get("events"):
         return
-    if not (_summary_cfg()[0] or _local_llm()):     # no summarizer configured -> nothing to warm
+    if not _llm_available():                        # no summarizer configured (Groq/Cerebras/Ollama) -> nothing to warm
         return
     key = (h, data.get("generated"))
     with _PREWARM_LOCK:
@@ -9000,7 +9091,9 @@ def _ai_locate_verify(title, text, candidates):
             "the candidates, or a better place they both missed. If a specific named FACILITY is the scene, "
             "name the CITY it sits in. Reply with ONLY 'City, Country', or 'Country', or 'NONE'.\n\n"
             "HEADLINE: " + title + "\n\nSTORY:\n" + text)
-    out = _llm_complete(system, user, max_tokens=24, temperature=0.0)
+    # Prefer CEREBRAS here: the first opinion came from Groq's gpt-oss, so a different model family makes this a
+    # genuinely INDEPENDENT tie-breaker. Falls back to the primary when no Cerebras key is set (unchanged then).
+    out = _llm_complete(system, user, max_tokens=24, temperature=0.0, prefer="cerebras")
     out = ((out or "").splitlines() or [""])[0]
     out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
     if out.upper() == "NONE" or not (3 <= len(out) <= 60):

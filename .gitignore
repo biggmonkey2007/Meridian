@@ -7,9 +7,11 @@ tg_session*
 telegram_api.txt
 telegram*.txt
 *_api.txt
+*_key.txt
 *.key
 *secret*
 gemini*.txt
+cerebras*.txt
 .env
 .env.*
 
