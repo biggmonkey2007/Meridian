@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.14"
+APP_VERSION = "1.4.15"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d26"   # d26: re-assign every clip/photo with the tighter media matcher (same EVENT, not just same
-                    #      topic + place) — and resweep the feed so all dots re-run under the current system.
+_DATA_VER = "d27"   # d27: resweep so the AI dedup (synonym-aware, now pairs same-country centroid dots) folds
+                    #      reworded same-event reports into ONE dot — the 3 'UAE detects Iran missiles', the 2 'UAE halts trade'.
 _SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -471,6 +471,8 @@ def _summarize(title, text, source="", depth=False):
     s = re.sub(r"[ \t]+", " ", s)
     s = "\n".join(ln.strip() for ln in s.split("\n"))
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
+    s = _PROMO_URL.sub(" ", s)          # a URL never belongs in the brief (belt-and-braces; the source text is cleaned too)
+    s = re.sub(r"(?im)^\s*(?:source|link|via|read)\s*:?\s*$", "", s).strip()   # a dangling "Source:" left after the url was cut
     s = _LEAD_DATELINE.sub("", s)       # belt-and-braces: drop a wire dateline if the model opened with one anyway
     # Pull the WHERE + SCOPE lines back OUT of the brief and cache them (keyed by title) — one AI call gave us
     # the brief, the location (for _locate) AND the importance (for the world-map gate), no extra request.
@@ -5788,7 +5790,7 @@ def _collapse_colocated(events, window_h=6):
     return kept
 
 
-_AI_DEDUP_VER = "d4"    # bump on any prompt/model change — invalidates cached verdicts
+_AI_DEDUP_VER = "d5"    # d5: see-through-synonyms prompt (halts trade = suspends commercial activity) + gpt-oss model
 # The same-event judgment ('is a Black Sea resort strike the same as a Gelendzhik beach drone attack?') needs
 # real reasoning: the fast small model answers NO, a bigger one gets it right. Use the stronger FREE Groq
 # model for this one call when the provider is Groq; other providers keep their configured model.
@@ -5843,13 +5845,17 @@ def _ai_same_event(a, b):
             return bool(json.load(open(cache, encoding="utf-8")).get("s"))
         except Exception:
             pass
-    system = ("You are a precise news-desk editor deduplicating a world-news map. Two items are the SAME only "
-              "when they report the SAME SPECIFIC INCIDENT — one real event, on the same day, at the same "
-              "place — merely from different outlets or in different words (a 'deaths' report and an "
-              "'injuries' report of the SAME strike are the same event; a town and the body of water it sits "
-              "on are the same place). Different events that merely share a topic, a country, or a person are "
-              "NOT the same: two separate strikes, two different statements, two different deals, or a policy "
-              "and a reaction to it. When genuinely unsure, answer NO.")
+    system = ("You are a precise news-desk editor deduplicating a world-news map. Two items are the SAME when "
+              "they report the SAME SPECIFIC INCIDENT — one real event, on the same day, at the same place — "
+              "just from different outlets. The same incident is ROUTINELY REWORDED with synonyms and "
+              "paraphrase, and you must see through that: 'halts all trade' = 'suspends all commercial "
+              "activity' = 'cuts economic ties'; 'detected incoming ballistic missiles' = 'says two ballistic "
+              "missiles were fired at it' = 'reports a missile threat'; a 'deaths' report and an 'injuries' "
+              "report of ONE strike; a town and the body of water it sits on. Judge the underlying INCIDENT, "
+              "not the wording. But do NOT merge genuinely different events that merely share a topic, country "
+              "or person: two SEPARATE strikes, two UNRELATED statements or deals, or a policy and a reaction "
+              "to it. If it is clearly ONE incident described two ways, answer YES; only when genuinely unsure "
+              "whether it is one incident or two, answer NO.")
     user = ("Do these two dots report the SAME specific incident? Answer with ONLY 'YES' or 'NO'.\n\n"
             "ITEM 1\n" + fa + "\n\n"
             "ITEM 2\n" + fb)
@@ -5903,8 +5909,15 @@ def _ai_dedup(events, window_h=30, budget=80):
             # centroid, or the same city): catches 'Syria army on alert' vs 'Syria deploys troops, high alert',
             # which share no second word and pin to no specific place, so the rules above never pair them.
             samecat = (shared >= 1 and coi == coj and cati == catj and d2 < 0.36)
-            if not diff_scene and (shared >= 2 or geo or samecat):
-                cand.append((shared + (1 if geo else 0) + (1 if samecat else 0), i, j))
+            # COUNTRY-CENTROID dots (no specific scene) in the SAME country within the window are candidates
+            # for the LLM even with NO shared distinctive word. A fully-reworded report of one national event
+            # ("UAE detected 2 incoming ballistic missiles from Iran" vs "UAE defense ministry says Iran fired
+            # two ballistic missiles at its territory") shares only generic war words, so the token rules never
+            # pair them — but they sit on the same country centroid and the LLM can tell they are one incident.
+            # Scored LOWEST so the budget is spent on stronger pairs first; the LLM still vetoes different events.
+            centroid = (coi == coj and not spi and not spj)
+            if not diff_scene and (shared >= 2 or geo or samecat or centroid):
+                cand.append((shared + (1 if geo else 0) + (1 if samecat else 0) + (1 if centroid else 0), i, j))
     if not cand:
         return events
     cand.sort(reverse=True)                                          # spend the budget on the strongest pairs first
