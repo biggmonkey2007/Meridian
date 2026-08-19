@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.18"
+APP_VERSION = "1.4.19"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d30"   # d30: resweep so the context-place geo fix (despite/against backdrop) re-places every dot and
-                    #      summaries regenerate with the statement-quote+attribution prompt (_SUM_PROMPT_VER 18).
+_DATA_VER = "d31"   # d31: resweep for the location overhaul (Sabah/regions, despite-amid/against context, an AI
+                    #      second-opinion VOTE on disagreements) + baked story photos so heroes paint instantly.
 _SUM_PROMPT_VER = "18"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -196,8 +196,13 @@ _LEADER_VER = "l9"      # l9: re-resolve everyone with fresh photos (l6-l8 were 
 
 
 def _aiwhere_path(title):
+    # DELIBERATELY NOT keyed by _DATA_VER. The AI's location for a dot is stable regardless of feed-content
+    # bumps, so tying it to _DATA_VER wiped every AI pinpoint on EVERY update — the cold-start feed then fell
+    # back to rules-only until the background AI re-ran, which is why locations kept regressing after a fix.
+    # Now the AI WHERE persists across data-version bumps; bump _AIWHERE_VER only when the location logic itself
+    # changes.
     return os.path.join(CACHE_DIR, "aiwhere_" + hashlib.sha1(
-        (_DATA_VER + "\n" + _AIWHERE_VER + "\n" + (title or "")).encode("utf-8")).hexdigest()[:16] + ".json")
+        (_AIWHERE_VER + "\n" + (title or "")).encode("utf-8")).hexdigest()[:16] + ".json")
 
 
 def _ai_where(title):
@@ -3354,12 +3359,18 @@ class Api:
                 # every story with no per-click work — and the hosted/mobile feed inherits it for free.
                 if s:
                     ev["summary"] = s
-                # THE PICTURE. A story that shipped without its own image needs a story_photo lookup at click
-                # time (1-5s — the black-hero wait). Resolve it HERE so its underlying person/place lookups are
-                # cached; the client's prefetch then returns instantly and the hero paints the moment you click.
-                if not ev.get("image"):
-                    self.story_photo(ev.get("title") or "", ev.get("sum") or "",
-                                     ev.get("place") or "", ev.get("country") or "")
+                # THE PICTURE. A story that shipped without its own image gets a story_photo (a real photo of
+                # the subject/place). BAKE the resolved url onto the event so the hero paints INSTANTLY from the
+                # served feed — not a black frame that only fills after a 1-5s click-time lookup. Warming the
+                # cache alone left the cold-start feed with black heroes (Prudential Hong Kong shipped blank).
+                if not ev.get("image") and not ev.get("photo"):
+                    _ph = self.story_photo(ev.get("title") or "", ev.get("sum") or "",
+                                           ev.get("place") or "", ev.get("country") or "") or {}
+                    if _ph.get("url"):
+                        ev["photo"] = _ph["url"]
+                        _pc = _ph.get("credit") or _ph.get("title") or _ph.get("source") or ""
+                        if _pc:
+                            ev["photoCredit"] = _pc
             except Exception:
                 pass
         try:
@@ -6480,6 +6491,11 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     "south lebanon": (33.36, 35.37, "Lebanon"), "southern lebanon": (33.36, 35.37, "Lebanon"),
     "north lebanon": (34.44, 35.84, "Lebanon"), "northern lebanon": (34.44, 35.84, "Lebanon"),
     "east lebanon": (33.85, 35.90, "Lebanon"), "eastern lebanon": (33.85, 35.90, "Lebanon"),
+    # Malaysian Borneo states + a few East/SE-Asia regions GeoNames doesn't index as a city
+    "sabah": (5.98, 116.07, "Malaysia"), "sarawak": (1.55, 110.36, "Malaysia"),
+    "labuan": (5.28, 115.24, "Malaysia"), "peninsular malaysia": (3.99, 102.14, "Malaysia"),
+    "west papua": (-2.55, 133.74, "Indonesia"), "papua": (-4.27, 138.08, "Indonesia"),
+    "aceh": (4.70, 96.75, "Indonesia"), "mindanao": (7.87, 124.95, "Philippines"),
     "donbas": (48.5, 37.8, "Ukraine"),
     "crimea": (45.3, 34.4, "Ukraine"),
     # Far-east Russian refinery cities/regions the wire names in Ukrainian long-range drone-strike news but
@@ -8803,6 +8819,48 @@ def _geolocate_ai(title, text):
     return out
 
 
+def _ai_locate_verify(title, text, candidates):
+    """A SECOND, independent AI opinion that RESOLVES a location disagreement — the vote the user asked for.
+    When the rules and the first AI pass name different countries, this reads the story fresh, is shown the
+    competing candidates, and picks the ONE place the EVENT physically happened (the subject's own action —
+    never a country named only as a rival, a backdrop, or something the subject talks about). Returns a plain
+    'City, Country'/'Country' the caller grounds through the gazetteer, or '' — cached 30 days per story."""
+    title = (title or "").strip()
+    text = (text or "").strip()[:4000]
+    cand = " | ".join(c for c in candidates if c)
+    if not (title and cand) or not _llm_available():
+        return ""
+    cache = os.path.join(CACHE_DIR, "geov_" + hashlib.sha1(
+        (_GEOAI_VER + "\n" + title + "\n" + cand + "\n" + text[:200]).encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            return json.load(open(cache, encoding="utf-8")).get("p", "")
+        except Exception:
+            pass
+    system = ("You are a meticulous news geolocator settling a disagreement between two systems. You name the "
+              "ONE real place where the described EVENT physically happened — the place of the SUBJECT's own "
+              "action. You are strict about what is NOT the scene: a country named only as a RIVAL or the "
+              "other side of a relationship ('amid US-China rivalry' -> not China or the US), a BACKDROP "
+              "('despite the Hormuz crisis' -> not Hormuz), an ADVERSARY of an abstract struggle ('the war "
+              "against Iran' -> not Iran), a place someone merely TALKS ABOUT or threatens, an org's "
+              "headquarters, or a person's nationality.")
+    user = ("Two systems disagree on where this happened. Candidate locations: " + cand + "\n"
+            "Read the story and give the ONE correct place the EVENT physically took place — it may be one of "
+            "the candidates, or a better place they both missed. If a specific named FACILITY is the scene, "
+            "name the CITY it sits in. Reply with ONLY 'City, Country', or 'Country', or 'NONE'.\n\n"
+            "HEADLINE: " + title + "\n\nSTORY:\n" + text)
+    out = _llm_complete(system, user, max_tokens=24, temperature=0.0)
+    out = ((out or "").splitlines() or [""])[0]
+    out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
+    if out.upper() == "NONE" or not (3 <= len(out) <= 60):
+        out = ""
+    try:
+        json.dump({"p": out}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
+
+
 def _geo_is_weak(r):
     """A rule result worth an AI second opinion: None, or a bare COUNTRY CENTROID — the dot sits on the
     country's own capital coords, meaning the rules pinned no specific city/scene (the fallback ladder, or
@@ -8868,6 +8926,18 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
                 return g                              # AI at least got the country; the rules had nothing better
     if not allow_ai or not _llm_available():
         return r                                      # cold-start build (or no LLM): rules + cached WHERE only
+    _txt = ((title or "") + ". " + (desc or "")).strip()
+    # ENSEMBLE / SECOND OPINION — the rules pinned a SPECIFIC scene, but the AI's own location (named while it
+    # wrote the brief) disagrees on the COUNTRY, and BOTH countries are named in the story. That is exactly the
+    # ~1-in-5 dot a single pass gets wrong (a specific place that is really a rival/backdrop/what-it-talks-about).
+    # Don't silently trust the rules: get a fresh, independent AI VOTE that sees both candidates and settles it.
+    # Only overrides to a specific, story-anchored place; a confirmed or inconclusive vote leaves the rules.
+    aw_g = _geolocate(aw, "", aw, "") if aw else None
+    if r and not _geo_is_weak(r) and aw_g and aw_g[3] in ment and aw_g[3] != r[3]:
+        _vote = _ai_locate_verify(title, _txt, [r[2] if r else "", aw, aw_g[2] if aw_g else ""])
+        _gv = _geolocate(_vote, "", _vote, "") if _vote else None
+        if _gv and _gv[3] in ment and not _geo_is_weak(_gv) and _gv[3] != r[3]:
+            return _gv                                # the tiebreaker chose a different, anchored, specific scene
     # NAMESAKE MISMATCH: a SPECIFIC dot whose country the story never names, while it DOES name another
     # country, is almost always a US-town namesake matched for a foreign story ("Arab, AL" for an Israeli
     # story; "The Village, US" for a Greek island; "Hays, KS" for a Yemen clash). Let the AI arbitrate

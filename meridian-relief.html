@@ -4662,12 +4662,13 @@ async function renderRealEvent(d){
   // loadEventMedia finds a real photo of THIS event on the wire. We never invent one.
   const hero=document.getElementById("hero-"+d.id);
   const img=hero?hero.querySelector(".hero-photo"):null;
-  // Show the picture IMMEDIATELY: the article image, or the photo we already resolved+prefetched for this
-  // dot (d._photo, set by warmPhoto when the feed loaded). Prefetched -> it paints instantly, no 1-5s wait.
-  const heroSrc = d.image || d._photo || "";
+  // Show the picture IMMEDIATELY: the article image, the photo BAKED into the feed (d.photo — a real
+  // subject/place photo the server already resolved, so the hero paints instantly instead of a black frame),
+  // or the client-prefetched one (d._photo). No 1-5s black-hero wait on a cold-start dot anymore.
+  const heroSrc = d.image || d.photo || d._photo || "";
   if(img && heroSrc){
     const isFile = !d.image;
-    img.onload=()=>{ hero.classList.add("has-photo"); if(isFile) hero.classList.add("has-file"); const cr=hero.querySelector(".hero-credit"); if(cr) cr.textContent=(d.image?src:(d._photoTitle||"")); };
+    img.onload=()=>{ hero.classList.add("has-photo"); if(isFile) hero.classList.add("has-file"); const cr=hero.querySelector(".hero-credit"); if(cr) cr.textContent=(d.image?src:(d.photoCredit||d._photoTitle||"")); };
     img.onerror=()=>{ if(isFile){ hero.classList.remove("has-photo","has-file"); } };
     img.referrerPolicy="no-referrer";
     heroBg(hero, heroSrc); img.src=heroSrc;
@@ -4687,7 +4688,7 @@ async function renderRealEvent(d){
   // If the story arrived WITH no picture at all, resolve one right away (story_photo picks the subject/place)
   // — there's no placeholder card behind it anymore, so we don't want it sitting on a blank dark frame.
   // Otherwise give the article's own image + the article-page image their moment first, then fall back.
-  if(!(d.image || d._photo)) loadHeroFile(d);
+  if(!(d.image || d.photo || d._photo)) loadHeroFile(d);
   setTimeout(()=>{ if(activeEvent===d.id) loadHeroFile(d); }, 1200);
   // pull clean paragraphs + description + hi-res image from the article page itself
   const api=aiBridge();

@@ -550,6 +550,9 @@ GEO_CASES = [
     ("US launches air strike against Iran nuclear site", "",
      "Iran", "GUARD: a PHYSICAL 'strike against Iran' still lands IN Iran — only an ABSTRACT 'war/strategy "
      "against X' sinks the target; a strike keeps it as the scene"),
+    ("Malaysia fears military miscalculation near Sabah amid US-China rivalry", "",
+     "Malaysia", "SHIPPED BUG: dotted CHINA. The scene is 'near Sabah' (a Malaysian Borneo state now in the "
+     "gazetteer); the US and China are a rivalry named as context ('amid US-China rivalry'), not the scene"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
