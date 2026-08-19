@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.16"
+APP_VERSION = "1.4.17"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d28"   # d28: DETERMINISTIC merge of reworded same-event dots (3 'UAE detects Iran missiles', 2 'UAE
-                    #      halts trade') on EVERY build — no longer waits on the live AI pass; resweep + clean sum.
+_DATA_VER = "d29"   # d29: resweep so every teaser rebuilds clean (no double full-stop after a quote); the frontend
+                    #      now also scrubs promo leads / URLs / "Source:" at DISPLAY time so a stale dot can't leak them.
 _SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -746,6 +746,10 @@ def _end_stop(t):
     tr = (t or "").rstrip()
     if not tr:
         return t
+    # ALREADY TERMINATED: a sentence-ender optionally wrapped by a closing quote/bracket ('…is open and
+    # operating."'). Adding another '.' shipped the double-stop '…operating.".' — leave it alone.
+    if re.search(r"[.!?…][\"'’”)\]]*$", tr):
+        return tr
     last = tr.rsplit("\n", 1)[-1]
     if len(last.split()) < 4 or not re.search(r"[A-Za-z0-9”’\"']$", last):
         return t

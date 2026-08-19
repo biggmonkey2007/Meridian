@@ -1423,8 +1423,21 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—.\s]+$/,"").trim()+"."; }
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
-function leadText(s){
+// DISPLAY-TIME SCRUB — the backend already cleans the teaser, but a stale cached feed (built before a fix)
+// must never leak sloppiness onto a card. So EVERY body/teaser also passes through this at render time: a
+// promo lead ("JUST IN -", "BREAKING:"), a raw URL, a dangling "Source:/Via:/Link:" pointer, and doubled
+// spaces/space-before-punctuation are all removed here too. Idempotent on already-clean text.
+function tidyLead(s){
   s=String(s||"").trim(); if(!s) return s;
+  s=s.replace(/^\s*(?:just\s?in|breaking|update|updated|developing|exclusive|alert|flash|watch|new|now|urgent|live|latest|hot|report)\b\s*[-:–—|]+\s*/i,"");   // promo lead
+  s=s.replace(/\s*(?:source|link|via|read(?:\s+more)?|full\s+story|more|details?)\s*:?\s*(?:https?:\/\/|www\.)\S*/gi," ");  // "Source: http…"
+  s=s.replace(/(?:https?:\/\/|www\.)\S+/gi," ");                                   // any bare URL
+  s=s.replace(/\s*[-–—|]?\s*(?:source|link|via|read(?:\s+more)?|full\s+story)\s*:?\s*$/i,"");   // a dangling "Source:" after the url was cut
+  s=s.replace(/\s+([.,;:!?])/g,"$1").replace(/\s{2,}/g," ").trim();
+  return s;
+}
+function leadText(s){
+  s=tidyLead(s); if(!s) return s;
   // DEFENSE-IN-DEPTH against a mid-word cutoff: if the teaser is a whole sentence followed by a TRUNCATED
   // fragment ("…detected two ballistic missiles, Anadolu reports. One of the mi"), drop the fragment so the
   // card never shows "…one of the mi…". Mirrors the backend _to_last_sentence; a lone unfinished sentence is
@@ -1437,9 +1450,15 @@ function leadText(s){
   return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…";
 }
 // When a source teaser has to STAND IN for the brief (no AI summary produced), trim it back to its last full
-// sentence so it reads finished, not cut mid-word. Mirrors the backend _finish_brief.
-function finishText(s){ s=String(s||"").trim(); if(!s) return s; if(/[.!?"'’”)\]…]$/.test(s)) return s;
-  const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s; }
+// sentence so it reads finished, not cut mid-word — AND capitalize a lower-case continuation ("soon his
+// delusion…" -> "Soon his delusion…") so a headline/body split never leaves a mid-sentence body. Mirrors the
+// backend _finish_brief + _cap_first.
+function finishText(s){
+  s=tidyLead(s); if(!s) return s;
+  if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
+  if(/[.!?"'’”)\]…]$/.test(s)) return s;
+  const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s;
+}
 // Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
 //   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
 //   only when the stakes aren't obvious — a final "Why it matters:" line that we fold into the SAME

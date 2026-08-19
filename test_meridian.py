@@ -1992,6 +1992,9 @@ def main():
                  # a RAW URL / "JUST IN -" / "Source:" pointer never survives to the card (the sloppy Disclose teaser)
                  and app._sharpen_desc("JUST IN - UAE halts all trade and financial transactions with Iran. Source: https://x.com/mofauae/status/2089808983880327494?s=46") == "UAE halts all trade and financial transactions with Iran."
                  and "http" not in app._sharpen_desc("Iran fired missiles at the UAE overnight. More at https://t.me/insiderpaper")
+                 # a sentence that already ends inside a closing quote must NOT get a second full stop (the '…operating.".' bug)
+                 and app._sharpen_desc('JUST IN - Trump says the blockade remains, "The Hormuz Strait is open and operating." Source: https://truthsocial.') == 'Trump says the blockade remains, "The Hormuz Strait is open and operating."'
+                 and not app._end_stop('The strait is open and operating."').endswith('".')
                  # a SHORT teaser truncated mid-sentence is cut back to the last WHOLE sentence, never shipped as a
                  # stub with a tacked-on period ("…oil is down today a.") — the shipped bug across many cards.
                  and app._sharpen_desc("The US said keeping oil prices low is its top priority, ahead of Iran's nuclear program. “I know that oil is down today a...").endswith("nuclear program.")
