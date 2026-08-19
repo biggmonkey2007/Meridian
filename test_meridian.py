@@ -540,6 +540,16 @@ GEO_CASES = [
      "Caspian Sea", "SHIPPED BUG: dotted Washington/Tehran. A transit 'through the Caspian Sea' physically "
      "happens ON the sea — 'through'/'via' are now locating prepositions, so the water route is the scene, not "
      "the sender/receiver/background actor"),
+    ("China Added 200,000 Bpd To Crude Reserves In July Despite Hormuz Crisis", "",
+     "China", "SHIPPED BUG: dotted the Strait of Hormuz. 'DESPITE the Hormuz crisis' is a contrasting BACKDROP, "
+     "not the scene — the event is China's reserve build. Backdrop places (despite/amid) sink to the subject"),
+    ("Trump's collapsing popularity exposes strategic failure in the war against Iran",
+     "President Donald Trump's approval rating fell to a historic low of 33 percent, a measure of the failure of the joint US-Israeli military strategy against Iran.",
+     "United States", "SHIPPED BUG: dotted Tehran. 'the WAR against Iran' makes Iran the ADVERSARY of an abstract "
+     "struggle, not a physical scene — so the desc's real subject (the US, Trump's approval) wins"),
+    ("US launches air strike against Iran nuclear site", "",
+     "Iran", "GUARD: a PHYSICAL 'strike against Iran' still lands IN Iran — only an ABSTRACT 'war/strategy "
+     "against X' sinks the target; a strike keeps it as the scene"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)

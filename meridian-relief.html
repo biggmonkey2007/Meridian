@@ -1430,6 +1430,9 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 function tidyLead(s){
   s=String(s||"").trim(); if(!s) return s;
   s=s.replace(/^\s*(?:just\s?in|breaking|update|updated|developing|exclusive|alert|flash|watch|new|now|urgent|live|latest|hot|report)\b\s*[-:–—|]+\s*/i,"");   // promo lead
+  // WIRE DATELINE at the start ("TEHRAN — …", "WASHINGTON (Reuters) — …", "BEIRUT, Lebanon — …"): an
+  // ALL-CAPS place + optional ", Country"/"(Agency)" + a spaced dash. A card should START with the news.
+  s=s.replace(/^\s*[A-Z][A-Z.'&\- ]{2,28}?(?:,\s*[A-Z][a-zA-Z.'\- ]{1,20})?(?:\s*\([^)]{1,30}\))?\s*[–—-]\s+/,"");
   s=s.replace(/\s*(?:source|link|via|read(?:\s+more)?|full\s+story|more|details?)\s*:?\s*(?:https?:\/\/|www\.)\S*/gi," ");  // "Source: http…"
   s=s.replace(/(?:https?:\/\/|www\.)\S+/gi," ");                                   // any bare URL
   s=s.replace(/\s*[-–—|]?\s*(?:source|link|via|read(?:\s+more)?|full\s+story)\s*:?\s*$/i,"");   // a dangling "Source:" after the url was cut

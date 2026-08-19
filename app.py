@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.17"
+APP_VERSION = "1.4.18"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,9 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d29"   # d29: resweep so every teaser rebuilds clean (no double full-stop after a quote); the frontend
-                    #      now also scrubs promo leads / URLs / "Source:" at DISPLAY time so a stale dot can't leak them.
-_SUM_PROMPT_VER = "17"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
+_DATA_VER = "d30"   # d30: resweep so the context-place geo fix (despite/against backdrop) re-places every dot and
+                    #      summaries regenerate with the statement-quote+attribution prompt (_SUM_PROMPT_VER 18).
+_SUM_PROMPT_VER = "18"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -427,7 +427,12 @@ def _summarize(title, text, source="", depth=False):
               "the source that used it. When the SOURCE OUTLET below is a state or partisan wire and the story is "
               "its government's line, make that plain ('Russian state media said…'). This applies to EVERY "
               "source equally — Russian, Ukrainian, Israeli, Iranian, Western outlets and Telegram channels "
-              "alike — so the reader always knows whose account they are reading.\n\n"
+              "alike — so the reader always knows whose account they are reading.\n"
+              "QUOTES: when the story IS a statement by a named person, that is the bare-minimum standard — write "
+              "it as attributed reported speech naming WHO said it, and put the distinctive wording in real "
+              "quotation marks: e.g., Iran's deputy foreign minister called Trump's remarks about the Strait of "
+              "Hormuz a \"delusion\" that Tehran would \"correct.\" Never present a quote as a bare sentence with "
+              "no speaker and no quotation marks.\n\n"
               "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
               "ONE real place the event PHYSICALLY happened. Apply these rules IN ORDER:\n"
               "1) If the story is a broad analysis, round-up, trend or feature spanning MANY places with no single "
@@ -8243,9 +8248,11 @@ def _is_actor_h(h, words):
 
 def _genuine_scenes(hits, words):
     """The hits that could actually BE the scene of the event — not the actor, not a person's
-    nationality, not what a sanction is aimed at, and not a water named attributively."""
+    nationality, not what a sanction is aimed at, not a water named attributively, and not a backdrop/
+    adversary place ('despite the Hormuz crisis', 'the war against Iran')."""
+    _ctx = _context_places(hits, words)
     return [h for h in hits
-            if not _is_actor_h(h, words) and not _is_nationality(h, words)
+            if h[0] not in _ctx and not _is_actor_h(h, words) and not _is_nationality(h, words)
             and not _is_policy_target(h, words) and not _is_attrib_water(h, words)]
 
 
@@ -8277,6 +8284,32 @@ def _adversary_parties(hits, words):
             if i >= 2 and words[i - 1] == "with" and words[i - 2] in _ADVERSARY_NOUNS:
                 adv.add(i)
     return adv
+
+
+# A place named as CONTRASTING BACKDROP ("China buys oil DESPITE the Hormuz crisis") — the event is the
+# subject's action, the place is just scenery.
+_CONTEXT_PREP = {"despite", "notwithstanding", "amid", "amidst"}
+# An ABSTRACT struggle "against X" makes X the ADVERSARY, not a physical scene ("the WAR against Iran",
+# "STRATEGY against Russia"). A PHYSICAL "strike/attack/raid against X" is deliberately NOT here — there the
+# target IS where it landed, so X stays the scene.
+_CONFLICT_NOUN = {"war", "campaign", "offensive", "strategy", "policy", "pressure", "effort", "efforts",
+                  "struggle", "fight", "action", "actions", "measure", "measures", "sanction", "sanctions",
+                  "aggression", "hostility", "hostilities", "standoff", "confrontation", "crackdown", "failure"}
+
+
+def _context_places(hits, words):
+    """Indices of places named as BACKDROP or ADVERSARY, not the scene: 'DESPITE/amid the Hormuz crisis' (a
+    contrasting backdrop) and 'the war/strategy AGAINST Iran' (the adversary of an ABSTRACT struggle, not a
+    physical strike scene). Such a place must never win over the story's real subject."""
+    ctx = set()
+    for h in hits:
+        i = h[0]
+        if i >= 1 and words[i - 1] in _CONTEXT_PREP:
+            ctx.add(i)
+        elif h[1] in ("country", "demonym") and i >= 1 and words[i - 1] == "against":
+            if any(words[k] in _CONFLICT_NOUN for k in range(max(0, i - 4), i - 1)):
+                ctx.add(i)
+    return ctx
 
 
 def _pick_place(hits, words):
@@ -8452,6 +8485,15 @@ def _geolocate(title, sourcecountry, desc="", url=""):
         _wn = {h[7] for h in hits}
         if (_wn & {"sea of azov", "azov sea"}) and "black sea" in _wn:
             hits = [h for h in hits if h[7] != "black sea"]
+    # A BACKDROP/ADVERSARY place is not the scene: "China buys oil DESPITE the Hormuz crisis" -> the event is
+    # China's; "Trump's failure in the war AGAINST Iran" -> Iran is the adversary. Drop such places so the
+    # subject wins; if that empties the title, the desc/actor ladder below finds the real scene (or none).
+    if hits:
+        _ctx = _context_places(hits, words)
+        if _ctx:
+            _non = [h for h in hits if h[0] not in _ctx]
+            if _non:
+                hits = _non
     # A person's NATIONALITY is not the event location. Drop "Venezuelan man"/"Colombian migrants"
     # from the TITLE candidates. If a real place remains ("Colombian man in MAINE"), keep it. If the
     # title then names NO place, prefer the summary's actual scene ("...in Georgia"), and only then
