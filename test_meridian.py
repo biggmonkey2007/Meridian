@@ -1677,6 +1677,41 @@ def main():
                       "the cold-start build passes allow_ai=False so it never blocks on live geolocation calls"))
     print(f"  {'ok ' if _noai_ok else 'FAIL'} allow_ai=False -> {_fast_calls} live call(s); allow_ai=True -> {_slow_calls}")
 
+    # SUMMARY CACHE IS INDEPENDENT OF _DATA_VER — a brief depends on the PROMPT (_SUM_PROMPT_VER) + the story
+    # text, never on the feed-content version. A _DATA_VER bump must serve the CACHED brief (no re-summarize);
+    # keying it by _DATA_VER used to wipe every brief on each bump and force a ~500k-token regen over Groq's
+    # 200k-tokens/DAY free cap.
+    print("\n=== SUMMARY CACHE (survives a _DATA_VER bump) ===")
+    _orig_complete, _orig_savail, _orig_dver = app._llm_complete, app._llm_available, app._DATA_VER
+    _sum_calls = [0]
+    _nonce = os.urandom(6).hex()
+    _before = {f for f in os.listdir(app.CACHE_DIR) if f.startswith("sum_")}
+    try:
+        app._llm_available = lambda: True
+        def _fake_complete(system, user, **k):
+            _sum_calls[0] += 1
+            return "A short original brief about the nonce event."   # no WHERE/SCOPE lines to parse out
+        app._llm_complete = _fake_complete
+        _t = "Nonce cache headline " + _nonce
+        _x = "Plain factual body text for the nonce story " + _nonce + "."
+        app._summarize(_t, _x)                        # 1st call: cache miss -> generates + writes cache
+        _first = _sum_calls[0]
+        app._DATA_VER = "d_CHANGED_" + _nonce         # simulate a feed-content version bump
+        app._summarize(_t, _x)                        # 2nd call: must hit cache -> NO new LLM call
+        _second = _sum_calls[0]
+    finally:
+        app._llm_complete, app._llm_available, app._DATA_VER = _orig_complete, _orig_savail, _orig_dver
+        for f in {f for f in os.listdir(app.CACHE_DIR) if f.startswith("sum_")} - _before:
+            try: os.remove(os.path.join(app.CACHE_DIR, f))
+            except Exception: pass
+    _sumcache_ok = (_first == 1 and _second == 1)
+    ran[0] += 1
+    if not _sumcache_ok:
+        fails.append(("sum-cache", "_DATA_VER independence", "generate once then cache-hit",
+                      f"first={_first} second={_second}",
+                      "the summary cache must NOT be keyed by _DATA_VER, or every content bump re-summarizes everything"))
+    print(f"  {'ok ' if _sumcache_ok else 'FAIL'} brief generated once ({_first}), then served from cache after a _DATA_VER bump ({_second})")
+
     # SOURCE MUTE — a muted outlet is hidden from the map (no dots, no citations), matched on domain / name
     # / url; other outlets are untouched. (The default mutes The Guardian per the user.)
     print("\n=== SOURCE MUTE (a hidden outlet never reaches the map) ===")
@@ -2120,6 +2155,7 @@ def main():
              + len(CHATTER_CASES) + len(RELIABLE_CASES) + len(HARD_NEWS_CASES) + len(SHARPEN_CASES) + len(STANDALONE_CASES) + 1
              + 1   # + flag-coverage one-off
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
+             + 1   # + summary cache is independent of _DATA_VER (a content bump serves the cached brief)
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed

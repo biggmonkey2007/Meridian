@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.24"
+APP_VERSION = "1.4.25"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -368,7 +368,14 @@ def _summarize(title, text, source="", depth=False):
     if not (title or text) or not _llm_available():
         return ""
     text = text[:7000 if depth else 4500]
-    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_DATA_VER + "\n" + _SUM_PROMPT_VER + "\n" + ("D" if depth else "") + source + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
+    # CACHE KEY — deliberately NOT keyed by _DATA_VER. A brief depends only on the PROMPT (_SUM_PROMPT_VER),
+    # the depth flag, the source outlet, and the story text — never on the feed-content version. Keying it by
+    # _DATA_VER (which bumps on almost every update) threw away EVERY cached brief on each bump and forced a
+    # full ~190-story, ~500k-token re-summarize that blows Groq's 200k-tokens/DAY free cap — the real reason
+    # summaries kept hitting the wall. Same fix as the AI-WHERE cache (_aiwhere_path dropped _DATA_VER): key on
+    # the inputs that actually change the output, so briefs PERSIST across content bumps and regenerate ONLY
+    # when the prompt changes (bump _SUM_PROMPT_VER for that — it already forces a one-time regen on its own).
+    cache = os.path.join(CACHE_DIR, "sum_" + hashlib.sha1((_SUM_PROMPT_VER + "\n" + ("D" if depth else "") + source + "\n" + title + "\n" + text).encode("utf-8")).hexdigest()[:16] + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             return _drop_redundant_bullets(_drop_empty_bullets(_fix_speaker_colon(
