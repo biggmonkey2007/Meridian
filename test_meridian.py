@@ -1772,12 +1772,36 @@ def main():
          "source": "NOELREPORTS", "cat": "security", "image": "", "sum": "Komsomolsk refinery fire.", "url": "r2"},
     ]
     _diff_ok = len(app._merge_same_event([dict(e) for e in _refineries])) == 2   # two distinct scenes, two dots
+    # REWORDED SAME EVENT (no shared toll, no near-identical wording, event nouns stripped as generic) must
+    # STILL merge deterministically on every build: the three 'UAE detects Iranian missiles' reports -> 1 dot,
+    # the two 'UAE halts trade with Iran' reports -> 1 dot, and the missile story must NOT fold into the trade
+    # story (they share only {uae, iran}). This is the bug the user hit twice — dedup that relied on the AI net.
+    _laE, _lnE = app.COUNTRY_COORDS["United Arab Emirates"]
+    def _uae(t, cat, hrs, src):
+        return {"title": t, "place": "UAE", "country": "United Arab Emirates", "lat": _laE, "lng": _lnE,
+                "hrs": hrs, "cat": cat, "sources": [{"name": src, "url": "u" + src}], "sum": "", "image": ""}
+    _uae_ev = [_uae("UAE says it detected 2 incoming ballistic missiles launched from Iran", "security", 1.5, "mem"),
+               _uae("UAE defense ministry says Iran fired two ballistic missiles at territory", "security", 3.6, "ip"),
+               _uae("UAE says its air defense systems have detected a missile threat", "security", 10.1, "ip2"),
+               _uae("UAE halts all trade and financial transactions with Iran", "economy", 2.1, "disc"),
+               _uae("UAE suspends all commercial activity and financial transactions with Iran", "politics", 3.3, "wg")]
+    _uae_out = app._merge_same_event([dict(e) for e in _uae_ev])
+    _reworded_ok = (len(_uae_out) == 2                                    # 3 missiles -> 1, 2 trade -> 1
+                    and max(len(e.get("sources", [])) for e in _uae_out) == 3   # the missile dot cites all three
+                    and len(app._merge_same_event([                       # two DIFFERENT centroid strikes stay apart
+                        {"title": "Russia launches massive drone attack on Ukraine", "place": "Ukraine",
+                         "country": "Ukraine", "lat": 49.0, "lng": 32.0, "hrs": 1.0, "cat": "security",
+                         "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
+                        {"title": "Russia fires missiles at Ukraine energy sites overnight", "place": "Ukraine",
+                         "country": "Ukraine", "lat": 49.0, "lng": 32.0, "hrs": 2.0, "cat": "security",
+                         "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
               and _kdot["title"].startswith("Kyiv: 9 dead")             # ...and its headline leads
               and _kdot["hrs"] == 3.4                                    # dot stays fresh (latest update)
               and _diff_ok                                               # Komsomolsk-vs-Orsk stay two dots
+              and _reworded_ok                                           # UAE missile x3 -> 1, trade x2 -> 1, kept apart
               and app._death_toll("barrage kills nine in Kyiv") == 9
               and app._death_toll("markets rose 3 percent today") is None)
     ran[0] += 1

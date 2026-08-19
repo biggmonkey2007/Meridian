@@ -1423,7 +1423,19 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; const w=s.lastIndexOf(" ",340); return (w>200?s.slice(0,w):s.slice(0,340)).replace(/[,;:\-–—.\s]+$/,"").trim()+"."; }
 // A lead/summary that a source truncated mid-sentence ("...demonstrates Kiev") should read as continued,
 // not broken: end it on an ellipsis unless it already closes on sentence punctuation.
-function leadText(s){ s=String(s||"").trim(); if(!s) return s; if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1); return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…"; }
+function leadText(s){
+  s=String(s||"").trim(); if(!s) return s;
+  // DEFENSE-IN-DEPTH against a mid-word cutoff: if the teaser is a whole sentence followed by a TRUNCATED
+  // fragment ("…detected two ballistic missiles, Anadolu reports. One of the mi"), drop the fragment so the
+  // card never shows "…one of the mi…". Mirrors the backend _to_last_sentence; a lone unfinished sentence is
+  // left as-is and gets the gentle ellipsis below.
+  if(!/[.!?"'’”)\]…]$/.test(s)){
+    const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
+    if(m && m[0].trim().length>=30) s=m[0].trim();
+  }
+  if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
+  return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…";
+}
 // When a source teaser has to STAND IN for the brief (no AI summary produced), trim it back to its last full
 // sentence so it reads finished, not cut mid-word. Mirrors the backend _finish_brief.
 function finishText(s){ s=String(s||"").trim(); if(!s) return s; if(/[.!?"'’”)\]…]$/.test(s)) return s;
