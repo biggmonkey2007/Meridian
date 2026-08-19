@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.22"
+APP_VERSION = "1.4.23"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,8 +185,8 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d34"   # d34: resweep re-places every dot with the namesake guard (wrong-continent town -> the named
-                    #      nationality's country) + Zaporizhzhia-front village aliases; acronyms/orgs now defined.
+_DATA_VER = "d35"   # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
+                    #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
 _SUM_PROMPT_VER = "19"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -2168,6 +2168,11 @@ class Api:
                 key = _media_id(raw)
                 if not key or key in _seen_media:
                     return
+                # A LONG video (>12 min) is a daily ROUNDUP / livestream, not footage of THIS single event —
+                # its caption's top story rarely matches the dot, so it never belongs on one card. (A real clip
+                # of an incident runs seconds to a few minutes.)
+                if item.get("video") and _dur_minutes(item.get("dur")) > 12:
+                    return
                 own = _CLIP_OWNER.get(key)
                 if own and own != title:            # this footage is another dot's — leave it there
                     return
@@ -2917,11 +2922,13 @@ class Api:
             for _e in events:                      # a merge bug must NEVER blank the feed — degrade to un-merged
                 _e.setdefault("sources", [_src_of(_e)])
         events = _collapse_colocated(events)   # then one dot per place — merge a co-located barrage
-        if live:                               # LLM dedup net is a background-only luxury — never block cold start
-            try:
-                events = _ai_dedup(events)     # last net: fold same-event dots the code can't prove (free LLM)
-            except Exception:
-                pass
+        try:
+            # LIVE build: ask the LLM about new candidate pairs (capped) and LEARN the verdicts. COLD start:
+            # apply the verdicts already learned — NO live calls, so the reworded duplicates the last build
+            # merged stay merged on the very first paint instead of reappearing until the background pass runs.
+            events = _ai_dedup(events, cache_only=not live)
+        except Exception:
+            pass
         events = events[:400]                  # raised from 260 — a busy war day has more than 260 real stories
         for _e in events:
             _e.pop("_hard", None)              # transient sort key — not part of the served feed
@@ -4251,6 +4258,18 @@ def _media_id(url):
     every fetch, so the raw URL changes between the assign pass and the later event_media call — the
     owner lookup silently missed. Key on the path, without the volatile query."""
     return (url or "").split("?", 1)[0]
+
+
+def _dur_minutes(dur):
+    """A clip's 'MM:SS' / 'H:MM:SS' duration as minutes (0 if unknown). A long value marks a roundup/stream,
+    not single-event footage, so the media strip can drop it."""
+    s = (dur or "").strip()
+    if not re.match(r"^\d{1,2}(:\d{2}){1,2}$", s):
+        return 0.0
+    parts = [int(x) for x in s.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    return parts[0] * 60 + parts[1] + parts[2] / 60.0
 
 
 def _assign_clips(events, posts):
@@ -5917,12 +5936,14 @@ def _ai_dedup_facet(e):
     return "\n".join(lines)
 
 
-def _ai_same_event(a, b):
+def _ai_same_event(a, b, cache_only=False):
     """Ask the free LLM whether two dots report the SAME specific incident (same event, day and place — just
     a different outlet or wording), as a strict YES/NO. The model is given each dot's PLACE and the sibling
     headlines already merged onto it, so a town and the sea it sits on, or a 'deaths' report and an
     'injuries' report of one strike, read as one event. Conservative: different events that merely share a
-    topic, country or person stay apart. Cached 30 days per unordered title pair. False on error / no LLM."""
+    topic, country or person stay apart. Cached 30 days per unordered title pair. False on error / no LLM.
+    cache_only=True returns a PREVIOUSLY-LEARNED verdict with NO live call (None if unknown) — this is what
+    lets the COLD-START build apply the merges the last live build already discovered, instantly."""
     ta, tb = (a.get("title") or "").strip(), (b.get("title") or "").strip()
     if not ta or not tb:
         return False
@@ -5937,6 +5958,8 @@ def _ai_same_event(a, b):
             return bool(json.load(open(cache, encoding="utf-8")).get("s"))
         except Exception:
             pass
+    if cache_only:
+        return None                                   # not learned yet; the live build will decide next time
     system = ("You are a precise news-desk editor deduplicating a world-news map. Two items are the SAME when "
               "they report the SAME SPECIFIC INCIDENT — one real event, on the same day, at the same place — "
               "just from different outlets. The same incident is ROUTINELY REWORDED with synonyms and "
@@ -5962,7 +5985,7 @@ def _ai_same_event(a, b):
     return same
 
 
-def _ai_dedup(events, window_h=30, budget=80):
+def _ai_dedup(events, window_h=30, budget=120, cache_only=False):
     """Semantic duplicate pass — the safety net under the deterministic merges. Some duplicates share NO
     distinctive words and NO casualty fingerprint the code can key on: 'Russia says civilians killed in
     strike on Black Sea resort' (pinned to the sea) and 'Seven killed in drone attack on Gelendzhik' (the
@@ -5972,7 +5995,7 @@ def _ai_dedup(events, window_h=30, budget=80):
     better-resourced dot. Cheap and safe: candidates are pre-filtered so most feeds ask only a handful, every
     verdict is cached, live calls are capped, and with no LLM the feed is returned untouched."""
     n = len(events)
-    if n < 2 or not _llm_available():
+    if n < 2 or (not cache_only and not _llm_available()):
         return events
     if not _WEAK_MATCH:
         _init_weak_match()
@@ -5997,10 +6020,12 @@ def _ai_dedup(events, window_h=30, budget=80):
             # them and a small model folded them into one — the far-east dot vanished for a whole day.
             diff_scene = spi and spj and d2 >= 25
             geo = (spi and spj and coi == coj and d2 < 25)          # specific scenes <~5 deg apart, same country
-            # same country + same category + ONE shared distinctive word at the SAME spot (both on a country
-            # centroid, or the same city): catches 'Syria army on alert' vs 'Syria deploys troops, high alert',
-            # which share no second word and pin to no specific place, so the rules above never pair them.
-            samecat = (shared >= 1 and coi == coj and cati == catj and d2 < 0.36)
+            # SAME COUNTRY + SAME CATEGORY + ONE shared distinctive word — regardless of the specific-vs-centroid
+            # PLACE split. A statement/political story lands at the capital in one report and the country centroid
+            # in another ("Sacked Ukraine defence minister calls for wartime election" [Kyiv] vs "Fedorov demands a
+            # wartime vote" [Ukraine]); requiring the same spot kept them apart. diff_scene still blocks two FAR
+            # -APART SPECIFIC scenes, so this only pairs when at least one side isn't a distinct far city.
+            samecat = (shared >= 1 and coi == coj and cati == catj)
             # COUNTRY-CENTROID dots (no specific scene) in the SAME country within the window are candidates
             # for the LLM even with NO shared distinctive word. A fully-reworded report of one national event
             # ("UAE detected 2 incoming ballistic missiles from Iran" vs "UAE defense ministry says Iran fired
@@ -6032,15 +6057,20 @@ def _ai_dedup(events, window_h=30, budget=80):
 
     removed, calls = set(), 0
     for _s, i, j in cand:
-        if calls >= budget:
+        if not cache_only and calls >= budget:
             break
         ri, rj = find(i), find(j)
         if ri == rj:
             continue
         a, b = events[ri], events[rj]
-        calls += 1
-        if not _ai_same_event(a, b):
-            continue
+        if cache_only:
+            same = _ai_same_event(a, b, cache_only=True)   # free: a learned verdict, or None if not yet known
+            if not same:                                   # None (unknown) or False -> leave apart on cold start
+                continue
+        else:
+            calls += 1
+            if not _ai_same_event(a, b):
+                continue
         if quality(a) >= quality(b):
             keep, drop, kr, dr = a, b, ri, rj
         else:

@@ -1931,7 +1931,7 @@ def main():
     _orig_same, _orig_avail = app._ai_same_event, app._llm_available
     try:
         app._llm_available = lambda: True
-        app._ai_same_event = lambda a, b: ("black sea" in (a["title"] + b["title"]).lower()
+        app._ai_same_event = lambda a, b, cache_only=False: ("black sea" in (a["title"] + b["title"]).lower()
                                            and "gelendzhik" in (a["title"] + b["title"]).lower())
         _out = app._ai_dedup([dict(e) for e in _sd])
         _surv = next((e for e in _out if e["country"] == "Russia"), None)
@@ -1943,7 +1943,13 @@ def main():
         _noop = len(app._ai_dedup([dict(e) for e in _sd])) == 3                              # no LLM -> untouched
     finally:
         app._ai_same_event, app._llm_available = _orig_same, _orig_avail
-    _sem_ok = _sem_ok and _noop
+    # COLD-START cache-only pass with NO learned verdicts merges nothing and never calls the LLM (the real
+    # _ai_same_event reads the empty verdict cache -> None -> no merge), so a fresh feed is returned untouched.
+    _cacheonly_noop = len(app._ai_dedup([dict(e) for e in _sd], cache_only=True)) == 3
+    # a long ROUNDUP/stream video is not single-event footage; a short clip is kept
+    _dur_ok = (app._dur_minutes("24:46") > 12 and app._dur_minutes("1:02:00") > 12
+               and app._dur_minutes("0:22") <= 12 and app._dur_minutes("3:10") <= 12 and app._dur_minutes("Video") == 0)
+    _sem_ok = _sem_ok and _noop and _cacheonly_noop and _dur_ok
     ran[0] += 1
     if not _sem_ok:
         fails.append(("dedup", "ai-semantic-net", "Black Sea folds into Gelendzhik; Alibaba stays; offline no-op",
