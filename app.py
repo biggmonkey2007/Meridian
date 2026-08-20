@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.28"
+APP_VERSION = "1.4.29"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2568,21 +2568,6 @@ class Api:
         except Exception as ex:
             return {"error": str(ex)}
 
-    def country_news(self, country):
-        """Last-24h news for a country from Google News RSS (free, cached 20 min)."""
-        try:
-            cache = os.path.join(CACHE_DIR, "news_" + _slug(country) + ".json")
-            if os.path.exists(cache) and time.time() - os.path.getmtime(cache) < 1200:
-                return json.load(open(cache, encoding="utf-8"))
-            res = _news_get(country)
-            try:
-                json.dump(res, open(cache, "w", encoding="utf-8"))
-            except Exception:
-                pass
-            return res
-        except Exception as ex:
-            return {"error": str(ex)}
-
     def leader_posts(self, accounts):
         """VERBATIM posts from officials' OWN accounts (Telegram / Truth Social). No AI, no key.
         accounts = [{name,title,type,handle}]; returns {"accounts":[{name,title,platform,handle,posts:[{text,url,when}]}]}."""
@@ -3624,10 +3609,6 @@ def _news_get_q(query, limit=16):
     return {"items": out}
 
 
-def _news_get(country):
-    return _news_get_q(country + " when:1d")
-
-
 # Official primary sources that publish leaders'/governments' VERBATIM statements (RSS/Atom).
 CURATED_FEEDS = {
     "Russia":                   ("Kremlin (Office of the President)", ["http://en.kremlin.ru/events/president/transcripts/feed"]),
@@ -4430,13 +4411,6 @@ def _proper_words(text):
         if w not in _STOP and len(w) > 2:
             out.add(_stem(w))
     return out
-
-
-def _distinctive(words):
-    """At least one shared word must actually identify the event (a name, place detail, or specific noun)."""
-    if not _WEAK_MATCH:
-        _init_weak_match()
-    return any(w not in _WEAK_MATCH for w in words)
 
 
 def _sigwords(title):
@@ -5695,13 +5669,6 @@ def _is_muted(domain, source="", url=""):
         return False
     blob = ((domain or "") + " " + (source or "") + " " + (url or "")).lower()
     return any(m in blob for m in muted)
-
-
-def _jitter(lat, lng, key):
-    hexd = hashlib.md5(key.encode("utf-8")).hexdigest()
-    a = int(hexd[:4], 16) / 65535.0 - 0.5
-    b = int(hexd[4:8], 16) / 65535.0 - 0.5
-    return lat + a * 1.4, lng + b * 1.4
 
 
 # How map-worthy a category is, most first. A strike outranks an analysis piece at the same spot.

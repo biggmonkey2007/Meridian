@@ -1416,12 +1416,6 @@ function timeAgo(ts){
   return Math.floor(h/24)+"d ago";
 }
 function clockUTC(ts){ const d=new Date(ts); return d.toISOString().slice(11,19); }
-function fmtTime(ts){ const d=new Date(ts); return d.toUTCString().slice(5,22)+" UTC"; }
-function coordStr(lat,lng){
-  const la=Math.abs(lat).toFixed(2)+(lat>=0?"°N":"°S");
-  const lo=Math.abs(lng).toFixed(2)+(lng>=0?"°E":"°W");
-  return la+"  "+lo;
-}
 function el(html){ const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstChild; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Keep a headline WHOLE: the backend already hands us a complete first sentence, so this is just a sanity
@@ -1616,7 +1610,6 @@ function ageScale(d){
   return 1 - 0.45*f;                                   // full size -> ~0.55x by the cutoff
 }
 function baseR(d){ return Math.max(6, (9 + (d.heat||4)*1.15) * ageScale(d)); }
-function isRecent(d){ return (Date.now()-d.reportedAt) < 3*3600000; }
 function visibleEvents(){
   return EVENTS.filter(e => filterCats.has(e.cat) && (Date.now()-e.reportedAt) < _windowHrs(e)*3600000);
 }
@@ -2138,8 +2131,6 @@ function countryAt(lng,lat){
   }
   return null;
 }
-function bboxOf(f){ let a=180,b=90,c=-180,d=-90; (function w(co){ if(typeof co[0]==="number"){ if(co[0]<a)a=co[0]; if(co[0]>c)c=co[0]; if(co[1]<b)b=co[1]; if(co[1]>d)d=co[1]; } else co.forEach(w); })(f.geometry.coordinates); return [[a,b],[c,d]]; }
-function crossesAntimeridian(f){ const g=f&&f.geometry; if(!g) return false; const polys=g.type==="Polygon"?[g.coordinates]:g.type==="MultiPolygon"?g.coordinates:[]; for(const poly of polys) for(const ring of poly) for(let i=1;i<ring.length;i++){ if(Math.abs(ring[i][0]-ring[i-1][0])>180) return true; } return false; }
 // --- antimeridian-safe polygon fill: unwrap each ring to continuous longitudes, then clip into [-180,180] pieces (Sutherland-Hodgman) so a country like Russia/USA/Fiji fills as two in-range polygons instead of streaking across the map ---
 function _unwrapRing(ring){ const out=[ring[0].slice()]; for(let i=1;i<ring.length;i++){ let lng=ring[i][0]; const prev=out[out.length-1][0]; while(lng-prev>180)lng-=360; while(lng-prev<-180)lng+=360; out.push([lng,ring[i][1]]); } return out; }
 function _clipHalf(poly,side,x){ const out=[],n=poly.length; if(!n)return out; for(let i=0;i<n;i++){ const a=poly[i],b=poly[(i+1)%n]; const ain=side>0?a[0]>=x:a[0]<=x, bin=side>0?b[0]>=x:b[0]<=x; if(ain)out.push(a); if(ain!==bin){ const t=(x-a[0])/(b[0]-a[0]); out.push([x,a[1]+t*(b[1]-a[1])]); } } return out; }
@@ -2961,14 +2952,11 @@ function ageTick(){
 function sizeDots(){
   eventMarkers.forEach(m=>{ const el=m.marker.getElement(); if(el){ const core=el.querySelector(".mk"); if(core) core.classList.toggle("mk-active", m.id===activeEvent); } });
 }
-function applyZoomStyles(){ }
 
 /* ---- 3D globe (MapLibre globe projection — same map tiles as the flat map) ---- */
 function hasWebGL(){ try{ const c=document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl2")||c.getContext("webgl"))); }catch(e){ return false; } }
 const ML_JS  = ["https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js","https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"];
 const ML_CSS = "https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css";
-const CARTO_SUB = ["a","b","c","d"];
-function cartoTiles(style){ return CARTO_SUB.map(s=>"https://"+s+".basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}.png"); }
 function mlBaseSpec(k){
   if(k==="osmintl")   return { tiles:["https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"], max:18 };
   if(k==="satellite") return { tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], max:18 };
@@ -3399,7 +3387,6 @@ function startGlobePulse(){
   };
   _gPulseRAF=requestAnimationFrame(tick);
 }
-function stopGlobePulse(){ if(_gPulseRAF){ cancelAnimationFrame(_gPulseRAF); _gPulseRAF=null; } }
 function straitsGeoGL(){ return {type:"FeatureCollection",features:(typeof STRAIT_DEFS!=="undefined"?STRAIT_DEFS:[]).map(s=>({type:"Feature",geometry:{type:"Point",coordinates:[s.lng,s.lat]},properties:{name:s.name}}))}; }
 function portsGeoGL(){ const feats=[]; if(typeof PORTS!=="undefined") Object.keys(PORTS).forEach(cn=>PORTS[cn].forEach(p=>feats.push({type:"Feature",geometry:{type:"Point",coordinates:[p[2],p[1]]},properties:{name:p[0],country:cn}}))); return {type:"FeatureCollection",features:feats}; }
 function makeAnchorIcon(){
@@ -3567,7 +3554,6 @@ function flyTo(lng,lat,z){
   if(map) map.flyTo([lat,lng], Math.max(z||5, map.getZoom()), { duration:0.7 });
 }
 function centerOnEvent(d,z){ flyTo(d.lng, d.lat, z||5); }
-function flyToCountry(name){ focusCountry(name); }
 function size(){ if(map) map.invalidateSize(); sizeGlobe(); }
 
 /* ---- map-layers panel ---- */
@@ -3604,9 +3590,6 @@ function toggleLayer(k){
     if(globeMode) applyGlobeStyle();
   } else { updateLabelZoom(); if(globeMode) updateGlobeOverlayVis(); }
 }
-function applyLayers(){ updateLabelZoom(); }
-function renderCitiesNoop(){}
-
 /* ---- the map is started from INIT, after the page loads ---- */
 
 
@@ -3831,11 +3814,6 @@ function _wireReadMore(txId, btnId){
     }
   });
 }
-function factbookSlug(name){
-  const map={ "United States of America":"united-states","United Kingdom":"united-kingdom","Dem. Rep. Congo":"congo-democratic-republic-of-the","Congo":"congo-republic-of-the","Czechia":"czechia","S. Sudan":"south-sudan","Bosnia and Herz.":"bosnia-and-herzegovina","Dominican Rep.":"dominican-republic","Central African Rep.":"central-african-republic","Eq. Guinea":"equatorial-guinea","W. Sahara":"western-sahara","Myanmar":"burma","Côte d'Ivoire":"cote-divoire","eSwatini":"eswatini","Cabo Verde":"cabo-verde","Timor-Leste":"timor-leste" };
-  if(map[name]) return map[name];
-  return shortCountry(name).toLowerCase().replace(/^the /,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
-}
 // SELF-HEAL LEADER PHOTOS: any leader that rendered as a blank letter (Wikidata was rate-limited, so the
 // backend sent a name but no photo) gets a second chance here — fetch the Wikipedia thumbnail by name (and
 // by a trimmed given+surname query) and swap the letter for the photo. So a blank picture fixes itself.
@@ -3959,9 +3937,6 @@ async function setupStatements(name){
   }catch(e){}
   slot.innerHTML=stmtsHead(name)+`<div id="st-clip" class="xp-clip-wrap" style="margin:8px 0 14px"></div>`+(html||`<div class="cn-note">No recent statements found for ${esc(shortCountry(name))}.</div>`);
   try{ embedClips(name,"st-clip"); }catch(e){}
-}
-async function attachStmtPhoto(elId, wiki){
-  try{ const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(wiki)); if(!r.ok) return; const j=await r.json(); const src=(j.thumbnail&&j.thumbnail.source); if(src){ const el=document.getElementById(elId); if(el){ el.style.backgroundImage=`url("${String(src).replace(/"/g,'')}")`; el.classList.add("has-img"); el.textContent=""; } } }catch(e){}
 }
 let _uidN=0;
 function clipDate(ts){ try{ if(!ts) return ""; const d=new Date(ts*1000); if(isNaN(d)) return ""; const days=Math.floor((Date.now()-d.getTime())/86400000); if(days<=0) return "today"; if(days===1) return "yesterday"; if(days<30) return days+"d ago"; return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}); }catch(e){ return ""; } }
@@ -4166,33 +4141,6 @@ async function loadHeroFile(d){
   // (or ever fall back to a flag) — the user wants a real photo, never a flag, a map, or a category card.
 }
 
-/* THE LAST RESORT, and honestly the nicest one: a real map of the spot, marked. It cannot fail (the
-   basemap is already loaded and cached), it is never a lie — a map does not pretend to be a
-   photograph — and it answers the question the map itself exists to answer: WHERE is this? */
-function heroMapCrop(d){
-  const hero=document.getElementById("hero-"+d.id);
-  if(!hero || hero.classList.contains("has-photo") || hero._map) return;
-  if(!isFinite(d.lat) || !isFinite(d.lng) || typeof L==="undefined") return;
-  const holder=document.createElement("div");
-  holder.className="hero-mapcrop";
-  hero.insertBefore(holder, hero.querySelector(".hero-grad"));
-  try{
-    const m=L.map(holder,{zoomControl:false,attributionControl:false,dragging:false,boxZoom:false,
-      scrollWheelZoom:false,doubleClickZoom:false,keyboard:false,touchZoom:false,tap:false,
-      fadeAnimation:false,zoomAnimation:false});
-    L.tileLayer("https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-                {maxZoom:18,detectRetina:true}).addTo(m);
-    const z = (d.place||"").indexOf(",")>0 ? 9 : 5;     // a town gets a close crop, a country a wide one
-    m.setView([d.lat, d.lng], z);
-    const col=(CAT[d.cat]&&CAT[d.cat].hex)||"#c0653f";
-    L.circleMarker([d.lat,d.lng],{radius:8,color:"#fff",weight:3,fillColor:col,fillOpacity:1}).addTo(m);
-    hero._map=m;
-    hero.classList.add("has-photo","has-file","has-map");
-    const cr=hero.querySelector(".hero-credit");
-    if(cr) cr.textContent="";                  // no location label on the picture — it's shown under the headline
-    setTimeout(()=>{ try{ m.invalidateSize(); }catch(e){} }, 60);
-  }catch(e){}
-}
 /* THE GOLDEN RULE: nothing leaves the app. Ever.
    A handful of wire clips are uploads Telegram refuses to release to ANY web client — no file URL
    exists in the preview, the post page, the embed, or via yt-dlp; the bytes are simply not on offer.
@@ -5075,36 +5023,6 @@ function selectEvent(d){
 }
 
 function clearCountry(){}
-function renderCountryFeatures(feature){
-  gCountry.selectAll("*").remove();
-  const b=d3.geoBounds(feature), pad=2.5;
-  const inBox=(lng,lat)=> lng>=b[0][0]-pad && lng<=b[1][0]+pad && lat>=b[0][1]-pad && lat<=b[1][1]+pad;
-  const relevant=[];
-  for(const seg of RIVERS.f){
-    let near=false; for(const p of seg[1]){ if(inBox(p[0],p[1])){ near=true; break; } }
-    if(!near) continue;
-    let inside=false; for(const p of seg[1]){ if(d3.geoContains(feature,p)){ inside=true; break; } }
-    if(inside) relevant.push(seg);
-  }
-  ccClip.attr("d", path(feature));
-  if(relevant.length){
-    const faint=gCountry.append("g");
-    relevant.forEach(seg=> faint.append("path").attr("class","river cc-cont").attr("d", path({type:"LineString",coordinates:seg[1]})));
-    const solid=gCountry.append("g").attr("clip-path","url(#ccClip)");
-    relevant.forEach(seg=> solid.append("path").attr("class","river cc-solid-l").attr("d", path({type:"LineString",coordinates:seg[1]})));
-    const labeled=new Set(), lab=gCountry.append("g");
-    relevant.forEach(seg=>{ const nm=seg[0]; if(labeled.has(nm)) return; let pt=null; for(const p of seg[1]){ if(d3.geoContains(feature,p)){ pt=p; break; } } if(!pt) return; labeled.add(nm); const xy=projection(pt); lab.append("text").attr("class","rlabel cc-rlabel").attr("x",xy[0]).attr("y",xy[1]).attr("text-anchor","middle").text(nm); });
-  }
-  // mountains / landform labels inside this country (shown regardless of global toggle)
-  const mtn=gCountry.append("g");
-  GEO.forEach(g=>{ if(!(g[3]==="range"||g[3]==="peak"||g[3]==="desert")) return; if(!d3.geoContains(feature,[g[2],g[1]])) return; const xy=projection([g[2],g[1]]); mtn.append("text").attr("class","geo "+g[3]+" cc-geo").attr("x",xy[0]).attr("y",xy[1]).attr("text-anchor","middle").text(g[0]); });
-  sizeCountry();
-}
-function sizeCountry(){
-  const ls=labelScale();
-  gCountry.selectAll(".cc-rlabel").each(function(){ const t=d3.select(this); const vis=curK>=1.35; t.style("opacity",vis?0.95:0).style("display",vis?null:"none").style("font-size",(10*ls/curK)+"px"); });
-  gCountry.selectAll(".cc-geo").each(function(){ d3.select(this).style("font-size",(11*ls/curK)+"px"); });
-}
 function selectCountry(name){
   activeCountry=name; activeEvent=null;
   highlightCountry(name);

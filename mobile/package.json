@@ -1,6 +1,6 @@
 {
   "name": "meridian-mobile",
-  "version": "1.4.28",
+  "version": "1.4.29",
   "private": true,
   "description": "Capacitor wrapper that ships Meridian's web UI as native iOS + Android apps, pointed at the hosted feed.",
   "scripts": {
