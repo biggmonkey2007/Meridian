@@ -1445,13 +1445,17 @@ function tidyLead(s){
   s=s.replace(/\s+([.,;:!?])/g,"$1").replace(/\.\s*\.\s*/g,". ").replace(/\s{2,}/g," ").trim();
   return s;
 }
+// A teaser truncated mid-ATTRIBUTION reads badly ("…if the suspect is convicted, The Telegraph has…",
+// "…as long as they persist, Maria Zakharova has…"). Strip a trailing ", <who> reports/said/has…" or
+// ", according to <who>" clause so the sentence ends on its own content, not a dangling source tag.
+const _ATTR_TAIL=/,\s+(?:according to\s+[\w'’.\- ]{2,45}|(?:the\s+)?[\w'’.\- ]{2,45}?\s+(?:has|have|had|reports?|reported|says?|said|tells?|told|learns?|learned|writes?|wrote|adds?|added|notes?|noted|confirms?|confirmed|announces?|announced|claims?|claimed))\s*$/i;
 function leadText(s){
   s=tidyLead(s); if(!s) return s;
   // MID-WORD CUTOFF: a source truncates its teaser at a character limit, gluing "…"/"..." onto a chopped word
   // ("…covert surveillance operati…"). Strip that marker FIRST (an earlier version left it, so the trim below
   // was skipped and the chopped word showed). Then cut back to the last WHOLE sentence; if the teaser has no
   // whole sentence at all (one long run-on), drop the final — likely chopped — word instead of showing it.
-  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").trim();
+  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").replace(_ATTR_TAIL,"").trim();
   if(!/[.!?"'’”)\]]$/.test(s)){
     const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
     if(m && m[0].trim().length>=30) s=m[0].trim();
@@ -1466,7 +1470,7 @@ function leadText(s){
 // backend _finish_brief + _cap_first.
 function finishText(s){
   s=tidyLead(s); if(!s) return s;
-  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").trim();        // a truncation marker hides a chopped word — strip it first
+  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").replace(_ATTR_TAIL,"").trim();   // strip the truncation marker AND a dangling ", X reports/has…" tail
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
   if(/[.!?"'’”)\]]$/.test(s)) return s;
   const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
@@ -1760,15 +1764,13 @@ function tuneVectorStyle(style){
     // it's hard to find. Widen the band (appear earlier at z2, and never cap out) and darken/halo them so
     // "Baltic Sea", "Persian Gulf" etc. stay legible across zooms. Line-placed names (straits, big rivers)
     // also get a tighter symbol-spacing so the name repeats along the feature instead of showing just once.
+    // Basemap water labels are HIDDEN — our own `g-seas` layer is the single source of sea/gulf/ocean names,
+    // so a sea is labelled exactly ONCE (no "Baltic Sea" + "BALTIC SEA" duplicate) and we control style +
+    // coverage (Positron misses e.g. the Gulf of Oman). `g-seas` matches this original italic look.
     if(l["source-layer"]==="water_name" || /^watername/.test(l.id)){
-      l.minzoom = 2;
-      if(l.maxzoom!==undefined) delete l.maxzoom;
-      // Gulf of America — the US official name (2025), as shown on Google Maps for US users. Swap the LABEL
-      // only; the water geometry is Positron's, unchanged. `wn` is the same English name EN_TEXT resolves.
-      const _wn = ["coalesce", ["get","name_en"], ["get","name_int"], ["get","name"]];
-      l.layout = Object.assign({}, l.layout, {"symbol-spacing":300, "text-max-width":7,
-        "text-field": ["let", "wn", _wn, ["case", ["==", ["var","wn"], "Gulf of Mexico"], "Gulf of America", ["var","wn"]]]});
-      l.paint  = Object.assign({}, l.paint,  {"text-color":"#8a97a0","text-halo-color":"#ffffff","text-halo-width":1.2,"text-halo-blur":0.3,"text-opacity":1});
+      // Blank the TEXT (not just visibility): the "Place labels" toggle re-sets visibility from _gCartoIds, so
+      // an empty text-field is the durable way to keep the basemap's water names off while ours show.
+      l.layout = Object.assign({}, l.layout, {"text-field":"", visibility:"none"});
     }
   });
   return style;
@@ -3462,10 +3464,13 @@ function addGlobeOverlays(){
   // collision (text-allow-overlap:false) hides any that would overlap the basemap's own water label or a city.
   if(!mlMap.getSource("g-seas")){
     mlMap.addSource("g-seas",{type:"geojson",data:seasGeoGL()});
+    // Match Positron's ORIGINAL water look: soft grey-blue, ITALIC, mixed-case (NOT uppercase), a little
+    // letter-spacing, white halo. Collision (text-allow-overlap:false) + a per-sea size floor mean only the
+    // labels that FIT the current view show — so at most one "Baltic Sea" is on screen at a time.
     mlMap.addLayer({id:"g-seas-lbl",type:"symbol",source:"g-seas",minzoom:2,layout:{visibility:layers.labels?"visible":"none",
-      "text-field":["get","name"],"text-font":["Open Sans Regular"],"text-transform":"uppercase","text-letter-spacing":0.16,
-      "text-size":["interpolate",["linear"],["zoom"],2,9.5,5,12,8,15],"text-max-width":8,"text-allow-overlap":false},
-      paint:{"text-color":"#8aa0b2","text-halo-color":"#ffffff","text-halo-width":1.4,"text-halo-blur":0.3,"text-opacity":0.95}}, underDots);
+      "text-field":["get","name"],"text-font":["Open Sans Italic","Open Sans Regular"],"text-letter-spacing":0.04,
+      "text-size":["interpolate",["linear"],["zoom"],2,11,5,13,8,16],"text-max-width":8,"text-allow-overlap":false,"text-padding":6},
+      paint:{"text-color":"#8a97a0","text-halo-color":"#ffffff","text-halo-width":1.3,"text-halo-blur":0.3,"text-opacity":1}}, underDots);
   }
 }
 function updateGlobeOverlayVis(){

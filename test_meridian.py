@@ -225,6 +225,12 @@ GEO_CASES = [
      "'Saudi-led' is the sponsor; the strike scene is Yemen"),
     ("Russia backed the ceasefire proposal at the United Nations", "", "!Israel",
      "'backed' here is a VERB (Russia is the actor), so Russia is NOT dropped as a fake backer"),
+    # An EU leader's STATEMENT is EU news (Brussels), not news of the country they're talking ABOUT. SHIPPED
+    # BUG: "von der Leyen said Russia is losing" dotted RUSSIA. The EU institutions map to Belgium (Brussels).
+    ("EU Commission President Ursula von der Leyen said Russia is losing the war it started", "", "Belgium",
+     "the EU Commission President is a Brussels/Belgium speaker; Russia is only the topic"),
+    ("EU Commission announces a new sanctions package on Russia", "", "Brussels",
+     "the EU Commission acting is Brussels news, not Russia"),
     ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
      "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
     ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",

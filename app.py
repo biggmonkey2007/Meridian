@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.32"
+APP_VERSION = "1.4.33"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d40"   # d40: resweep so feeds rebuild with GEMINI now in the chain — the ~60% of dots Groq's daily
+_DATA_VER = "d41"   # d41: resweep so EU-leader statements re-place on Brussels (von der Leyen was dotting Russia),
+                    #      Vucic/Zakharova/Kallas seats apply, and the sea-label / attribution-tail cleanups land.
+                    # d40: resweep so feeds rebuild with GEMINI now in the chain — the ~60% of dots Groq's daily
                     #      cap left unsummarised get a real brief on the next build instead of the raw teaser.
                     # d39: resweep so a non-violent espionage/surveillance story recolours from red 'security' to
                     #      'politics' (it scored security only on the word 'mercenary').
@@ -7288,12 +7290,18 @@ _OFFICIAL_COUNTRY = {
     "rubio": "United States of America", "hegseth": "United States of America",
     "biden": "United States of America",
     "putin": "Russia", "lavrov": "Russia", "medvedev": "Russia", "peskov": "Russia",
+    "zakharova": "Russia", "shoigu": "Russia", "mishustin": "Russia",
     "zelensky": "Ukraine", "zelenskyy": "Ukraine",
     "netanyahu": "Israel", "khamenei": "Iran", "pezeshkian": "Iran", "araghchi": "Iran",
     "xi jinping": "China", "macron": "France", "starmer": "United Kingdom",
     "merz": "Germany", "scholz": "Germany", "meloni": "Italy",
     "erdogan": "Turkey", "modi": "India", "kim jong un": "North Korea",
-    "milei": "Argentina", "lula": "Brazil", "orban": "Hungary",
+    "milei": "Argentina", "lula": "Brazil", "orban": "Hungary", "vucic": "Serbia",
+    # The EU's own leaders sit in BRUSSELS (mapped to Belgium, as the EU institutions are) — a statement by
+    # the Commission/Council President is EU news, not news of whatever country they are talking ABOUT.
+    "von der leyen": "Belgium", "ursula von der leyen": "Belgium", "leyen": "Belgium",
+    "kaja kallas": "Belgium", "kallas": "Belgium", "antonio costa": "Belgium",
+    "eu commission": "Belgium", "european commission president": "Belgium",
     # US institutions acting/announcing are news at their own seat (Washington), not the foreign topic:
     # "PENTAGON lowers Iran war death toll", "WHITE HOUSE weighs strike".
     "pentagon": "United States of America", "white house": "United States of America",
@@ -7312,7 +7320,8 @@ _SAY_VERBS = {"says", "said", "tells", "told", "threatens", "threatened", "warns
               "honoured", "remembers", "remembered", "mourns", "mourned", "hails", "hailed",
               "celebrates", "celebrated", "summons", "summoned", "expels", "expelled", "recalls",
               "apologises", "apologizes", "unveils", "unveiled", "protests", "protested",
-              "promises", "promised", "insists", "repeats", "reiterates", "reiterated"}
+              "promises", "promised", "insists", "repeats", "reiterates", "reiterated",
+              "thanks", "thanked", "thank", "welcomes", "welcomed", "congratulates", "congratulated"}
 
 
 # Things a CITY cannot do — if a "place" is doing one of these it's really a person's surname
