@@ -1750,11 +1750,17 @@ def main():
     # CEREBRAS FAILOVER — a primary (Groq) empty return (a daily-cap 429) must roll to Cerebras, not lose the
     # answer; and a geo second opinion can PREFER Cerebras (an independent model family) yet still fall back.
     print("\n=== CEREBRAS FAILOVER (backup provider + preferred second opinion) ===")
-    _orig_one2, _orig_ck2, _orig_cfg2 = app._llm_one, app._cerebras_key, app._summary_cfg
+    # self-healing model picker: strongest available id wins; sane fallbacks (pure, no network)
+    _pick_ok = (app._pick_cerebras_model(["gemma-4-31b", "gpt-oss-120b"]) == "gpt-oss-120b"
+                and app._pick_cerebras_model(["qwen-3-32b", "llama-3.3-70b"]) == "llama-3.3-70b"
+                and app._pick_cerebras_model(["gemma-4-31b"]) == "gemma-4-31b"
+                and app._pick_cerebras_model([]) == "gpt-oss-120b")
+    _orig_one2, _orig_ck2, _orig_cfg2, _orig_cm2 = app._llm_one, app._cerebras_key, app._summary_cfg, app._cerebras_model
     _seen = []
     try:
         app._summary_cfg = lambda: ("gsk-FAKE", "https://primary/x", "primary-model")
         app._cerebras_key = lambda: "csk-FAKE"
+        app._cerebras_model = lambda: "cerebras-test-model"      # stub the lazy resolver -> no network in tests
         def _fake_one(name, key, url, model, system, user, mt, temp):
             _seen.append(name)
             return "" if name == "primary" else "BACKUP:" + name
@@ -1764,8 +1770,8 @@ def main():
         app._llm_complete("s", "u", prefer="cerebras")          # prefer -> cerebras tried FIRST
         _pref_first = _seen[0] if _seen else None
     finally:
-        app._llm_one, app._cerebras_key, app._summary_cfg = _orig_one2, _orig_ck2, _orig_cfg2
-    _cb_ok = (_failover == "BACKUP:cerebras" and _order[:2] == ["primary", "cerebras"] and _pref_first == "cerebras")
+        app._llm_one, app._cerebras_key, app._summary_cfg, app._cerebras_model = _orig_one2, _orig_ck2, _orig_cfg2, _orig_cm2
+    _cb_ok = (_pick_ok and _failover == "BACKUP:cerebras" and _order[:2] == ["primary", "cerebras"] and _pref_first == "cerebras")
     ran[0] += 1
     if not _cb_ok:
         fails.append(("cerebras", "failover+prefer", "primary->cerebras; prefer=cerebras first",

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.26"
+APP_VERSION = "1.4.27"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -314,17 +314,68 @@ def _cerebras_key():
     return k
 
 
+# Which Cerebras model to prefer, strongest first. A key only exposes SOME of these, and Cerebras (like Groq)
+# renames/retires them — so we never hardcode one blindly; we pick the best the key actually has.
+_CEREBRAS_MODEL_PREF = ("gpt-oss-120b", "gpt-oss", "llama-3.3-70b", "llama3.3-70b", "llama-3.1-70b",
+                        "llama-4", "llama", "qwen-3-235b", "qwen-3-32b", "qwen", "gemma")
+
+
+def _pick_cerebras_model(ids):
+    """Choose the strongest available model id by _CEREBRAS_MODEL_PREF; fall back to the first listed, or a
+    sane default if the list is empty. Pure (no network) so it is unit-testable."""
+    ids = [i for i in (ids or []) if i]
+    if not ids:
+        return "gpt-oss-120b"
+    return next((i for p in _CEREBRAS_MODEL_PREF for i in ids if p in i), ids[0])
+
+
+def _cerebras_model():
+    """The Cerebras model to use — SELF-HEALING so a retired/renamed model can't silently kill the backup (the
+    exact bug Groq's deprecations caused; hardcoding 'llama-3.3-70b' already 404'd on a key that only had
+    gpt-oss-120b/gemma). Order: an explicit CEREBRAS_MODEL override, else a disk-cached pick, else ASK Cerebras
+    which models THIS key can access (/v1/models) and take the strongest. Cached 7 days; sane default if the
+    list can't be fetched. Resolved LAZILY (only when the Cerebras provider is actually reached)."""
+    env = (os.environ.get("CEREBRAS_MODEL") or "").strip()
+    if env:
+        return env
+    cache = os.path.join(CACHE_DIR, "cerebras_model.json")
+    if _fresh(cache, 7 * 86400):
+        try:
+            m = json.load(open(cache, encoding="utf-8")).get("m")
+            if m:
+                return m
+        except Exception:
+            pass
+    key = _cerebras_key()
+    pick = "gpt-oss-120b"
+    if key:
+        try:
+            req = urllib.request.Request("https://api.cerebras.ai/v1/models",
+                                         headers={"Authorization": "Bearer " + key, "User-Agent": "Mozilla/5.0"})
+            j = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "replace"))
+            ids = [m.get("id") for m in (j.get("data") or []) if m.get("id")]
+            pick = _pick_cerebras_model(ids)
+            try:
+                json.dump({"m": pick}, open(cache, "w", encoding="utf-8"))
+            except Exception:
+                pass
+        except Exception:
+            pass
+    return pick
+
+
 def _llm_providers():
     """The ordered hosted-LLM chain to try: the primary (Groq/OpenAI from _summary_cfg) first, then Cerebras
-    as a free backup. Each entry is (name, key, url, model). Empty when no hosted key is set (caller may then
-    fall back to a local Ollama)."""
+    as a free backup. Each entry is (name, key, url, model). The Cerebras model is None here and resolved
+    LAZILY in _llm_complete (self-healing pick) so we only hit /models when Cerebras is actually used. Empty
+    when no hosted key is set (caller may then fall back to a local Ollama)."""
     out = []
     key, url, model = _summary_cfg()
     if key:
         out.append(("primary", key, url, model))
     ck = _cerebras_key()
     if ck:
-        out.append(("cerebras", ck, _CEREBRAS_URL, (os.environ.get("CEREBRAS_MODEL") or "llama-3.3-70b").strip()))
+        out.append(("cerebras", ck, _CEREBRAS_URL, None))
     return out
 
 
@@ -373,7 +424,10 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, pre
             return ""
         provs = [("local", "local", loc[0], loc[1])]
     for name, key, url, pmodel in provs:
-        out = _llm_one(name, key, url, model or pmodel, system, user, max_tokens, temperature)
+        m = model or pmodel or (_cerebras_model() if name == "cerebras" else "")   # lazy self-healing pick
+        if not m:
+            continue
+        out = _llm_one(name, key, url, m, system, user, max_tokens, temperature)
         if out:
             return out
     return ""
