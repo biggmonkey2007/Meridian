@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.27"
+APP_VERSION = "1.4.28"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,7 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d36"   # d36: resweep so the copyright-hardened brief regenerates and the bare-"Fed" recogniser re-places
+_DATA_VER = "d37"   # d37: resweep so an admin's OPINION post drops off the map (_tg_reliable now screens editorialising)
+                    #      and 'Wall Street Journal' stories re-place on their subject instead of the NYC financial district.
+                    # d36: resweep so the copyright-hardened brief regenerates and the bare-"Fed" recogniser re-places
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
                     # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
@@ -1439,8 +1441,11 @@ def _tg_reliable(headline):
         return False
     if h.endswith("?"):
         return False
-    if _TG_HOUSEKEEPING.search(h):
-        return False
+    if _tg_is_chatter(h):
+        return False                                       # self-promo, greetings, AND first-person OPINION/
+                                                           # editorialising ("In my opinion, this is a poor
+                                                           # decision…") — the admin's take is never a map dot.
+                                                           # Attributed statements ("Lavrov: …") aren't chatter.
     if _TG_RUMOR.search(h):
         return False                                       # unverified rumour -> out, attributed or not
     if _TG_FUTURE.search(h) and not _tg_is_statement(h):
@@ -8770,6 +8775,14 @@ def _expand_water_coord(text):
     return _SEA_COORD_RE.sub(lambda m: m.group(1) + " Sea and " + m.group(2) + " Sea", text or "")
 
 
+# An OUTLET whose NAME contains a place must not set the scene. "The Wall Street Journal, citing a US Army
+# official, reports…" dotted the NYC FINANCIAL DISTRICT (the curated 'wall street' point) — the paper is the
+# reporter, not where the event happened. Blank the outlet phrase before scanning so the story's real subject
+# (here 'U.S. Army' -> the US) wins. Kept tight to this one name; other outlets' place-words (New York Times,
+# Washington Post) resolve to their own country and haven't misfired.
+_OUTLET_GEO_STRIP = re.compile(r"\b(the\s+)?wall\s+street\s+journal\b", re.I)
+
+
 @functools.lru_cache(maxsize=4096)
 def _geolocate(title, sourcecountry, desc="", url=""):
     """Best location for an event. Context (other countries named + the article's own section) decides
@@ -8779,12 +8792,12 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     Memoized: an article's inputs don't change between the 15-min rebuilds, so re-geolocation is free
     after the first pass. The result is a plain tuple/None (deterministic — depends only on the static
     gazetteer), so caching is safe. Restart clears it, which is exactly what we want after a logic fix."""
-    title = _expand_water_coord(title or "")      # "Black and Azov seas" -> "Black Sea and Azov Sea"
+    title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title or ""))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
     # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
     # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
     # because the trailing "in" of "JUST IN" read as "…IN Nikita", flipping on the locating context that
     # defeats the tiny-town and surname vetoes. A source URL ("reuters.com/world/china") can inject a place too.
-    _d = _PROMO_URL.sub(" ", _PROMO_LEAD.sub("", desc or ""))
+    _d = _OUTLET_GEO_STRIP.sub(" ", _PROMO_URL.sub(" ", _PROMO_LEAD.sub("", desc or "")))
     desc = _expand_water_coord(_d)
     mentions = _context_mentions(title + " " + (desc or ""), url)
     dl = _dateline_place(desc, mentions)

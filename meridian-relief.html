@@ -300,10 +300,9 @@ header{
 .summary{font-size:14px;line-height:1.62;color:#2b333c;margin:14px 0}
 .sec-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);font-weight:700;margin:20px 0 9px;padding-top:13px;border-top:1px solid var(--line)}
 .lead{font-size:14px;line-height:1.62;color:#2b333c;font-weight:400;margin:14px 0 2px}
-/* Attribution tag on a fallback lead: the outlet's OWN teaser is standing in for our brief, so name whose
-   words these are (fair-use excerpt), set apart in muted small caps with a trailing em-dash. */
-.lead-attr{font-weight:700;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
-.lead-attr::after{content:" — ";font-weight:400;letter-spacing:normal}
+/* A fallback lead that got suppressed (teaser only restated the headline) leaves an empty <p> — hide it so
+   the card shows the headline alone with no dangling gap. */
+.lead:empty{display:none}
 .evt-co-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px;margin-top:6px}
 .evt-co{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--ink)}
 .evt-co .flag{width:21px;height:15.75px}
@@ -1475,13 +1474,31 @@ function finishText(s){
   if(/[.!?"'’”)\]…]$/.test(s)) return s;
   const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s;
 }
-// COPYRIGHT / FAIR USE: when no Meridian brief exists yet, the outlet's OWN teaser stands in as the lead.
-// It must read plainly as the SOURCE's words — a short attributed excerpt — never as our own prose. So we
-// prefix a muted "<source> —" tag. (Our generated brief, when present, replaces this entirely.)
-function leadFallbackHTML(text, src){
+// Does the fallback teaser ADD real information beyond the headline, or just reword it? Reduce both to
+// significant content words; a teaser that introduces too few NEW ones is a restatement.
+const _LEAD_STOP = new Set(("the a an and or but of to in on at for with from by as is are was were be been "
+  + "being this that these those it its their his her our your they we you he she him them us not no over into "
+  + "amid about after before during than then so has have had will would could should may might can new").split(" "));
+function _leadSig(s){
+  return new Set(String(s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").split(/\s+/)
+    .filter(w => w.length > 2 && !_LEAD_STOP.has(w)));
+}
+function teaserAddsInfo(text, headline){
+  if(!headline) return true;                       // nothing to compare against -> keep it
+  const t=_leadSig(text), h=_leadSig(headline);
+  if(t.size === 0) return false;
+  let novel=0; t.forEach(w => { if(!h.has(w)) novel++; });
+  return novel >= 4 && (novel / t.size) >= 0.34;   // needs several genuinely new content words
+}
+// When no Meridian AI brief exists (e.g. the summarizer is rate-capped), the outlet's OWN teaser can stand
+// in as the lead — but ONLY if it ADDS to the headline. If it merely restates the headline it is dropped and
+// the card shows the headline alone (the user's rule: "if it adds no new info, leave it as just a headline").
+// No inline source tag: the story is already attributed by the "Source" line above and the "Read the original"
+// button below, so it stays fair-use without an ugly "SOURCE —" prefix leaking into the prose.
+function leadFallbackHTML(text, headline){
   text=(text||"").trim(); if(!text) return "";
-  const tag = src ? `<span class="lead-attr">${esc(src)}</span> ` : "";
-  return tag + flagifyText(text);
+  if(!teaserAddsInfo(text, headline)) return "";
+  return flagifyText(text);
 }
 // Render OUR "In brief" summary in the varied Axios "Smart Brevity" shape the summarizer now emits:
 //   a prose lede (1-2 sentences) carries it, then 1-2 "- detail" bullets for the hard specifics, and —
@@ -4671,7 +4688,7 @@ async function renderRealEvent(d){
     </div>
     <div class="evt-meta"><span><b>Source</b> ${esc(src)}${d.srcnote?`<span class="src-note">${esc(d.srcnote)}</span>`:""}</span><span><b>Where</b> ${esc(d.place)}</span></div>
     <div id="re-people-${d.id}" class="ppl-row"></div>
-    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?leadFallbackHTML(leadText(d.sum), src):`<span class="spin"></span> Fetching the full story…`}</p>
+    <p class="lead" id="re-lead-${d.id}"${d.summary?' style="display:none"':''}>${d.sum?leadFallbackHTML(leadText(d.sum), d.title):`<span class="spin"></span> Fetching the full story…`}</p>
     <div id="re-body-${d.id}">${d.summary?`<div class="body">${renderBrief(d.summary)}</div>`:""}</div>
     <div id="re-media-${d.id}" class="ev-media"></div>
     ${sourcesHtml(d)}
@@ -4724,7 +4741,7 @@ async function renderRealEvent(d){
     if(sum){ d.summary=sum; if(lead) lead.style.display="none";
              if(bodyEl) bodyEl.innerHTML=`<div class="body">${renderBrief(sum)}</div>`; }
     else { if(bodyEl) bodyEl.innerHTML="";
-           if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); } }
+           if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, d.title); lead.style.display=""; } else hideLead(); } }
     d._terms=undefined; d._aiTerms=undefined;   // body text changed -> re-scan and re-bold the glossed terms
     annotateDetailTerms(d);
   };
@@ -4735,7 +4752,7 @@ async function renderRealEvent(d){
     const dek=finishText(bodyMinusHeadline(d.title, d.sum));
     if(d.summary){ showBrief(d.summary, dek); }
     else {
-      if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); }
+      if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, d.title); lead.style.display=""; } else hideLead(); }
       if(api && api.summarize_event && (d.sum||"").length>=120){
         Promise.resolve(api.summarize_event(d.title||"", "", d.sum, d.source||d.channel||"")).then(r=>{
           if(activeEvent!==d.id) return; showBrief(r && r.summary ? r.summary : "", dek);
@@ -4760,7 +4777,7 @@ async function renderRealEvent(d){
       // the dek only leads while it generates, or stands alone if no summary is produced.
       if(d.summary){ showBrief(d.summary, dek); }
       else {
-        if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, src); lead.style.display=""; } else hideLead(); }
+        if(lead){ if(dek){ lead.innerHTML=leadFallbackHTML(dek, d.title); lead.style.display=""; } else hideLead(); }
         // Summarize from the scraped body, else the article blurb, else the story's OWN feed text — so even a
         // blocked or empty scrape still produces OUR complete brief instead of leaving the clipped teaser up.
         const stext=(paras.slice(0,10).join(" ")||desc||d.sum||"").trim();

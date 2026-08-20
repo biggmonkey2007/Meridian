@@ -201,6 +201,14 @@ GEO_CASES = [
     # Anadolu-filed "Fed officials signal rate hike" dotted TURKEY. "Fed" only counts with a money-policy word.
     ("Fed officials signal a rate hike if inflation stays elevated", "", "United States",
      "SHIPPED BUG: 'Fed' (the central bank) + 'rate hike' is a Washington story — Anadolu-sourced, dotted Turkey"),
+    # SHIPPED BUG: an OUTLET name that contains a place set the scene. "Wall Street Journal, citing a US Army
+    # official…" dotted the NYC financial district; the paper is the reporter, the U.S. Army is the subject.
+    ("Wall Street Journal, citing a statement by a U.S. Army official, reports the U.S. Army is phasing out a drone battalion",
+     "", "United States", "the WSJ is the reporter; the U.S. Army is the subject -> the US, NOT 'Wall Street'"),
+    ("The Wall Street Journal reports Japan will raise interest rates next month", "", "Japan",
+     "stripping the outlet name lets the real subject (Japan) win instead of Wall Street"),
+    ("Protesters march on Wall Street over the bank bailouts", "", "United States",
+     "a GENUINE Wall Street mention still resolves — only the outlet name is neutralised"),
     ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
      "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
     ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",
@@ -1022,6 +1030,13 @@ RELIABLE_CASES = [
     ("Attack on the base could be imminent, situation developing fast", False,
      "'could'/'imminent' with NO speaker = bare speculation"),
     ("Missiles might strike Tel Aviv within the hour as tensions rise", False, "unattributed speculation"),
+    # SHIPPED BUG: an admin's OPINION became a map dot. _tg_reliable screened self-promo but not first-person
+    # editorialising, so "In my opinion, this is a very poor decision…" got a dot. It must be dropped — while
+    # attributed statements above stay.
+    ("In my opinion, this is a very poor decision by the U.S. armed forces and reflects an inability to evolve",
+     False, "an admin's first-person OPINION is never a map dot (editorialising, not reporting)"),
+    ("Personally, I think this whole escalation is being blown way out of proportion", False,
+     "'personally, I think' = the admin's take, not an event"),
 ]
 
 # The IMPORTANCE GATE hides 'local' (AI-scoped) stories from the world map, but _hard_news is the safety
