@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.31"
+APP_VERSION = "1.4.32"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -134,12 +134,26 @@ def _ver_tuple(v):
 def _is_newer(remote, local):
     return _ver_tuple(remote) > _ver_tuple(local)
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-flash-latest"   # a ROLLING alias Google keeps pointed at the current free Flash model
+                                       # (so a version retirement like 2.0->2.5->3.x can't 404 us). Self-healing.
 
 
 def load_gemini_key():
-    # The Google Gemini integration was removed — the app never uses it. This always reports "no key",
-    # so every AI-analysis / AI-quotes path stays off and no Gemini request is ever made.
+    """The Google Gemini API key — a SECOND free AI alongside Groq (its free tier allows ~1,500 requests/day,
+    enough to summarise a whole feed). From env GEMINI_API_KEY, else gemini_key.txt OR gemini.txt in DATA_DIR
+    (gitignored). Absent -> "" and every Gemini path stays off."""
+    k = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if k:
+        return k
+    for fn in ("gemini_key.txt", "gemini.txt"):
+        try:
+            p = os.path.join(DATA_DIR, fn)
+            if os.path.exists(p):
+                v = open(p, encoding="utf-8").read().strip()
+                if v:
+                    return v
+        except Exception:
+            pass
     return ""
 
 
@@ -185,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d39"   # d39: resweep so a non-violent espionage/surveillance story recolours from red 'security' to
+_DATA_VER = "d40"   # d40: resweep so feeds rebuild with GEMINI now in the chain — the ~60% of dots Groq's daily
+                    #      cap left unsummarised get a real brief on the next build instead of the raw teaser.
+                    # d39: resweep so a non-violent espionage/surveillance story recolours from red 'security' to
                     #      'politics' (it scored security only on the word 'mercenary').
                     # d38: resweep so a story dotted on its accused BACKER re-places on the real scene ("UAE funded
                     #      plot… MAB urge UK government" -> the UK, not the UAE) via the new backer-place rule.
@@ -299,89 +315,26 @@ def _llm_available():
     """Is there ANY free LLM to call — a Groq/OpenAI key, or a local Ollama? Gates every optional AI
     feature (summaries, the geolocation fallback) so they stay purely additive: no LLM -> no cost, no
     behaviour change."""
-    return bool(_summary_cfg()[0]) or bool(_cerebras_key()) or bool(_local_llm())
+    return bool(_summary_cfg()[0]) or bool(load_gemini_key()) or bool(_local_llm())
 
 
-_CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-
-
-def _cerebras_key():
-    """A FREE Cerebras Cloud key (starts 'csk-'). Used as a BACKUP LLM when the primary (Groq) is rate-capped,
-    and as an INDEPENDENT second opinion for a dot's location. From CEREBRAS_API_KEY or cerebras_key.txt in
-    DATA_DIR (gitignored). Absent -> Cerebras simply isn't in the chain and nothing changes."""
-    k = (os.environ.get("CEREBRAS_API_KEY") or "").strip()
-    if not k:
-        try:
-            p = os.path.join(DATA_DIR, "cerebras_key.txt")
-            if os.path.exists(p):
-                k = open(p, encoding="utf-8").read().strip()
-        except Exception:
-            pass
-    return k
-
-
-# Which Cerebras model to prefer, strongest first. A key only exposes SOME of these, and Cerebras (like Groq)
-# renames/retires them — so we never hardcode one blindly; we pick the best the key actually has.
-_CEREBRAS_MODEL_PREF = ("gpt-oss-120b", "gpt-oss", "llama-3.3-70b", "llama3.3-70b", "llama-3.1-70b",
-                        "llama-4", "llama", "qwen-3-235b", "qwen-3-32b", "qwen", "gemma")
-
-
-def _pick_cerebras_model(ids):
-    """Choose the strongest available model id by _CEREBRAS_MODEL_PREF; fall back to the first listed, or a
-    sane default if the list is empty. Pure (no network) so it is unit-testable."""
-    ids = [i for i in (ids or []) if i]
-    if not ids:
-        return "gpt-oss-120b"
-    return next((i for p in _CEREBRAS_MODEL_PREF for i in ids if p in i), ids[0])
-
-
-def _cerebras_model():
-    """The Cerebras model to use — SELF-HEALING so a retired/renamed model can't silently kill the backup (the
-    exact bug Groq's deprecations caused; hardcoding 'llama-3.3-70b' already 404'd on a key that only had
-    gpt-oss-120b/gemma). Order: an explicit CEREBRAS_MODEL override, else a disk-cached pick, else ASK Cerebras
-    which models THIS key can access (/v1/models) and take the strongest. Cached 7 days; sane default if the
-    list can't be fetched. Resolved LAZILY (only when the Cerebras provider is actually reached)."""
-    env = (os.environ.get("CEREBRAS_MODEL") or "").strip()
-    if env:
-        return env
-    cache = os.path.join(CACHE_DIR, "cerebras_model.json")
-    if _fresh(cache, 7 * 86400):
-        try:
-            m = json.load(open(cache, encoding="utf-8")).get("m")
-            if m:
-                return m
-        except Exception:
-            pass
-    key = _cerebras_key()
-    pick = "gpt-oss-120b"
-    if key:
-        try:
-            req = urllib.request.Request("https://api.cerebras.ai/v1/models",
-                                         headers={"Authorization": "Bearer " + key, "User-Agent": "Mozilla/5.0"})
-            j = json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8", "replace"))
-            ids = [m.get("id") for m in (j.get("data") or []) if m.get("id")]
-            pick = _pick_cerebras_model(ids)
-            try:
-                json.dump({"m": pick}, open(cache, "w", encoding="utf-8"))
-            except Exception:
-                pass
-        except Exception:
-            pass
-    return pick
+# Google Gemini speaks an OpenAI-COMPATIBLE endpoint, so the same _llm_one path serves it — just a different
+# base URL and a Bearer key. This is the second free AI: Groq is fast but capped at ~200k tokens/day; Gemini's
+# free tier allows ~1,500 requests/day, plenty to summarise a whole feed's overflow.
+_GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 
 def _llm_providers():
-    """The ordered hosted-LLM chain to try: the primary (Groq/OpenAI from _summary_cfg) first, then Cerebras
-    as a free backup. Each entry is (name, key, url, model). The Cerebras model is None here and resolved
-    LAZILY in _llm_complete (self-healing pick) so we only hit /models when Cerebras is actually used. Empty
-    when no hosted key is set (caller may then fall back to a local Ollama)."""
+    """The ordered hosted-LLM chain to try: the PRIMARY (Groq/OpenAI from _summary_cfg) FIRST — fast and free —
+    then GEMINI, the free backup that picks up the overflow once Groq's small daily token cap is spent. Each
+    entry is (name, key, url, model). Empty when no hosted key is set (caller may then fall back to Ollama)."""
     out = []
     key, url, model = _summary_cfg()
     if key:
         out.append(("primary", key, url, model))
-    ck = _cerebras_key()
-    if ck:
-        out.append(("cerebras", ck, _CEREBRAS_URL, None))
+    gk = load_gemini_key()
+    if gk:
+        out.append(("gemini", gk, _GEMINI_OPENAI_URL, GEMINI_MODEL))
     return out
 
 
@@ -395,7 +348,7 @@ def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
                                 {"role": "user", "content": user}]}
         # REASONING MODELS (Groq's gpt-oss): they burn output tokens on hidden reasoning FIRST, so a tight
         # max_tokens leaves an EMPTY answer. Ask for low reasoning effort and lift the ceiling so the visible
-        # answer always fits. (Only gpt-oss honours these; Cerebras' Llama and others ignore them.)
+        # answer always fits. (Only gpt-oss honours these; Gemini and others ignore them.)
         if "gpt-oss" in model:
             payload["reasoning_effort"] = "low"
             payload["max_tokens"] = max(max_tokens, 1200) + 700
@@ -404,7 +357,7 @@ def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
         req = urllib.request.Request(url, data=body, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + key,
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI/Cerebras sit behind Cloudflare, which 403s the default urllib UA
+            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI behind Cloudflare 403 the default urllib UA; Gemini is fine with this too
         j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
         msg = (j.get("choices") or [{}])[0].get("message", {}) or {}
         return (msg.get("content") or "").strip()
@@ -414,9 +367,9 @@ def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
 
 def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, prefer=None):
     """ONE chat completion over the free LLM path, with automatic FAILOVER. Tries providers in order —
-    primary (Groq/OpenAI), then Cerebras (a free backup) — and returns the FIRST non-empty answer, so a Groq
-    daily-cap 429 (which comes back empty) rolls straight to Cerebras instead of losing the brief. `model`
-    overrides the model on whichever provider serves the call. `prefer` (e.g. 'cerebras') moves that provider
+    primary (Groq/OpenAI), then Gemini (a free backup) — and returns the FIRST non-empty answer, so a Groq
+    daily-cap 429 (which comes back empty) rolls straight to Gemini instead of losing the brief. `model`
+    overrides the model on whichever provider serves the call. `prefer` (e.g. 'gemini') moves that provider
     to the FRONT for THIS call — used to get an INDEPENDENT second opinion on a dot's location from a
     different model family — while still allowing fallback to the others. With no hosted key it falls back to
     a local Ollama. Returns "" only if EVERY provider fails. Never raises. Shared by summaries, dedup and geo
@@ -430,7 +383,7 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, pre
             return ""
         provs = [("local", "local", loc[0], loc[1])]
     for name, key, url, pmodel in provs:
-        m = model or pmodel or (_cerebras_model() if name == "cerebras" else "")   # lazy self-healing pick
+        m = model or pmodel
         if not m:
             continue
         out = _llm_one(name, key, url, m, system, user, max_tokens, temperature)
@@ -4706,7 +4659,7 @@ _PREWARM_LOCK = threading.Lock()
 def _spawn_summary_prewarm(api, h, data):
     if not isinstance(data, dict) or not data.get("events"):
         return
-    if not _llm_available():                        # no summarizer configured (Groq/Cerebras/Ollama) -> nothing to warm
+    if not _llm_available():                        # no summarizer configured (Groq/Gemini/Ollama) -> nothing to warm
         return
     key = (h, data.get("generated"))
     with _PREWARM_LOCK:
@@ -9195,9 +9148,9 @@ def _ai_locate_verify(title, text, candidates):
             "the candidates, or a better place they both missed. If a specific named FACILITY is the scene, "
             "name the CITY it sits in. Reply with ONLY 'City, Country', or 'Country', or 'NONE'.\n\n"
             "HEADLINE: " + title + "\n\nSTORY:\n" + text)
-    # Prefer CEREBRAS here: the first opinion came from Groq's gpt-oss, so a different model family makes this a
-    # genuinely INDEPENDENT tie-breaker. Falls back to the primary when no Cerebras key is set (unchanged then).
-    out = _llm_complete(system, user, max_tokens=24, temperature=0.0, prefer="cerebras")
+    # Prefer GEMINI here: the first opinion came from Groq's gpt-oss, so a different model family (Google's
+    # Gemini) makes this a genuinely INDEPENDENT tie-breaker. Falls back to Groq when no Gemini key is set.
+    out = _llm_complete(system, user, max_tokens=24, temperature=0.0, prefer="gemini")
     out = ((out or "").splitlines() or [""])[0]
     out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
     if out.upper() == "NONE" or not (3 <= len(out) <= 60):

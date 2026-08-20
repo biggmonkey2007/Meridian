@@ -1778,36 +1778,30 @@ def main():
                       "the auto-clear must delete only expired derived caches and never a feed/location/dedup file"))
     print(f"  {'ok ' if _jan_ok else 'FAIL'} stale sum_/geoai_/media_ cleared; world_/aiwhere_/dedup_/leaders_ spared; guarded")
 
-    # CEREBRAS FAILOVER — a primary (Groq) empty return (a daily-cap 429) must roll to Cerebras, not lose the
-    # answer; and a geo second opinion can PREFER Cerebras (an independent model family) yet still fall back.
-    print("\n=== CEREBRAS FAILOVER (backup provider + preferred second opinion) ===")
-    # self-healing model picker: strongest available id wins; sane fallbacks (pure, no network)
-    _pick_ok = (app._pick_cerebras_model(["gemma-4-31b", "gpt-oss-120b"]) == "gpt-oss-120b"
-                and app._pick_cerebras_model(["qwen-3-32b", "llama-3.3-70b"]) == "llama-3.3-70b"
-                and app._pick_cerebras_model(["gemma-4-31b"]) == "gemma-4-31b"
-                and app._pick_cerebras_model([]) == "gpt-oss-120b")
-    _orig_one2, _orig_ck2, _orig_cfg2, _orig_cm2 = app._llm_one, app._cerebras_key, app._summary_cfg, app._cerebras_model
+    # GEMINI FAILOVER — a primary (Groq) empty return (a daily-cap 429) must roll to GEMINI, not lose the
+    # answer; and a geo second opinion can PREFER Gemini (an independent model family) yet still fall back.
+    print("\n=== GEMINI FAILOVER (backup provider + preferred second opinion) ===")
+    _orig_one2, _orig_gk2, _orig_cfg2 = app._llm_one, app.load_gemini_key, app._summary_cfg
     _seen = []
     try:
         app._summary_cfg = lambda: ("gsk-FAKE", "https://primary/x", "primary-model")
-        app._cerebras_key = lambda: "csk-FAKE"
-        app._cerebras_model = lambda: "cerebras-test-model"      # stub the lazy resolver -> no network in tests
+        app.load_gemini_key = lambda: "AQ.FAKE"
         def _fake_one(name, key, url, model, system, user, mt, temp):
             _seen.append(name)
             return "" if name == "primary" else "BACKUP:" + name
         app._llm_one = _fake_one
-        _failover = app._llm_complete("s", "u")                 # primary empty -> rolls to cerebras
+        _failover = app._llm_complete("s", "u")                 # primary empty -> rolls to gemini
         _order = list(_seen); _seen.clear()
-        app._llm_complete("s", "u", prefer="cerebras")          # prefer -> cerebras tried FIRST
+        app._llm_complete("s", "u", prefer="gemini")            # prefer -> gemini tried FIRST
         _pref_first = _seen[0] if _seen else None
     finally:
-        app._llm_one, app._cerebras_key, app._summary_cfg, app._cerebras_model = _orig_one2, _orig_ck2, _orig_cfg2, _orig_cm2
-    _cb_ok = (_pick_ok and _failover == "BACKUP:cerebras" and _order[:2] == ["primary", "cerebras"] and _pref_first == "cerebras")
+        app._llm_one, app.load_gemini_key, app._summary_cfg = _orig_one2, _orig_gk2, _orig_cfg2
+    _cb_ok = (_failover == "BACKUP:gemini" and _order[:2] == ["primary", "gemini"] and _pref_first == "gemini")
     ran[0] += 1
     if not _cb_ok:
-        fails.append(("cerebras", "failover+prefer", "primary->cerebras; prefer=cerebras first",
+        fails.append(("gemini", "failover+prefer", "primary->gemini; prefer=gemini first",
                       f"failover={_failover!r} order={_order} pref_first={_pref_first!r}",
-                      "a capped primary must roll to Cerebras; prefer must front-load it for the geo second opinion"))
+                      "a capped primary must roll to Gemini; prefer must front-load it for the geo second opinion"))
     print(f"  {'ok ' if _cb_ok else 'FAIL'} primary empty -> {_failover!r}; order={_order}; prefer-first={_pref_first!r}")
 
     # SOURCE MUTE — a muted outlet is hidden from the map (no dots, no citations), matched on domain / name
@@ -2257,7 +2251,7 @@ def main():
              + 1   # + allow_ai gate (cold-start build makes no live geo calls)
              + 1   # + summary cache is independent of _DATA_VER (a content bump serves the cached brief)
              + 1   # + cache janitor clears stale waste but spares live feed/location/dedup/leader files
-             + 1   # + Cerebras failover (capped primary -> backup) + preferred geo second opinion
+             + 1   # + Gemini failover (capped primary -> backup) + preferred geo second opinion
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
