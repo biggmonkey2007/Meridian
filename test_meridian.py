@@ -25,6 +25,12 @@ CATEGORY_CASES = [
      "transfer chatter) never saw it — a transfer rumour sat on the map as a POLITICS dot on Singapore"),
     ("Russian forces shell Toretsk overnight", "security",
      "SHIPPED BUG: 'shell' was not a security keyword at all — the most basic war verb we have"),
+    # A non-violent ESPIONAGE/SURVEILLANCE story is politics (foreign interference), NOT the red strike bucket —
+    # even when the copy says "mercenary"/"operation". SHIPPED BUG: it showed as a red security dot.
+    ("UAE-funded mercenary targeted British activist in covert London surveillance operation", "politics",
+     "covert surveillance with no violence -> foreign-interference politics, not red security"),
+    ("Wagner mercenaries launch an assault on the town, killing dozens", "security",
+     "a mercenary story WITH violence stays security — the downgrade only fires when there's no violence"),
     ("Victorian teachers set to strike again following deadlocked negotiations", "politics",
      "SHIPPED BUG: filed under CONFLICT & SECURITY. The labour-strike mask demanded the words be "
      "ADJACENT, so 'teachers SET TO strike' sailed through"),

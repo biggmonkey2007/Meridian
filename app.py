@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.30"
+APP_VERSION = "1.4.31"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,7 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d38"   # d38: resweep so a story dotted on its accused BACKER re-places on the real scene ("UAE funded
+_DATA_VER = "d39"   # d39: resweep so a non-violent espionage/surveillance story recolours from red 'security' to
+                    #      'politics' (it scored security only on the word 'mercenary').
+                    # d38: resweep so a story dotted on its accused BACKER re-places on the real scene ("UAE funded
                     #      plot… MAB urge UK government" -> the UK, not the UAE) via the new backer-place rule.
                     # d37: resweep so an admin's OPINION post drops off the map (_tg_reliable now screens editorialising)
                     #      and 'Wall Street Journal' stories re-place on their subject instead of the NYC financial district.
@@ -1798,7 +1800,7 @@ _ORG_SUFFIX = (r"(?:Forces|Front|Army|Movement|Militia|Militias|Brigade|Brigades
 _ORG_PHRASE_RE = re.compile(
     r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX +
     r"(?:\s+(?:of|for)(?:\s+the)?\s+[A-Z][\w'’.\-]+(?:\s+[A-Z][\w'’.\-]+){0,3}){0,2})\b")
-_DEFINE_VER = "t1"   # bump to invalidate cached AI term definitions
+_DEFINE_VER = "t2"   # t2: definitions now come from Wikipedia first (free, no LLM) — invalidate old empty/LLM ones
 
 
 # ACRONYMS a general reader already knows — never worth a definition. Everything else in caps (DFAT, NTUC,
@@ -1899,7 +1901,7 @@ class Api:
         days. Returns '' when there's no summarizer, or when the model isn't sure what the name refers to (it is
         told to answer NONE) — so an unknown name is simply left un-bolded rather than given an invented meaning."""
         name = re.sub(r"\s+", " ", (name or "").strip())
-        if len(name) < 4 or not _llm_available():
+        if len(name) < 4:
             return ""
         learned = _LEARNED.get(name.lower())
         if learned:
@@ -1910,16 +1912,21 @@ class Api:
                 return json.load(open(cache, encoding="utf-8")).get("d", "")
             except Exception:
                 pass
-        system = ("You are a neutral reference work, like an encyclopedia. Define who or what a named group or "
-                  "body is in ONE plain, factual sentence — what kind of organisation it is, where it operates, "
-                  "and its role or main affiliation. Be strictly even-handed: no opinion, no praise, and never a "
-                  "loaded label such as 'terrorist', 'regime' or 'extremist'. If you are not confident what the "
-                  "name refers to, answer with exactly: NONE")
-        prompt = ("Define this name in one neutral sentence for a reader who doesn't know it: \"" + name + "\".\n"
-                  "If you are not sure what it refers to, reply with exactly NONE.")
-        out = re.sub(r"\s+", " ", (_llm_complete(system, prompt, max_tokens=90, temperature=0.2) or "").strip())
-        if len(out) < 15 or out.upper().rstrip(".").startswith("NONE"):
-            out = ""
+        # FREE baseline FIRST — Wikipedia (no LLM budget), so a named org is defined even when the summariser is
+        # rate-capped, and definitions no longer compete with summaries for the daily token cap. Facts only.
+        out = _wiki_define(name)
+        # The LLM only ENRICHES — a neutral one-liner when Wikipedia has no page AND a summariser is available.
+        if not out and _llm_available():
+            system = ("You are a neutral reference work, like an encyclopedia. Define who or what a named group or "
+                      "body is in ONE plain, factual sentence — what kind of organisation it is, where it operates, "
+                      "and its role or main affiliation. Be strictly even-handed: no opinion, no praise, and never a "
+                      "loaded label such as 'terrorist', 'regime' or 'extremist'. If you are not confident what the "
+                      "name refers to, answer with exactly: NONE")
+            prompt = ("Define this name in one neutral sentence for a reader who doesn't know it: \"" + name + "\".\n"
+                      "If you are not sure what it refers to, reply with exactly NONE.")
+            out = re.sub(r"\s+", " ", (_llm_complete(system, prompt, max_tokens=90, temperature=0.2) or "").strip())
+            if len(out) < 15 or out.upper().rstrip(".").startswith("NONE"):
+                out = ""
         try:
             json.dump({"d": out}, open(cache, "w", encoding="utf-8"))
         except Exception:
@@ -1933,10 +1940,8 @@ class Api:
         scales the definer past the hand-written list. Additive to article_terms; slower (a cached AI call per
         new name), so the client fetches it after the instant curated pass."""
         try:
-            if not _llm_available():
-                return []
-            text = (title or "") + " . " + (desc or "")
-            covered = set()
+            text = (title or "") + " . " + (desc or "")     # definitions now come from Wikipedia first, so this
+            covered = set()                                  # runs even when the LLM budget is spent
             for t in _glossary_terms(text):
                 for a in t.get("aliases", []):
                     covered.add(a.lower())
@@ -4549,6 +4554,17 @@ def _is_fluff(title, url=""):
     return bool(_FLUFF_PAT.search(title or "")) or _is_thinkpiece(title or "")
 
 
+# A COVERT-SURVEILLANCE / espionage story (a state spying on a dissident, tapping phones, a mercenary
+# "operation" that is monitoring not fighting) is a POLITICAL / foreign-interference story — not the red
+# "security" bucket the map reserves for STRIKES and violence. "UAE-funded mercenary … covert London
+# operation" scored security purely on the word "mercenary". Downgrade ONLY when there is no actual violence.
+_ESPIONAGE_RE = re.compile(r"\b(covert[\w\s]{0,25}operation|surveillance|spied on|spying on|wiretap\w*|"
+                           r"eavesdrop\w*|bugged|phone[-\s]?hack\w*|secretly (?:monitor|surveil|track|follow)\w*|"
+                           r"covert operation|espionage)\b", re.I)
+_VIOLENCE_RE = re.compile(r"\b(kill\w*|dead|death toll|attack\w*|strike\w*|bomb\w*|wound\w*|shot|shoot\w*|"
+                          r"raid\w*|assault\w*|clash\w*|explos\w*|casualt\w*|massacre|airstrike|missile|shell\w+)\b", re.I)
+
+
 def _classify(title, desc=""):
     """Score every category and take the highest — never first-match-wins (see the notes on CAT_ORDER).
     If the headline alone is inconclusive (a bare damage report scored 0 and fell to the 'politics'
@@ -4556,6 +4572,10 @@ def _classify(title, desc=""):
     best, best_score = _score_cats(title)
     if best_score == 0 and desc:
         best, best_score = _score_cats(title + " " + desc[:300])
+    if best == "security":            # a non-violent espionage/surveillance story is politics, not red
+        _t = (title or "") + " " + (desc or "")
+        if _ESPIONAGE_RE.search(_t) and not _VIOLENCE_RE.search(_t):
+            return "politics"
     return best
 
 
@@ -7445,6 +7465,32 @@ def _wiki_json(url):
             return json.loads(r.read().decode("utf-8", "replace"))
     except Exception:
         return None
+
+
+def _wiki_define(name):
+    """A FREE, non-LLM one-line definition of a named org from Wikipedia's REST summary — the baseline so a
+    named group is defined even when the LLM's daily budget is spent (and so definitions stop competing with
+    summaries for it). Prefers the terse Wikidata short-description (a factual LABEL, not copyrightable, e.g.
+    'British Sunni Muslim organisation'); falls back to the extract's first sentence. Returns '' for a missing
+    page or a disambiguation. Cached by the caller."""
+    try:
+        j = _wiki_json("https://en.wikipedia.org/api/rest_v1/page/summary/"
+                       + urllib.parse.quote((name or "").replace(" ", "_")))
+        if not j or j.get("type") == "disambiguation":
+            return ""
+        title = (j.get("title") or name or "").strip()
+        desc = (j.get("description") or "").strip()
+        if desc and 4 <= len(desc) <= 100 and not desc.lower().startswith(("wikipedia", "wikimedia", "disambig")):
+            d = title + " — " + desc                              # "Muslim Association of Britain — British Sunni Muslim organisation"
+            return d if d.endswith((".", "!", "?")) else d + "."
+        extract = (j.get("extract") or "").strip()
+        m = re.match(r"^[\s\S]*?[.!?](?=\s|$)", extract)          # the extract's first whole sentence
+        s = (m.group(0) if m else extract).strip()
+        if 20 <= len(s) <= 240 and (" is " in s or " was " in s or " are " in s or " refers to " in s):
+            return s
+        return ""
+    except Exception:
+        return ""
 
 
 def _wikidata_person(qid):
