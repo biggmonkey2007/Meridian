@@ -1447,16 +1447,18 @@ function tidyLead(s){
 }
 function leadText(s){
   s=tidyLead(s); if(!s) return s;
-  // DEFENSE-IN-DEPTH against a mid-word cutoff: if the teaser is a whole sentence followed by a TRUNCATED
-  // fragment ("…detected two ballistic missiles, Anadolu reports. One of the mi"), drop the fragment so the
-  // card never shows "…one of the mi…". Mirrors the backend _to_last_sentence; a lone unfinished sentence is
-  // left as-is and gets the gentle ellipsis below.
-  if(!/[.!?"'’”)\]…]$/.test(s)){
+  // MID-WORD CUTOFF: a source truncates its teaser at a character limit, gluing "…"/"..." onto a chopped word
+  // ("…covert surveillance operati…"). Strip that marker FIRST (an earlier version left it, so the trim below
+  // was skipped and the chopped word showed). Then cut back to the last WHOLE sentence; if the teaser has no
+  // whole sentence at all (one long run-on), drop the final — likely chopped — word instead of showing it.
+  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").trim();
+  if(!/[.!?"'’”)\]]$/.test(s)){
     const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
     if(m && m[0].trim().length>=30) s=m[0].trim();
+    else s=s.replace(/\s+\S+$/,"").replace(/[,;:\-–—\s]+$/,"").trim()+"…";
   }
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
-  return /[.!?"'’”)\]]$/.test(s) ? s : s.replace(/[,;:\-–—\s]+$/,"")+"…";
+  return s;
 }
 // When a source teaser has to STAND IN for the brief (no AI summary produced), trim it back to its last full
 // sentence so it reads finished, not cut mid-word — AND capitalize a lower-case continuation ("soon his
@@ -1464,9 +1466,12 @@ function leadText(s){
 // backend _finish_brief + _cap_first.
 function finishText(s){
   s=tidyLead(s); if(!s) return s;
+  s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").trim();        // a truncation marker hides a chopped word — strip it first
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
-  if(/[.!?"'’”)\]…]$/.test(s)) return s;
-  const m=s.match(/[\s\S]*[.!?]["'’”)\]]*/); return (m && m[0].trim().length>=15) ? m[0].trim() : s;
+  if(/[.!?"'’”)\]]$/.test(s)) return s;
+  const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
+  if(m && m[0].trim().length>=15) return m[0].trim();
+  return s.replace(/\s+\S+$/,"").replace(/[,;:\-–—\s]+$/,"").trim()+"…";   // no whole sentence -> drop the chopped last word
 }
 // Does the fallback teaser ADD real information beyond the headline, or just reword it? Reduce both to
 // significant content words; a teaser that introduces too few NEW ones is a restatement.
@@ -1883,6 +1888,32 @@ function addBorders(){
 
 /* ---- strait & port overlays (zoom-gated) ---- */
 const STRAIT_DEFS = (typeof GEO!=="undefined") ? GEO.filter(g=> g[3]==="strait").map(g=>({ name:g[0], lat:g[1], lng:g[2] })) : [];
+// Seas, gulfs & bays as our OWN label layer [name, lat, lng]. The basemap labels each water only ONCE near
+// its centre, so a dot in a corner of the Gulf of Oman looked unlabelled. This curated set repeats across the
+// world's marine basins; MapLibre collision hides any that overlaps a basemap label, so no duplicates.
+const SEAS_DEFS = [
+  ["Pacific Ocean",5,-140],["Pacific Ocean",-20,-120],["North Pacific Ocean",30,180],
+  ["Atlantic Ocean",30,-42],["South Atlantic Ocean",-25,-15],["Indian Ocean",-28,80],
+  ["Arctic Ocean",88,0],["Southern Ocean",-62,90],
+  ["Gulf of Oman",24.6,58.6],["Gulf of Aden",12.5,48],["Persian Gulf",27,51],["Arabian Sea",15,63],
+  ["Red Sea",20,38],["Mediterranean Sea",34.5,18],["Black Sea",43,34],["Caspian Sea",41.5,50.5],
+  ["Sea of Azov",46,36.5],["Adriatic Sea",43,15.5],["Aegean Sea",38.5,25],["Ionian Sea",38,18.5],
+  ["Tyrrhenian Sea",40,12],["Ligurian Sea",43.4,8.6],["Levantine Sea",34,30],["Baltic Sea",58.5,20],
+  ["North Sea",56,3],["Norwegian Sea",68,3],["Barents Sea",74,40],["Greenland Sea",75,-5],
+  ["Kara Sea",74,65],["Laptev Sea",76,125],["Beaufort Sea",72,-140],["Chukchi Sea",69,-172],
+  ["Irish Sea",53.6,-5],["Bay of Biscay",45.5,-5],["White Sea",65.5,38],
+  ["Caribbean Sea",14.5,-75],["Gulf of Mexico",24.5,-90],["Gulf of California",27.5,-111.5],
+  ["Gulf of Alaska",56,-146],["Hudson Bay",60,-86],["Labrador Sea",58,-52],
+  ["Bering Sea",58,-178],["Sea of Okhotsk",53,149],["Sea of Japan",40,135],["Yellow Sea",35.5,123.5],
+  ["East China Sea",29,125.5],["South China Sea",13,114],["Philippine Sea",18,132],
+  ["Bay of Bengal",15,89],["Andaman Sea",10,96],["Gulf of Thailand",9.5,101.5],
+  ["Java Sea",-5.5,112],["Banda Sea",-5.5,128],["Celebes Sea",3,122],["Sulu Sea",8.5,120],
+  ["Timor Sea",-11,128],["Arafura Sea",-9.5,135],["Coral Sea",-16,152],["Solomon Sea",-8,153],
+  ["Tasman Sea",-39,160],["Great Australian Bight",-38,132],
+  ["Gulf of Guinea",2,3],["Mozambique Channel",-18,42],
+  ["Weddell Sea",-72,-45],["Ross Sea",-75,175],["Scotia Sea",-57,-45]
+];
+function seasGeoGL(){ return {type:"FeatureCollection",features:SEAS_DEFS.map(s=>({type:"Feature",geometry:{type:"Point",coordinates:[s[2],s[1]]},properties:{name:s[0]}}))}; }
 function buildOverlays(){
   if(!map) return;
   if(overlayLayer) map.removeLayer(overlayLayer);
@@ -3427,11 +3458,21 @@ function addGlobeOverlays(){
     mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":true,"icon-offset":[0,22]},paint:{}}, underDots);   // always show + nudged down so a port at a capital sits BELOW the name (Riga/Tallinn), not hidden or overlapping
     // ports are symbol-only on the globe too (matches the flat map) — no name label so it can't overlap city labels
   }
+  // SEA / GULF names — so a dot floating on water is identifiable without clicking it. Shown across zooms;
+  // collision (text-allow-overlap:false) hides any that would overlap the basemap's own water label or a city.
+  if(!mlMap.getSource("g-seas")){
+    mlMap.addSource("g-seas",{type:"geojson",data:seasGeoGL()});
+    mlMap.addLayer({id:"g-seas-lbl",type:"symbol",source:"g-seas",minzoom:2,layout:{visibility:layers.labels?"visible":"none",
+      "text-field":["get","name"],"text-font":["Open Sans Regular"],"text-transform":"uppercase","text-letter-spacing":0.16,
+      "text-size":["interpolate",["linear"],["zoom"],2,9.5,5,12,8,15],"text-max-width":8,"text-allow-overlap":false},
+      paint:{"text-color":"#8aa0b2","text-halo-color":"#ffffff","text-halo-width":1.4,"text-halo-blur":0.3,"text-opacity":0.95}}, underDots);
+  }
 }
 function updateGlobeOverlayVis(){
   if(!mlMap) return;
   ["g-straits-pt","g-straits-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.straits?"visible":"none"); });
   ["g-ports-pt"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.ports?"visible":"none"); });
+  ["g-seas-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.labels?"visible":"none"); });
 }
 function buildGlobeLayers(){
   if(!mlMap.getSource("g-borders")){

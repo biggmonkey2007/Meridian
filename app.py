@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.29"
+APP_VERSION = "1.4.30"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -185,7 +185,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d37"   # d37: resweep so an admin's OPINION post drops off the map (_tg_reliable now screens editorialising)
+_DATA_VER = "d38"   # d38: resweep so a story dotted on its accused BACKER re-places on the real scene ("UAE funded
+                    #      plot… MAB urge UK government" -> the UK, not the UAE) via the new backer-place rule.
+                    # d37: resweep so an admin's OPINION post drops off the map (_tg_reliable now screens editorialising)
                     #      and 'Wall Street Journal' stories re-place on their subject instead of the NYC financial district.
                     # d36: resweep so the copyright-hardened brief regenerates and the bare-"Fed" recogniser re-places
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
@@ -1789,7 +1791,13 @@ _ORG_SUFFIX = (r"(?:Forces|Front|Army|Movement|Militia|Militias|Brigade|Brigades
                r"Council|Cartel|Federation|Guard|Guards|Corps|Command|Faction|Junta|League|Authority|"
                r"Directorate|Organisation|Organization|Congress|Network|Party|Bloc|Union|Group|Assembly|"
                r"Committee|Society|Association|Caliphate|Insurgency|Syndicate|Collective|Vanguard|Regiment)")
-_ORG_PHRASE_RE = re.compile(r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX + r")\b")
+# The org word may sit in the MIDDLE of the name, with a "of/for <Place/Cause>" tail: "Muslim Association OF
+# BRITAIN", "Movement FOR the Liberation of Palestine", "Congress OF South African Trade Unions". Capture that
+# tail so the WHOLE name is defined, not a truncated "Muslim Association". SHIPPED BUG: MAB detected as just
+# "Muslim Association". The tail is optional, so plain "Cockroach Janta Party" still matches.
+_ORG_PHRASE_RE = re.compile(
+    r"\b((?:[A-Z][\w'’.\-]+\s+){1,5}" + _ORG_SUFFIX +
+    r"(?:\s+(?:of|for)(?:\s+the)?\s+[A-Z][\w'’.\-]+(?:\s+[A-Z][\w'’.\-]+){0,3}){0,2})\b")
 _DEFINE_VER = "t1"   # bump to invalidate cached AI term definitions
 
 
@@ -8579,12 +8587,25 @@ _CONTEXT_PREP = {"despite", "notwithstanding", "amid", "amidst"}
 _CONFLICT_NOUN = {"war", "campaign", "offensive", "strategy", "policy", "pressure", "effort", "efforts",
                   "struggle", "fight", "action", "actions", "measure", "measures", "sanction", "sanctions",
                   "aggression", "hostility", "hostilities", "standoff", "confrontation", "crackdown", "failure"}
+# A country named as the BACKER/FUNDER of a scheme is the accused party, not the scene: "UAE-funded plot",
+# "Iran-backed militia", "Saudi-led coalition". The event happens where the plot/attack LANDS (British soil,
+# Israel, Yemen), so the backer is dropped and the real subject/scene wins. SHIPPED BUG: "After revelation of
+# UAE funded plot… MAB urge UK government" dotted the UAE (the accused) instead of the UK (the British group
+# making the appeal). A word like "funded" right after a country name is the tell.
+_BACKER_WORDS = {"funded", "backed", "sponsored", "financed", "bankrolled", "led", "linked",
+                 "directed", "orchestrated", "controlled", "affiliated"}
+# Only treat "<Country> <backer-word>" as a BACKER when the backer-word is an ADJECTIVE on a following noun
+# ("UAE-funded PLOT", "Saudi-led COALITION"). If the next word is a function word it's a VERB ("Russia backed
+# THE deal", "Germany funded OUT of…", "China backed OFF") and the country is the actor/subject — keep it.
+_BACKER_VERB_AFTER = {"the", "a", "an", "to", "out", "up", "by", "away", "off", "down", "into", "onto",
+                      "over", "that", "this", "it", "them", "him", "her", "us", "and", "or", "but", "with"}
 
 
 def _context_places(hits, words):
-    """Indices of places named as BACKDROP or ADVERSARY, not the scene: 'DESPITE/amid the Hormuz crisis' (a
-    contrasting backdrop) and 'the war/strategy AGAINST Iran' (the adversary of an ABSTRACT struggle, not a
-    physical strike scene). Such a place must never win over the story's real subject."""
+    """Indices of places named as BACKDROP, ADVERSARY or BACKER, not the scene: 'DESPITE/amid the Hormuz
+    crisis' (a contrasting backdrop), 'the war/strategy AGAINST Iran' (the adversary of an ABSTRACT struggle),
+    and 'UAE-FUNDED plot' / 'Iran-BACKED militia' (the accused sponsor). Such a place must never win over the
+    story's real subject/scene."""
     ctx = set()
     for h in hits:
         i = h[0]
@@ -8593,6 +8614,9 @@ def _context_places(hits, words):
         elif h[1] in ("country", "demonym") and i >= 1 and words[i - 1] == "against":
             if any(words[k] in _CONFLICT_NOUN for k in range(max(0, i - 4), i - 1)):
                 ctx.add(i)
+        elif (h[1] in ("country", "demonym") and i + 2 < len(words) and words[i + 1] in _BACKER_WORDS
+              and words[i + 2] not in _BACKER_VERB_AFTER):
+            ctx.add(i)                     # "<Country> funded/backed/led <noun>" -> the sponsor, not the scene
     return ctx
 
 

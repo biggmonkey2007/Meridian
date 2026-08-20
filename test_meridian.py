@@ -209,6 +209,16 @@ GEO_CASES = [
      "stripping the outlet name lets the real subject (Japan) win instead of Wall Street"),
     ("Protesters march on Wall Street over the bank bailouts", "", "United States",
      "a GENUINE Wall Street mention still resolves — only the outlet name is neutralised"),
+    # SHIPPED BUG: the accused BACKER of a plot dotted instead of the scene. "UAE funded plot… MAB urge UK
+    # government" dotted the UAE (the accused), but the British group's appeal happens in the UK.
+    ("After revelation of UAE funded plot against its former president, MAB urge UK government to take a firm stand",
+     "", "United Kingdom", "'UAE funded plot' = the accused sponsor, not the scene; the UK appeal is the event"),
+    ("Iran-backed militia launches rockets at Israel", "", "Israel",
+     "the backer (Iran) is dropped; the attack LANDS in Israel"),
+    ("Saudi-led coalition strikes Houthi positions in Yemen", "", "Yemen",
+     "'Saudi-led' is the sponsor; the strike scene is Yemen"),
+    ("Russia backed the ceasefire proposal at the United Nations", "", "!Israel",
+     "'backed' here is a VERB (Russia is the actor), so Russia is NOT dropped as a fake backer"),
     ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
      "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
     ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",
@@ -2216,6 +2226,8 @@ def main():
                  and _g2 == []                                          # no false-fire on 'AP'/'map'
                  and "Southern Popular Resistance Army" in _det         # org phrase detected for the AI tail
                  and "Cockroach Janta Party" in app._detect_org_phrases("The Cockroach Janta Party won a victory when the minister resigned.", set())  # a PARTY is an org too -> defined
+                 # the WHOLE name, incl. the "of Britain" tail — not a truncated "Muslim Association" (shipped bug)
+                 and "Muslim Association of Britain" in app._detect_org_phrases("The Muslim Association of Britain urge the UK government to act", set())
                  and "DFAT" in app._detect_org_phrases("Australian dies in Vietnam, DFAT confirms consular assistance", set())   # a bare acronym -> defined
                  and app._detect_org_phrases("The US and UK and NATO met the UN and EU on GDP", set()) == []   # common acronyms are NOT flagged
                  and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
