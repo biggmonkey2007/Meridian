@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.33"
+APP_VERSION = "1.4.34"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d41"   # d41: resweep so EU-leader statements re-place on Brussels (von der Leyen was dotting Russia),
+_DATA_VER = "d42"   # d42: resweep so near-miss/explainer/blame non-events drop, the Georgia US-state flag clears,
+                    #      and mismatched wire clips detach.
+                    # d41: resweep so EU-leader statements re-place on Brussels (von der Leyen was dotting Russia),
                     #      Vucic/Zakharova/Kallas seats apply, and the sea-label / attribution-tail cleanups land.
                     # d40: resweep so feeds rebuild with GEMINI now in the chain — the ~60% of dots Groq's daily
                     #      cap left unsummarised get a real brief on the next build instead of the raw teaser.
@@ -4164,6 +4166,14 @@ _COMMON_MATCH = set("""state states president government people world country co
 media official officials minister national international time year years today week month first last great
 power tests test story stories experiment freedom opportunity leader leaders capital city public life
 support security military forces war peace crisis talks deal plan move call calls case group party
+""".split() +
+# GENERIC INSTITUTION / BODY names that every country has — they must NOT count as a distinguishing shared
+# name when matching a wire clip to a story. SHIPPED BUG: an ISRAEL clip ("Israel's SUPREME COURT overturned
+# the Army Radio shutdown") was filed under a PAKISTAN Imran Khan COURT story purely on the shared "Supreme
+# Court". A body's NAME is generic; only a person/place/company/ship distinguishes an event.
+"""supreme court courts high tribunal parliament senate congress assembly cabinet ministry department
+council commission committee agency authority bureau board panel radio television broadcaster network
+police army navy air force forces guard troops soldiers court justice judge ruling verdict hearing
 """.split())
 _WEAK_MATCH = set()
 
@@ -5821,6 +5831,22 @@ _SOFT_NEWS = re.compile(
     r"|meet\s+the\s+(?:man|woman|family|father|mother|refugee|survivor|teen|boy|girl|grandmother|grandfather|widow)"
     r"|one\s+(?:man|woman|family|father|mother|refugee|survivor|villager|farmer|girl|boy)(?:'s|’s)\s+(?:story|journey|fight|struggle|battle|mission|quest|ordeal|life)"
     r"|a\s+(?:father|mother|widow|refugee|survivor|grandmother|grandfather|daughter|son)(?:'s|’s)\s+(?:story|journey|fight|struggle|battle|ordeal|mission)"
+    # NEAR-MISS with a ROAD VEHICLE — "almost hit by a car", "close call with a truck". NOTHING happened (no
+    # casualty); a human-interest scare, not a world dot. Deliberately requires a road vehicle so a MILITARY
+    # near-miss ("jet narrowly avoided collision", "warships in a close call") — which IS security news —
+    # stays on the map. _hard_news runs first too, so any near-miss that caused casualties is kept.
+    r"|(?:almost|nearly|narrowly)\s+(?:\w+\s+){0,4}?(?:hit|struck|run\s+over|ran\s+over|knocked\s+(?:down|over)|missed|avoided)\s+(?:by\s+|into\s+)?(?:a\s+|the\s+|an?\s+)?(?:car|truck|lorry|bus|van|vehicle|motorbike|motorcycle|bike|bicycle|scooter|taxi|cab)"
+    r"|\bclose\s+call\s+with\s+(?:a\s+|the\s+)?(?:car|truck|lorry|bus|van|vehicle|bike|bicycle|driver|motorist)"
+    # EXPLAINER / SERVICE FEATURE — "What X means for Y", "How far should…", "what you need to know",
+    # "experts/lawyers weigh in". It poses a question and analyses; it reports NO event. The map is for
+    # EVENTS, so these features do not belong (the starred-country feed still keeps them).
+    r"|\bwhat\s+[\w'’\s,]{2,50}?\s+means\s+for\b|\bhow\s+far\s+(?:are|should|can|do|will)\b"
+    r"|\bwhat\s+you\s+need\s+to\s+know\b|\bhere'?s\s+(?:what|why|how|everything)\b|\bexplain(?:ed|er)\b"
+    # BLAME-DEFLECTION OPINION — "X was not the one to trigger/blame", "Y should be the one to blame". A
+    # diplomat assigning fault reports NO event; it's a talking point, not news. Narrow (needs a blame verb),
+    # so a real accountability report ("negligence caused the crash, inquiry finds") is untouched.
+    r"|(?:was|were|is|are)\s+not\s+the\s+one[s]?\s+to\s+(?:blame|trigger|start|cause|provoke|escalate|initiate)"
+    r"|should\s+be\s+the\s+one[s]?\s+to\s+blame\b"
     r")\b", re.I)
 
 
@@ -9319,8 +9345,14 @@ def _involved_countries(title, country=""):
     for city in _CITY_KEYS:
         if (" " + city + " ") in low:
             _add(CITY_COORDS[city][2])
+    # "Georgia" is BOTH a country and a US state — the recurring false flag. In a US-context story (the event
+    # is in the US, or the US is already a party) a bare "Georgia" is the STATE, so don't fly the country's
+    # flag. SHIPPED BUG: "Hyundai's new Georgia plant" showed a 🇬🇪 country-Georgia chip next to 🇺🇸.
+    _us_ctx = country == "United States of America" or "United States of America" in out
     for name in _COUNTRY_ALIAS_KEYS:
         if (" " + name + " ") in low:
+            if name == "georgia" and _us_ctx:
+                continue
             _add(COUNTRY_ALIASES[name])
     for dem in _DEMONYM_KEYS:
         if (" " + dem + " ") not in low:

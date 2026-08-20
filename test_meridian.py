@@ -686,6 +686,9 @@ DATELINE_STRIP_CASES = [
 
 # clips must only attach to the story they belong to. (event, clip, should_attach, why)
 CLIP_CASES = [
+    ("Imran Khan transfer to hospital blocked as Pakistan court orders a medical panel",
+     "Israel Supreme Court unanimously overturned the government decision to shut down Army Radio, ruling it was driven by improper political considerations.",
+     False, "SHIPPED BUG: an ISRAEL clip attached to a PAKISTAN court story on the shared 'Supreme Court' — a generic institution name distinguishes nothing; different countries, different event."),
     ("The JNIM has also attacked VDP outposts in Burkina Faso this weekend, seizing control of one in Konkoura and pillaging two others in northern Burkina Faso.",
      "At least 27 people were killed after a massive fire engulfed a pub in northern Bangkok shortly after midnight on Monday.",
      False, "SHIPPED BUG: attached on {'control','northern'} — 'seizing CONTROL...NORTHERN Burkina Faso' vs 'brought under CONTROL...NORTHERN Bangkok'. Pure coincidence."),
@@ -1499,9 +1502,23 @@ def main():
                      and not app._soft_news("Doctor charged with murder of five patients", "")
                      # a lone citizen's death abroad handled as a consular case is local; a mass event is kept
                      and app._soft_news("Australian dies in Vietnam", "DFAT confirms it is providing consular assistance to the family")
-                     and not app._soft_news("Nine killed in a Kolkata hotel fire", ""))
+                     and not app._soft_news("Nine killed in a Kolkata hotel fire", "")
+                     # NEAR-MISS is not news (nothing happened); a real strike/casualty stays on the map.
+                     and app._soft_news("Aussie star almost hit by car in Tour of Britain", "her close call with a car while riding")
+                     and app._soft_news("Cyclist narrowly avoided a truck on the motorway", "")
+                     and not app._soft_news("Air strike hits a hospital, killing 3", "")
+                     # EXPLAINER/service features pose a question and report no event -> off the map.
+                     and app._soft_news("What a cancer survivor's legal win means for workers returning after illness", "Lawyers and HR practitioners weigh in.")
+                     and app._soft_news("Here's what you need to know about the new tax rules", "")
+                     and not app._soft_news("Ceasefire collapses as 60 are killed in renewed strikes", "")
+                     # a BLAME-DEFLECTION talking point reports no event; a real accountability finding is kept.
+                     and app._soft_news("Iran was not the one to trigger escalation in Middle East", "")
+                     and not app._soft_news("Inquiry finds negligence caused the ferry disaster", ""))
+    # "Georgia" the US STATE must not fly the COUNTRY's flag in a US-context story (recurring bug).
+    _ga_ok = (app._involved_countries("Hyundai U.S. production increase at new Georgia plant", "United States of America") == ["United States of America"]
+              and "Georgia" in app._involved_countries("Russia masses troops on the Georgia border", "Georgia"))
     _mw_ok = ((not _mw_broad) and _mw_scene and (not _mw_local) and _mw_cas and _mw_new
-              and (not _mw_soft) and (not _mw_strand) and _soft_precise)
+              and (not _mw_soft) and (not _mw_strand) and _soft_precise and _ga_ok)
     ran[0] += 1
     if not _mw_ok:
         fails.append(("map-worthy", "importance gate",
