@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.35"
+APP_VERSION = "1.4.36"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d43"   # d43: resweep so a US official's statement about a foreign country dots the US seat (Bessent on
+_DATA_VER = "d44"   # d44: resweep so retrospective/history features drop off the map (ABC "how a health study
+                    #      shaped modern medicine") and cutoff briefs re-bake clean.
+                    # d43: resweep so a US official's statement about a foreign country dots the US seat (Bessent on
                     #      Iran -> Washington, not Tehran).
                     # d42: resweep so near-miss/explainer/blame non-events drop, the Georgia US-state flag clears,
                     #      and mismatched wire clips detach.
@@ -401,12 +403,25 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, pre
 _END_PUNCT = ".!?\"'’”)]…"   # a brief that ends on one of these reads as a finished thought
 
 
+# A brief that ends in a source TRUNCATION marker + a dangling attribution ("…and caused explosion, Civil
+# Defense says…") is NOT finished — but its last char is a "." (from "…"), which made _finish_brief think it
+# WAS. Strip that tail first. This is the backend twin of the frontend renderBrief `_cut`: the recurring
+# "articles cut off with …" bug lived here because the summary can echo a truncated wire teaser.
+_ATTR_TAIL_RE = re.compile(
+    r",\s+(?:according to\s+[\w'’.\- ]{2,45}"
+    r"|(?:the\s+)?[\w'’.\- ]{2,45}?\s+(?:has|have|had|reports?|reported|says?|said|tells?|told|learns?|learned"
+    r"|writes?|wrote|adds?|added|notes?|noted|confirms?|confirmed|announces?|announced|claims?|claimed))\s*$", re.I)
+
+
 def _finish_brief(s):
     """Guarantee a brief ends whole — never mid-word/mid-sentence (the model can stop at the token cap). Only
     the LAST line can be cut, so we mend just that: if it holds a sentence-ender, trim to it; if it has none,
     it's a dangling fragment (an incomplete final bullet) -> drop that one line and keep the complete lines
     above it. We keep the trim only when a real brief survives, so a short whole brief is never gutted."""
     s = (s or "").rstrip()
+    _s2 = _ATTR_TAIL_RE.sub("", re.sub(r"\s*(?:\.{2,}|…)+\s*$", "", s)).rstrip()   # drop a trailing "…" + attribution
+    if _s2 and _s2 != s:
+        s = _s2
     if not s or s[-1] in _END_PUNCT:
         return s
     lines = s.split("\n")
@@ -5844,6 +5859,10 @@ _SOFT_NEWS = re.compile(
     # EVENTS, so these features do not belong (the starred-country feed still keeps them).
     r"|\bwhat\s+[\w'’\s,]{2,50}?\s+means\s+for\b|\bhow\s+far\s+(?:are|should|can|do|will)\b"
     r"|\bwhat\s+you\s+need\s+to\s+know\b|\bhere'?s\s+(?:what|why|how|everything)\b|\bexplain(?:ed|er)\b"
+    # RETROSPECTIVE / HISTORY FEATURE — "How a health study helped shape modern medicine", "How the Wall
+    # changed a generation". A look-back, not breaking news. Gated after _hard_news (a "how the strike killed
+    # 12" report trips that first), and the verb set is retrospective so real events aren't caught.
+    r"|\bhow\s+[\w'’\s,-]{3,60}?\s+(?:helped|shaped|reshaped|changed|transformed|revolutionised|revolutionized|paved|inspired|forged|built|became|made\s+possible|gave\s+rise)\b"
     # BLAME-DEFLECTION OPINION — "X was not the one to trigger/blame", "Y should be the one to blame". A
     # diplomat assigning fault reports NO event; it's a talking point, not news. Narrow (needs a blame verb),
     # so a real accountability report ("negligence caused the crash, inquiry finds") is untouched.

@@ -1517,7 +1517,11 @@ def main():
                      and not app._soft_news("Ceasefire collapses as 60 are killed in renewed strikes", "")
                      # a BLAME-DEFLECTION talking point reports no event; a real accountability finding is kept.
                      and app._soft_news("Iran was not the one to trigger escalation in Middle East", "")
-                     and not app._soft_news("Inquiry finds negligence caused the ferry disaster", ""))
+                     and not app._soft_news("Inquiry finds negligence caused the ferry disaster", "")
+                     # a RETROSPECTIVE/HISTORY feature is a look-back, not breaking news; a real event is kept.
+                     and app._soft_news("How a world-leading health study in a small town helped shape modern medicine", "")
+                     and app._soft_news("How the Berlin Wall shaped a generation", "")
+                     and not app._soft_news("Missile strike kills 12 in Kyiv", ""))
     # "Georgia" the US STATE must not fly the COUNTRY's flag in a US-context story (recurring bug).
     _ga_ok = (app._involved_countries("Hyundai U.S. production increase at new Georgia plant", "United States of America") == ["United States of America"]
               and "Georgia" in app._involved_countries("Russia masses troops on the Georgia border", "Georgia"))
@@ -1920,6 +1924,12 @@ def main():
         ("Talks collapsed and the",                              "Talks collapsed and the"),   # nothing full yet -> leave as-is
         ("Aid arrived Monday.\n- Scale: 3,000 homes lost\n- Cost: still being",
          "Aid arrived Monday.\n- Scale: 3,000 homes lost"),     # drop the incomplete final bullet
+        # THE RECURRING CUTOFF: a brief ending in a truncation marker "…" + a dangling attribution reads as
+        # finished (last char is ".") but is NOT — strip the "…, X says…" tail. This is the weeks-long bug.
+        ("Explosive materials stored inside the house caused the blast, Civil Defense says...",
+         "Explosive materials stored inside the house caused the blast"),
+        ("The strike hit a fuel depot, Reuters reports…",
+         "The strike hit a fuel depot"),
     ]
     _fb_ok = True
     for _inp, _exp in _fb_cases:
@@ -2285,7 +2295,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 5    # + finish-brief (a summary never ends mid-sentence: 5 cases)
+             + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
              + 1    # + facility word (airport) is not a place
