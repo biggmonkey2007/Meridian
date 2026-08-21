@@ -90,6 +90,13 @@ CATEGORY_CASES = [
 GEO_CASES = [
     ("Bellingham scores twice to lift England past Haaland's Norway", "", "England",
      "SHIPPED BUG: gazetteer read the surname as Bellingham, Washington"),
+    # A LEGAL RULING is located at its jurisdiction — the court's country, not a place inside the
+    # defendant's NAME. SHIPPED BUG: "Palestine Action ... UK judge rules" dotted PALESTINE (leftmost,
+    # part of the group's name) instead of the UK where the court sat. "<Country> judge/court" = the seat.
+    ("Palestine Action 'Barclays five' won't face terrorism sentences, UK judge rules", "",
+     "United Kingdom", "a UK court ruling dots the UK, not 'Palestine' inside the group's name"),
+    ("Palestine Action 'Barclays five' won't face terrorism sentences, UK judge rules", "",
+     "!Palestine", "...and it must NOT land on Palestine"),
     # BATCH of wrong-continent dots: common words / acronyms read as towns, and ambiguous names that picked
     # the wrong country. Curated the real scene (Sizewell, Beaufort Castle); guarded acronyms + common words.
     ("Wildfire near Sizewell nuclear plant causes 'total devastation' to Suffolk landscape",
@@ -921,6 +928,18 @@ LEAN_CASES = [
 ]
 
 # (headline, url, should_be_dropped, why)
+# A routine international result is true but not world news; a final/title/medal/record IS. (title, keep?)
+SPORTS_WORTHY_CASES = [
+    ("Turkey beat Lithuania in Women's volleyball", False),
+    ("Real Madrid beat Barcelona 2-1", False),
+    ("Man City sign midfielder in transfer deadline deal", False),
+    ("England beat Norway to reach the World Cup semis", True),
+    ("France win the World Cup final", True),
+    ("Djokovic wins Wimbledon title", True),
+    ("Simone Biles takes Olympic gold medal", True),
+    ("Kenya sets new world record in the marathon", True),
+]
+
 FLUFF_CASES = [
     ("New Scholarships. New Programs. Your Next Step.", "https://toi.li/5Jd4WB", True,
      "SHIPPED BUG: sponsored content sat on the map as an Israel dot — an advert has no event"),
@@ -1222,6 +1241,15 @@ def main():
         if not ok:
             fails.append(("fluff", title, want_drop, got_drop, why))
         print(f"  {'ok ' if ok else 'FAIL'} {'DROP' if got_drop else 'KEEP'} (want {'DROP' if want_drop else 'KEEP'}) {title[:44]}")
+
+    print("\n=== SPORTS WORTHINESS (only MAJOR results reach the map) ===")
+    for title, keep in SPORTS_WORTHY_CASES:
+        got = app._sports_worthy(title)
+        ok = got == keep
+        ran[0] += 1
+        if not ok:
+            fails.append(("sports", title, keep, got, "major result -> keep; routine result -> drop"))
+        print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if keep else 'DROP'}) {title[:44]}")
 
     print("\n=== GEOLOCATION (article URL as a country hint) ===")
     for title, desc, url, want, why in GEO_URL_CASES:
@@ -2040,7 +2068,17 @@ def main():
                          "hrs": 0.1, "cat": "security", "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
                         {"title": "Israeli Air Force airstrike against southern Lebanon town of Aitaroun.",
                          "place": "Southern Lebanon, Lebanon", "country": "Lebanon", "lat": 33.3, "lng": 35.5,
-                         "hrs": 0.3, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
+                         "hrs": 0.3, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2
+                    # ONE side pinned a village, the OTHER fell back to the region centroid ('Ali al-Taher'
+                    # vs 'Bayout El Siyad', both southern Lebanon) — the area gate must look at BOTH places, or
+                    # the two separate strikes collapse into one dot. The shared 'two/airstrikes' is boilerplate.
+                    and len(app._merge_same_event([
+                        {"title": "Two Israeli airstrikes targeted Bayout El Siyad, southern Lebanon",
+                         "place": "Southern Lebanon, Lebanon", "country": "Lebanon", "lat": 33.4, "lng": 35.5,
+                         "hrs": 0.2, "cat": "security", "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
+                        {"title": "Two Israeli Air Force airstrikes against Ali al-Taher Hill, southern Lebanon",
+                         "place": "Ali Al Taher, Lebanon", "country": "Lebanon", "lat": 33.38, "lng": 35.48,
+                         "hrs": 0.1, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
@@ -2316,7 +2354,7 @@ def main():
                       "the story's groups are defined; ordinary words never trip a definition"))
     print(f"  {'ok ' if _gloss_ok else 'FAIL'} {_terms1}")
 
-    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES)
+    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1

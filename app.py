@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.39"
+APP_VERSION = "1.4.40"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d46"   # d46: resweep so the new merge rule takes effect — two DIFFERENT-town strikes that fall
+_DATA_VER = "d47"   # d47: resweep so this round's build-time rules take effect — a legal ruling dots its
+                    #      jurisdiction ("UK judge rules" -> UK, not Palestine), routine sports results drop
+                    #      (only finals/titles/medals stay), and the merge area-gate checks BOTH places so a
+                    #      village-vs-region pair ("Ali al-Taher" vs "Bayout El Siyad") stays two dots.
+                    # d46: resweep so the new merge rule takes effect — two DIFFERENT-town strikes that fall
                     #      on the same region centroid ("Southern Lebanon") no longer collapse into one dot
                     #      (new area = new dot). Cache-hits summaries/AI-where, so no re-summarize cost.
                     # d45: resweep so a leader RETURNING from abroad dots their own country (Cameroon, not
@@ -4405,7 +4409,8 @@ _STRIKE_GENERIC = set(_stem(w) for w in (
     "missiles rocket rockets heavy targeting target targets targeted hit hits struck shell outskirt "
     "outskirts neighborhood neighbourhood vicinity area areas district districts sector axis front "
     "position positions town village city region north south east west northern southern eastern "
-    "western central upper lower greater near overnight launches launched fire fired firing").split())
+    "western central upper lower greater near overnight launches launched fire fired firing "
+    "one two three four five six seven eight nine ten several multiple dozen dozens").split())
 
 # Pure MAGNITUDE / quantity words — never a distinctive subject. "$400 million settlement" and "$725
 # million UN payment" share {million}; that shared magnitude must NOT tie two unrelated money stories
@@ -4424,10 +4429,24 @@ def _same_story(a_toks, b_toks):
         return False
     shared = len(a_toks & b_toks)
     return shared >= 4 and shared / min(len(a_toks), len(b_toks)) >= 0.72
-_SPORTS_RESULT = re.compile(r"\b(wins?|won|beat|beats|beaten|defeat(?:s|ed)?|champions?|championship|title|titles|crowned|clinch(?:es|ed)?|gold medal|silver medal|bronze medal|trophy|triumph(?:s|ed)?|victor(?:y|ious)|lift(?:s|ed)? the|grand slam|world record)\b", re.I)
+# A SPORTS story earns a spot on a WORLD news map only when it is a MAJOR moment: a final, a
+# championship/title decider, an Olympic or World-Cup medal, a world record, a nation qualifying for a
+# World Cup. A routine international result — "Turkey beat Lithuania in women's volleyball" — is true but
+# not world news, so a bare result verb ("beat", "won") no longer qualifies on its own; the headline must
+# name the big STAGE or PRIZE. (Transfer/preview chatter never had a result and was already dropped.)
+_SPORTS_MAJOR = re.compile(
+    r"\b(finals?|semi[-\s]?finals?|quarter[-\s]?finals?|deciders?|"
+    r"champions?|championships?|titles?|crowned|trophy|trophies|"
+    r"world cup|world championships?|world series|super ?bowl|champions league|europa league|"
+    r"stanley cup|nba finals?|grand slam|wimbledon|the masters|us open|french open|australian open|"
+    r"the ashes|ballon d'?or|olympics?|olympic|paralympics?|(?:gold|silver|bronze)\s+medals?|"
+    r"world record|record[-\s]?breaking|qualif(?:y|ies|ied)\s+for\b)\b", re.I)
 def _sports_worthy(title):
-    """Only keep sport when it's an actual result/championship, not routine match/transfer/preview chatter."""
-    return bool(_SPORTS_RESULT.search(title or ""))
+    """Only keep sport when it's a MAJOR result — a final, a title/championship, an Olympic or World-Cup
+    medal, a world record — the moments people actually follow. A routine international result ('Turkey
+    beat Lithuania in women's volleyball') or transfer/preview chatter is true but not world news, so a
+    bare 'beat/won' no longer qualifies; the headline must name the big stage or prize."""
+    return bool(_SPORTS_MAJOR.search(title or ""))
 # Features, op-eds, documentaries, listicles and quizzes are not events — they make dots that show nothing.
 # The article's URL SECTION is the most reliable signal (an Al Jazeera "featured-documentaries" piece is
 # never breaking news), so block on that first. Note /video/ alone is NOT fluff — France24 files real news
@@ -5987,8 +6006,10 @@ def _merge_same_event(events, window_h=18):
             _shared_content = _shared - _WEAK_MATCH                  # drop the actor country/demonym names
             # On a FUZZY AREA (region centroid) two different towns share the same point + a cloud of strike
             # boilerplate, so a wording match is NOT proof of one event — demand a shared DISTINCT token (the
-            # town / target / verb). A real city dot (or a hard casualty fingerprint below) is never gated.
-            _area_ok = (not _is_area_place(pl)) or bool(_shared_content - _STRIKE_GENERIC)
+            # town / target / verb). Check BOTH sides: the kept dot may be the one on the region centroid while
+            # THIS one pinned a village ('Ali al-Taher' vs 'Bayout El Siyad', both southern Lebanon). A real
+            # city-to-city pair (neither an area) and the hard casualty fingerprint below are never gated.
+            _area_ok = (not (_is_area_place(pl) or _is_area_place(mpl))) or bool(_shared_content - _STRIKE_GENERIC)
             same = ((_same_story(toks, mtoks) and _area_ok)          # a re-headlined copy of the same wire
                     or (toll and mtoll and toll == mtoll and near)   # the SAME casualty figure at the SAME spot
                     or (toll and mtoll and toll == mtoll             # ...or BOTH killed AND injured match: a
@@ -8661,6 +8682,10 @@ _CONTEXT_PREP = {"despite", "notwithstanding", "amid", "amidst"}
 _CONFLICT_NOUN = {"war", "campaign", "offensive", "strategy", "policy", "pressure", "effort", "efforts",
                   "struggle", "fight", "action", "actions", "measure", "measures", "sanction", "sanctions",
                   "aggression", "hostility", "hostilities", "standoff", "confrontation", "crackdown", "failure"}
+# A judicial office right after a country/demonym marks the SEAT of a legal ruling — the story's real scene.
+# "UK judge rules", "US Supreme Court", "France's prosecutor charges…": the country is where the court sits.
+_JUDICIAL_SEAT = {"judge", "judges", "court", "courts", "justice", "prosecutor", "prosecutors",
+                  "tribunal", "magistrate", "magistrates", "supreme"}
 # A country named as the BACKER/FUNDER of a scheme is the accused party, not the scene: "UAE-funded plot",
 # "Iran-backed militia", "Saudi-led coalition". The event happens where the plot/attack LANDS (British soil,
 # Israel, Yemen), so the backer is dropped and the real subject/scene wins. SHIPPED BUG: "After revelation of
@@ -8734,6 +8759,12 @@ def _pick_place(hits, words):
         if loc and (_nxt(h) == "s" or _is_nationality(h, words)
                     or (h[1] in ("country", "demonym") and _nxt(h) in _STRIKE_VERBS)):
             loc = False
+        # A LEGAL RULING happens in its JURISDICTION: "<Country> judge/court/justice/prosecutor …" makes
+        # that country the scene of the story. SHIPPED BUG: "Palestine Action 'Barclays five' … UK judge
+        # rules" dotted PALESTINE (leftmost place, inside the group's NAME) instead of the UK where the
+        # court sat. The country right before a judicial office is the seat, so promote it to `located`.
+        if h[1] in ("country", "demonym") and _nxt(h) in _JUDICIAL_SEAT:
+            loc = True
         (located if loc else other).append(h)
     # A demonym names the ACTOR, not the scene ("UKRAINIAN drones strike the port of Azov" happens in
     # Azov). A POSSESSIVE does the same: "RUSSIA'S attack on Zaporizhzhia" happens in Zaporizhzhia,
