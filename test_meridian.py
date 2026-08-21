@@ -231,6 +231,10 @@ GEO_CASES = [
      "the EU Commission President is a Brussels/Belgium speaker; Russia is only the topic"),
     ("EU Commission announces a new sanctions package on Russia", "", "Brussels",
      "the EU Commission acting is Brussels news, not Russia"),
+    # A US official's STATEMENT about Iran is news at their SEAT (the US), not Tehran. SHIPPED BUG: "Treasury
+    # Secretary Scott Bessent on Iran says…" dotted Iran. Bessent + Treasury Secretary added to the officials.
+    ("Treasury Secretary Scott Bessent on Iran says we are going to have the toughest sanctions in history",
+     "", "United States", "the US Treasury Secretary speaking about Iran is Washington news, not Tehran"),
     ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
      "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
     ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",

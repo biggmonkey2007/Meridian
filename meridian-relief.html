@@ -778,7 +778,13 @@ body.topo-active .zoomers{bottom:130px}
 .cx-back.open{display:flex}
 .cx-card{background:var(--panel);border-radius:16px;max-width:560px;width:100%;max-height:84vh;overflow:auto;box-shadow:0 24px 70px rgba(10,14,24,.4)}
 .cx-hero{position:relative;height:150px;background:linear-gradient(135deg,#2b4a73,#1c2e49);border-radius:16px 16px 0 0;overflow:hidden}
-.cx-hero img{width:100%;height:100%;object-fit:cover}
+.cx-hero img{width:100%;height:100%;object-fit:cover;position:relative;z-index:1}
+/* Header placeholder shown when the topic has no Wikipedia photo — the topic name set on the gradient, so the
+   header is never a blank block. Hidden (opacity:0 via JS) the moment a real image loads. */
+.cx-hero-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:16px 22px;font-family:var(--serif);font-size:22px;line-height:1.25;font-weight:600;color:rgba(255,255,255,.94);
+  letter-spacing:.01em;text-shadow:0 1px 10px rgba(0,0,0,.35);
+  background:radial-gradient(120% 90% at 50% 30%,rgba(255,255,255,.10),transparent 70%)}
 .cx-x{position:absolute;top:11px;right:11px;width:30px;height:30px;border-radius:50%;border:none;background:rgba(0,0,0,.4);color:#fff;font-size:17px;cursor:pointer;z-index:2}
 .cx-body{padding:17px 20px 22px}
 .cx-kicker{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#3a6098;font-weight:800}
@@ -1429,6 +1435,11 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 // spaces/space-before-punctuation are all removed here too. Idempotent on already-clean text.
 function tidyLead(s){
   s=String(s||"").trim(); if(!s) return s;
+  // LEADING TELEGRAM DECORATION — a flag/emoji/symbol and/or a short country code, plus an optional dash or
+  // colon. The card already flies the country's flag, so this is pure clutter. SHIPPED BUG (again): the body
+  // showed a lightning bolt + em-dash ("<zap> - Treasury Secretary Scott Bessent...").
+  s=s.replace(/^(?:(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[←-⯿️‍⃣])\s*)+[\-–—:|•·]*\s*/,"");
+  s=s.replace(/^\s*[A-Z]{2,3}(?:[ /][A-Z]{2,3}){0,3}\s*[-–—:|]\s+/,"");   // a leftover country code "US - ", "IL/US - "
   s=s.replace(/^\s*(?:just\s?in|breaking|update|updated|developing|exclusive|alert|flash|watch|new|now|urgent|live|latest|hot|report)\b\s*[-:–—|]+\s*/i,"");   // promo lead
   // WIRE DATELINE at the start ("TEHRAN — …", "WASHINGTON (Reuters) — …", "BEIRUT, Lebanon — …"): an
   // ALL-CAPS place + optional ", Country"/"(Agency)" + a spaced dash. A card should START with the news.
@@ -3470,7 +3481,7 @@ function addGlobeOverlays(){
     mlMap.addLayer({id:"g-seas-lbl",type:"symbol",source:"g-seas",minzoom:2,layout:{visibility:layers.labels?"visible":"none",
       "text-field":["get","name"],"text-font":["Open Sans Italic","Open Sans Regular"],"text-letter-spacing":0.04,
       "text-size":["interpolate",["linear"],["zoom"],2,11,5,13,8,16],"text-max-width":8,"text-allow-overlap":false,"text-padding":6},
-      paint:{"text-color":"#8a97a0","text-halo-color":"#ffffff","text-halo-width":1.3,"text-halo-blur":0.3,"text-opacity":1}}, underDots);
+      paint:{"text-color":"#5a7189","text-halo-color":"#ffffff","text-halo-width":1.4,"text-halo-blur":0.2,"text-opacity":1}}, underDots);
   }
 }
 function updateGlobeOverlayVis(){
@@ -4036,7 +4047,7 @@ const conceptCache={};
 function ensureCxOverlay(){
   if(cxBack) return cxBack;
   cxBack=document.createElement("div"); cxBack.className="cx-back";
-  cxBack.innerHTML=`<div class="cx-card"><div class="cx-hero"><button class="cx-x" aria-label="Close">×</button><img alt="" referrerpolicy="no-referrer" onerror="this.style.display='none'"></div><div class="cx-body"><div class="cx-kicker">Concept</div><div class="cx-title"></div><div class="cx-extract"></div><a class="cx-link" target="_blank" rel="noopener">Read the full article on Wikipedia →</a></div></div>`;
+  cxBack.innerHTML=`<div class="cx-card"><div class="cx-hero"><div class="cx-hero-ph"></div><button class="cx-x" aria-label="Close">×</button><img alt="" referrerpolicy="no-referrer" onerror="this.style.display='none';var p=this.parentNode.querySelector('.cx-hero-ph');if(p)p.style.opacity='';"></div><div class="cx-body"><div class="cx-kicker">Concept</div><div class="cx-title"></div><div class="cx-extract"></div><a class="cx-link" target="_blank" rel="noopener">Read the full article on Wikipedia →</a></div></div>`;
   document.body.appendChild(cxBack);
   cxBack.addEventListener("click", e=>{ if(e.target===cxBack || e.target.classList.contains("cx-x")) closeConcept(); });
   return cxBack;
@@ -4047,8 +4058,23 @@ async function openConcept(title){
   const img=ov.querySelector(".cx-hero img"), titleEl=ov.querySelector(".cx-title"), ex=ov.querySelector(".cx-extract"), link=ov.querySelector(".cx-link");
   titleEl.textContent=title; ex.innerHTML=`<span class="xp-loading"><span class="spin"></span>Loading…</span>`; img.style.display="none"; link.style.display="none";
   ov._t=title;
+  const ph=ov.querySelector(".cx-hero-ph"); if(ph){ ph.textContent=title; }   // header placeholder = the topic name
   let j=conceptCache[title];
-  if(j===undefined){ try{ const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(title)); j=r.ok?await r.json():null; }catch(e){ j=null; } conceptCache[title]=j; }
+  if(j===undefined){
+    j=null;
+    try{ const r=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(title)); if(r.ok) j=await r.json(); }catch(e){}
+    // FALLBACK: the exact phrase may not be a page title ("Sunni–Shia split" -> the article is "Sunni–Shia
+    // relations"). Ask Wikipedia SEARCH for the closest page, then fetch ITS summary. This is why the card
+    // used to say "Couldn't load an explainer".
+    if(!j || !j.extract || j.type==="disambiguation"){
+      try{
+        const sr=await fetch("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch="+encodeURIComponent(title)+"&srlimit=1&format=json&origin=*");
+        if(sr.ok){ const sj=await sr.json(); const hit=sj&&sj.query&&sj.query.search&&sj.query.search[0];
+          if(hit&&hit.title){ const r2=await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(hit.title)); if(r2.ok){ const j2=await r2.json(); if(j2&&j2.extract) j=j2; } } }
+      }catch(e){}
+    }
+    conceptCache[title]=j;
+  }
   if(!ov.classList.contains("open") || ov._t!==title) return;
   if(j && j.extract){
     titleEl.textContent=j.title||title;
@@ -4058,7 +4084,9 @@ async function openConcept(title){
     // the original only when there's no thumbnail to resize.
     const _im = (j.thumbnail && j.thumbnail.source) ? j.thumbnail.source.replace(/\/\d+px-/,"/640px-")
               : ((j.originalimage && j.originalimage.source) || "");
-    if(_im){ img.src=_im; img.style.display=""; } else { img.style.display="none"; }
+    if(ph){ ph.textContent=j.title||title; }
+    if(_im){ img.src=_im; img.style.display=""; if(ph) ph.style.opacity="0"; }
+    else { img.style.display="none"; if(ph) ph.style.opacity=""; }   // no photo -> the topic name stands as the header
     link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
     // reword into Meridian's own words when a summarizer is available; else the attributed Wikipedia text stands
     try{
@@ -4073,8 +4101,10 @@ async function openConcept(title){
       }
     }catch(e){}
   } else {
-    ex.textContent="Couldn’t load an explainer for this topic right now — open it on Wikipedia instead.";
-    link.href="https://en.wikipedia.org/wiki/"+encodeURIComponent(title.replace(/ /g,"_")); link.style.display="";
+    if(ph){ ph.textContent=title; ph.style.opacity=""; }   // header still carries the topic name, never blank
+    img.style.display="none";
+    ex.textContent="Open the full explainer on Wikipedia.";
+    link.href="https://en.wikipedia.org/wiki/"+encodeURIComponent(title.replace(/ /g,"_")); link.textContent="Read on Wikipedia →"; link.style.display="";
   }
 }
 document.addEventListener("click", e=>{ const chip=e.target.closest("[data-concept]"); if(chip){ openConcept(chip.getAttribute("data-concept")); return; } const jump=e.target.closest("[data-xp-jump]"); if(jump){ const el=document.getElementById(jump.getAttribute("data-xp-jump")); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); } });

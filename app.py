@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.34"
+APP_VERSION = "1.4.35"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d42"   # d42: resweep so near-miss/explainer/blame non-events drop, the Georgia US-state flag clears,
+_DATA_VER = "d43"   # d43: resweep so a US official's statement about a foreign country dots the US seat (Bessent on
+                    #      Iran -> Washington, not Tehran).
+                    # d42: resweep so near-miss/explainer/blame non-events drop, the Georgia US-state flag clears,
                     #      and mismatched wire clips detach.
                     # d41: resweep so EU-leader statements re-place on Brussels (von der Leyen was dotting Russia),
                     #      Vucic/Zakharova/Kallas seats apply, and the sea-label / attribution-tail cleanups land.
@@ -7314,7 +7316,10 @@ _ACTOR_NOUNS = {"attack", "attacks", "airstrike", "airstrikes", "raid", "raids",
 _OFFICIAL_COUNTRY = {
     "trump": "United States of America", "vance": "United States of America",
     "rubio": "United States of America", "hegseth": "United States of America",
-    "biden": "United States of America",
+    "biden": "United States of America", "bessent": "United States of America",
+    "scott bessent": "United States of America", "treasury secretary": "United States of America",
+    "bondi": "United States of America", "noem": "United States of America",
+    "waltz": "United States of America", "witkoff": "United States of America",
     "putin": "Russia", "lavrov": "Russia", "medvedev": "Russia", "peskov": "Russia",
     "zakharova": "Russia", "shoigu": "Russia", "mishustin": "Russia",
     "zelensky": "Ukraine", "zelenskyy": "Ukraine",
