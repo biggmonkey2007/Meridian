@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.38"
+APP_VERSION = "1.4.39"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d45"   # d45: resweep so a leader RETURNING from abroad dots their own country (Cameroon, not
+_DATA_VER = "d46"   # d46: resweep so the new merge rule takes effect — two DIFFERENT-town strikes that fall
+                    #      on the same region centroid ("Southern Lebanon") no longer collapse into one dot
+                    #      (new area = new dot). Cache-hits summaries/AI-where, so no re-summarize cost.
+                    # d45: resweep so a leader RETURNING from abroad dots their own country (Cameroon, not
                     #      Switzerland), and briefs regenerate under the compressed prompt.
                     # d44: resweep so retrospective/history features drop off the map (ABC "how a health study
                     #      shaped modern medicine") and cutoff briefs re-bake clean.
@@ -4207,7 +4210,8 @@ def _clip_matches(event_title, clip_text):
     # the distinctive WORDS must be CONTENT words, not the shared names again — a lone ubiquitous name (Trump)
     # that is also a sigword must not sneak in as a "shared word" and pass the single-word bar.
     shared_words = ((_sigwords(event_title) & _sigwords(subject))
-                    - _GENERIC_WORDS - _WEAK_MATCH - _TOPIC_GENERIC - place_toks - _shared_proper)
+                    - _GENERIC_WORDS - _WEAK_MATCH - _TOPIC_GENERIC - place_toks - _shared_proper
+                    - _STRIKE_GENERIC - _MONEY_GENERIC)   # 'against'/'airstrike'/'million' are not a subject
     if not (shared_names or shared_words):
         return False                                   # nothing SPECIFIC shared beyond the place + the topic
     # SAME PLACE or SAME COUNTRY: one shared distinctive name OR word is the same event (the Odesa ship footage,
@@ -4388,6 +4392,28 @@ _GENERIC_WORDS = set(_stem(w) for w in (
 def _norm_tokens(title):
     t = re.sub(r"(?<=\d)[,.](?=\d)", "", (title or "").lower())      # 2,000 -> 2000
     return set(_stem(w) for w in re.findall(r"[a-z0-9]{2,}", t) if w not in _STOP)
+
+
+# Strike/attack BOILERPLATE + geography words. On a FUZZY area centroid (a whole region like "Southern
+# Lebanon", where the gazetteer couldn't pin the specific town), two DIFFERENT strikes fall on the SAME
+# point and share this vocabulary — but sharing "air force airstrike against ... southern" does NOT make
+# them the same event; the distinct TOWN is what separates them. So on an area place the reworded-merge
+# needs a shared token BEYOND this set (see `_merge_same_event`). A real city dot is never gated by this.
+_STRIKE_GENERIC = set(_stem(w) for w in (
+    "against air force forces airstrike airstrikes strike strikes artillery shelling shell shells "
+    "bombardment bombing bomb bombs raid raids attack attacks assault offensive drone drones missile "
+    "missiles rocket rockets heavy targeting target targets targeted hit hits struck shell outskirt "
+    "outskirts neighborhood neighbourhood vicinity area areas district districts sector axis front "
+    "position positions town village city region north south east west northern southern eastern "
+    "western central upper lower greater near overnight launches launched fire fired firing").split())
+
+# Pure MAGNITUDE / quantity words — never a distinctive subject. "$400 million settlement" and "$725
+# million UN payment" share {million}; that shared magnitude must NOT tie two unrelated money stories
+# together (it filed a TikTok settlement onto a UN-debt dot). Stripped from clip/post matching alongside
+# the topic + strike vocabulary. The actual SUBJECT (TikTok, ByteDance, UN) is what should match, not "million".
+_MONEY_GENERIC = set(_stem(w) for w in (
+    "million millions billion billions trillion trillions thousand thousands hundred hundreds "
+    "percent percentage dollar dollars euro euros pound pounds worth amount sum figure").split())
 
 
 def _same_story(a_toks, b_toks):
@@ -5959,7 +5985,11 @@ def _merge_same_event(events, window_h=18):
             _pl_match = (bool(pl) and pl == mpl) or near             # the SAME scene (place string, or coords)
             _shared = toks & mtoks
             _shared_content = _shared - _WEAK_MATCH                  # drop the actor country/demonym names
-            same = (_same_story(toks, mtoks)                         # a re-headlined copy of the same wire
+            # On a FUZZY AREA (region centroid) two different towns share the same point + a cloud of strike
+            # boilerplate, so a wording match is NOT proof of one event — demand a shared DISTINCT token (the
+            # town / target / verb). A real city dot (or a hard casualty fingerprint below) is never gated.
+            _area_ok = (not _is_area_place(pl)) or bool(_shared_content - _STRIKE_GENERIC)
+            same = ((_same_story(toks, mtoks) and _area_ok)          # a re-headlined copy of the same wire
                     or (toll and mtoll and toll == mtoll and near)   # the SAME casualty figure at the SAME spot
                     or (toll and mtoll and toll == mtoll             # ...or BOTH killed AND injured match: a
                         and inj and minj and inj == minj)            # two-number fingerprint, valid anywhere
@@ -5968,7 +5998,11 @@ def _merge_same_event(events, window_h=18):
                     # survive in _norm_tokens, so the three 'UAE detects Iranian missiles' reports and the two
                     # 'UAE halts trade with Iran' reports — which share no _key word — merge deterministically on
                     # every build. Missile-vs-trade shares only {uae, iran} (2 actors, 0 content) -> stays apart.
-                    or (_pl_match and len(_shared) >= 3 and len(_shared_content) >= 2))
+                    # ON A FUZZY AREA (a region centroid where two different towns land on the same point), the
+                    # shared tokens must include something BEYOND strike boilerplate — else two separate strikes
+                    # in 'Southern Lebanon' merge on 'air force airstrike against southern' alone. New area = new
+                    # dot, exactly as the reader expects; a real city dot is never gated (`_is_area_place` False).
+                    or (_pl_match and len(_shared) >= 3 and len(_shared_content) >= 2 and _area_ok))
             if same:
                 hit = i
                 break
@@ -5995,6 +6029,24 @@ def _is_water_place(place):
     if _WATER_NAMES and p in _WATER_NAMES:
         return True
     return bool(_WATER_SUFFIX.search(p))
+
+
+_AREA_PREFIX = re.compile(r"^(north|south|east|west|northern|southern|eastern|western|central|"
+                          r"upper|lower|greater)\b", re.I)
+
+
+def _is_area_place(place):
+    """Is this dot's place a BROAD AREA — a sea, or a directional region ('Southern Lebanon', 'Eastern
+    Ukraine', 'Northern Gaza') — rather than a specific point? When the gazetteer can't pin the exact town
+    it falls back to the region centroid, so several DIFFERENT strikes land on the very same coordinate and
+    read as 'co-located'. On such a place a shared cloud of strike boilerplate is NOT proof of one event
+    (see `_merge_same_event`). A bare country centroid is deliberately NOT counted here (national stories
+    like 'UAE detects missiles' still merge on their own distinct verb)."""
+    if not place:
+        return False
+    if _is_water_place(place):
+        return True
+    return bool(_AREA_PREFIX.match(place.split(",")[0].strip()))
 
 
 def _collapse_colocated(events, window_h=6):

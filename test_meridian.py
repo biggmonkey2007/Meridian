@@ -710,6 +710,22 @@ CLIP_CASES = [
     ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
      "FP-1 strike drones maneuvering before hitting the Syzran oil refinery in Russia's Samara region",
      False, "SHIPPED BUG: attached on {attack, drone, region} — conflict filler"),
+    ("US plans $725 million payment towards its large UN debt",
+     "The U.S. Justice Department has reached a $400 million settlement with TikTok and parent company "
+     "ByteDance over children privacy laws, Axios reports.", False,
+     "SHIPPED BUG (live wire): a TikTok settlement post opened a UN-debt dot on the ONLY shared word "
+     "'million' + same country (US). A shared magnitude is not a subject (_MONEY_GENERIC)."),
+    ("US reaches $400M settlement with TikTok and ByteDance over child privacy",
+     "The U.S. Justice Department has reached a $400 million settlement with TikTok and parent company "
+     "ByteDance over children privacy laws, Axios reports.", True,
+     "...but the SAME TikTok settlement, differently worded, must still attach on {tiktok, bytedance}."),
+    ("Heavy Israeli artillery against Kfar Rumman in southern Lebanon",
+     "Israeli Air Force airstrike against the outskirts of Deir Seryan, southern Lebanon.", False,
+     "SHIPPED BUG (live wire): a fresh Deir Seryan strike opened a DIFFERENT-town Kfar Rumman dot on the "
+     "ONLY shared word 'against' + same region — new area = new dot (_STRIKE_GENERIC)."),
+    ("Israeli strike on Deir Seryan, southern Lebanon",
+     "Israeli Air Force airstrike against the outskirts of Deir Seryan, southern Lebanon.", True,
+     "...but the SAME Deir Seryan strike, differently worded, must still attach on {deir, seryan}."),
     ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
      "Burning Russian tankers in the Sea of Azov after Ukrainian drone attacks", False,
      "SHIPPED BUG: 'Ukrainian' is capitalised but identifies nothing — half the war shares it"),
@@ -2013,7 +2029,18 @@ def main():
                     # NAMESAKE GUARD (cold start, no AI): a WRONG-CONTINENT town (Lima, Peru) for a Ukraine war
                     # story drops to the named nationality's country; a correct nearby village is kept.
                     and app._locate("Russian forces shell Lima positions", "", "Ukrainian troops held the line", allow_ai=False)[3] == "Ukraine"
-                    and app._locate("Russian Forces Capture Malaya Tokmachka", "", "Ukrainian forces withdrew", allow_ai=False)[3] == "Ukraine")
+                    and app._locate("Russian Forces Capture Malaya Tokmachka", "", "Ukrainian forces withdrew", allow_ai=False)[3] == "Ukraine"
+                    # NEW AREA = NEW DOT: two DIFFERENT southern-Lebanon towns fall on the same region centroid
+                    # (the gazetteer can't pin either village) and share only strike boilerplate — they must
+                    # stay TWO dots, not collapse a fresh strike into a stale one (`_is_area_place`+`_STRIKE_GENERIC`).
+                    and app._is_area_place("Southern Lebanon, Lebanon") and not app._is_area_place("Kyiv, Ukraine")
+                    and len(app._merge_same_event([
+                        {"title": "Israeli Air Force airstrike against southern Lebanon town of Yohmor.",
+                         "place": "Southern Lebanon, Lebanon", "country": "Lebanon", "lat": 33.3, "lng": 35.5,
+                         "hrs": 0.1, "cat": "security", "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
+                        {"title": "Israeli Air Force airstrike against southern Lebanon town of Aitaroun.",
+                         "place": "Southern Lebanon, Lebanon", "country": "Lebanon", "lat": 33.3, "lng": 35.5,
+                         "hrs": 0.3, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source

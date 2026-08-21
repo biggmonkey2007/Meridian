@@ -4378,7 +4378,7 @@ document.addEventListener("click", e=>{
     // Clicking the MEDIA thumbnail plays it. Clicking the post itself FLIES the globe to the matching dot and
     // opens the story — "take me to where this news is". Fall back to the media if no dot matches.
     if(e.target.closest(".wpost-media, .wpost-img")){ showMedia(); return; }
-    const ev=_wireMatchEvent(wp.dataset.cap||"", wp.dataset.link||"");
+    const ev=_wireMatchEvent(wp.dataset.cap||"", wp.dataset.link||"", wp.dataset.time||"");
     if(ev){ flyToEvent(ev); selectEvent(ev); return; }
     // Harder case: the SAME event, first reported HOURS ago by another outlet in different words. Ask the
     // backend's clip-matcher (distinctive name + word + same country) so a new post lands on the EXISTING dot.
@@ -4400,28 +4400,52 @@ document.addEventListener("click", e=>{
 });
 // Match a wire post to the map dot for the SAME event by shared distinctive words (the dots are built from
 // the same Telegram feed, deduped). Needs a few uncommon words in common so unrelated posts don't misfire.
-const _WIRE_STOP=new Set("this that with from have they were will been what when your their about after over into more than said says amid says told after around against because during through before between".split(" "));
-function _wireMatchEvent(text, link){
+const _WIRE_STOP=new Set("this that with from have they were will been what when your their about after over into more than said says amid told around against because during through before between".split(" "));
+// Broad proper nouns shared by HALF the wire — a country / nationality / direction / armed-force word. They do
+// NOT tell two events apart; only the specific TOWN or NAME does ("Deir Seryan" vs "Kfar Rumman", "TikTok" vs
+// "UN"). SHIPPED BUG: a fresh strike on Deir Seryan opened a 20h-old dot on Kfar Rumman, and a TikTok
+// settlement opened a UN-debt dot — purely on shared "Israeli / southern Lebanon" or "US / $million".
+const _WIRE_PROP_STOP=new Set(("israel israeli lebanon lebanese gaza gazan hamas hezbollah palestine palestinian "
+  +"syria syrian iran iranian iraq iraqi yemen yemeni houthi ukraine ukrainian russia russian moscow kyiv us usa "
+  +"united states america american uk britain british europe european china chinese india indian nato un eu "
+  +"north south east west northern southern eastern western central air force forces army navy defense defence "
+  +"ministry breaking just update alert live report reports news world today").split(" "));
+function _wireProps(s){   // the DISTINCTIVE proper nouns (specific place/name) of a headline
+  const out=new Set();
+  for(const t of (String(s||"").match(/[A-Z][A-Za-z'’\-]{2,}/g)||[])){
+    const w=t.toLowerCase().replace(/[’']/g,"");
+    if(w.length>=3 && !_WIRE_PROP_STOP.has(w)) out.add(w);
+  }
+  return out;
+}
+function _wireMatchEvent(text, link, postTime){
   // 1) EXACT — the dot was built from THIS Telegram post, or cites it as a source. Same link = certain match.
   if(link){
     const byLink=(EVENTS||[]).find(ev=> (ev.url && ev.url===link) ||
       (Array.isArray(ev.sources) && ev.sources.some(s=> s && s.url===link)));
     if(byLink) return byLink;
   }
-  // 2) STRICT words — a few shared "Gaza/Israel/Hamas" words are NOT a match (many dots share them). Require a
-  //    strong overlap AND a clear win over the runner-up, or we don't navigate at all (better than a wrong dot).
+  // 2) A SHARED SPECIFIC PLACE / NAME is REQUIRED — generic conflict/money words tie unrelated stories, so we
+  //    match only on the distinctive proper noun (the town, the company). And a minutes-old post must not open
+  //    a dot reported MUCH earlier: brand-new strikes get their own dot, not an old one.
+  const props=_wireProps(text);
+  if(props.size===0) return null;                          // nothing specific to match on -> never guess
   const ws=(String(text||"").toLowerCase().match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w));
-  if(ws.length<4) return null;
   const want=new Set(ws);
+  const pt=postTime?Date.parse(postTime):0;
   let best=null, bestScore=0, second=0;
   (EVENTS||[]).forEach(ev=>{
+    const eProps=_wireProps((ev.title||"")+" "+(ev.place||""));
+    let shared=0; props.forEach(p=>{ if(eProps.has(p)) shared++; });
+    if(shared===0) return;                                 // no specific place/name in common -> not this event
+    if(pt && ev.reportedAt && (pt - ev.reportedAt) > 5*3600000) return;   // dot >5h older than the post -> a different, older event
     const et=((ev.title||"")+" "+(ev.sum||"")).toLowerCase();
     const ew=new Set((et.match(/[a-z]{4,}/g)||[]).filter(w=>!_WIRE_STOP.has(w)));
-    let c=0; want.forEach(w=>{ if(ew.has(w)) c++; });
+    let c=shared*3; want.forEach(w=>{ if(ew.has(w)) c++; });   // weight the specific proper-noun match heavily
     if(c>bestScore){ second=bestScore; bestScore=c; best=ev; }
     else if(c>second){ second=c; }
   });
-  return (best && bestScore>=5 && bestScore>=0.5*want.size && bestScore>=second+2) ? best : null;
+  return (best && bestScore>=5 && bestScore>=second+2) ? best : null;
 }
 function flyToEvent(ev){
   if(!ev || !isFinite(+ev.lat) || !isFinite(+ev.lng)) return;
@@ -5984,7 +6008,7 @@ async function loadWire(silent){
                  :(it.big?`<span class="wpost-play">▶ ${esc(it.dur||"clip")}</span>`:"");
       // NOT an <a>. It was one big link, so clicking the photo threw you out to Telegram.
       const _rid = wirePostId(it), _un = _rid && !wireRead.has(_rid);
-      return `<div class="wpost${_un?" unread":""}" data-id="${esc(_rid)}" ${still||it.video?'data-has="1"':''} data-img="${esc(still)}" data-video="${esc(it.video||"")}" data-dur="${esc(it.dur||"")}" data-big="${it.big?1:0}" data-cap="${esc((it.text||"").slice(0,600))}" data-ch="${esc(nm)}" data-link="${esc(it.link||"")}">${wireAvatar(it, nm, col)}<div class="wpost-main"><div class="wpost-top"><span class="wpost-ch">${flagifyText(nm)}</span><span class="wpost-t">${esc(wireAgo(it.time))}</span></div><div class="wpost-tx">${flagifyText(it.text||"")}</div>${img?`<div class="wpost-media">${img}${badge}</div>`:""}</div></div>`;
+      return `<div class="wpost${_un?" unread":""}" data-id="${esc(_rid)}" ${still||it.video?'data-has="1"':''} data-img="${esc(still)}" data-video="${esc(it.video||"")}" data-dur="${esc(it.dur||"")}" data-big="${it.big?1:0}" data-cap="${esc((it.text||"").slice(0,600))}" data-ch="${esc(nm)}" data-link="${esc(it.link||"")}" data-time="${esc(String(it.time||""))}">${wireAvatar(it, nm, col)}<div class="wpost-main"><div class="wpost-top"><span class="wpost-ch">${flagifyText(nm)}</span><span class="wpost-t">${esc(wireAgo(it.time))}</span></div><div class="wpost-tx">${flagifyText(it.text||"")}</div>${img?`<div class="wpost-media">${img}${badge}</div>`:""}</div></div>`;
     }).join("");
     wireIds = items.map(wirePostId).filter(Boolean);
     _wireFirstSeen = true;
