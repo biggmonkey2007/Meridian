@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.37"
+APP_VERSION = "1.4.38"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -4159,7 +4159,16 @@ _TOPIC_GENERIC = set(_stem(w) for w in (
     # generic transaction/motion verbs — every trade/shipping story has them; not a shared SUBJECT
     "send sending sent buy buying bought sell selling sold stop stops stopped stopping allow allows allowed "
     "make makes making made move moves moving moved ease easing eased bring brings brought raise raises raising "
-    "plan plans planned seek seeks progress talks talk meeting meet"
+    "plan plans planned seek seeks progress talks talk meeting meet "
+    # coincidental polysemous words that tie unrelated stories: "midterm RACES" vs "RACE to finalize a deal"
+    "race races deadline deadlines push pushes drive drives bid bids"
+).split())
+
+# Figures who appear across a huge share of the wire — their surname ALONE ties nothing, so a clip that shares
+# only a ubiquitous name (plus one weak word) is coincidence, not the same event. Stemmed to match _proper_words.
+_UBIQUITOUS_NAMES = set(_stem(w) for w in (
+    "trump biden putin zelensky zelenskyy netanyahu xi jinping musk macron modi erdogan starmer lavrov "
+    "rubio vance harris obama pope zuckerberg bezos"
 ).split())
 
 
@@ -4211,8 +4220,13 @@ def _clip_matches(event_title, clip_text):
     # A single ubiquitous NAME alone (Trump + same country) is NOT the same event — it needs a shared
     # distinctive WORD, or a SECOND name. A single distinctive WORD (the "tanker"/"supermarket"/"pub") is
     # enough because it names the actual subject, not just a person the two stories both mention.
+    # SHIPPED BUG: "Trump … data centers … midterm RACES" pulled in "US, Canada RACE to finalize trade deal"
+    # — one coincidental word ("race") + Trump. When the ONLY shared name is a UBIQUITOUS figure (Trump, Biden,
+    # Putin… — in a huge share of the wire), one weak shared word is coincidence: demand TWO distinctive words.
     if same_place or same_country:
-        return len(shared_names) >= 2 or len(shared_words) >= 1
+        _only_ubiq = bool(shared_names) and not (shared_names - _UBIQUITOUS_NAMES)   # the ONLY shared name(s) are ubiquitous
+        _need_words = 2 if _only_ubiq else 1
+        return len(shared_names) >= 2 or len(shared_words) >= _need_words
     return len(shared_names) >= 2
 
 
@@ -4464,17 +4478,26 @@ def _is_thinkpiece(title):
     return bool(_THINK_THEME.search(rest))
 
 
+# A NEWSLETTER DIGEST headline joins SEVERAL unrelated stories with ". And,/Plus,/Also,/Meanwhile," — NPR's
+# "Up First" shape ("Trump declares economic warfare on Iran. And, SCOTUS to rule on the ballroom"). It's not
+# ONE event, so it's a poor map dot AND it mis-pairs wire clips (a clip about one half matches the whole
+# digest — the reported "ballroom wire post -> Iran-warfare dot"). Needs a period + a capitalised digest word
+# + comma, so a normal headline with 'and' isn't caught.
+_DIGEST_RE = re.compile(r"[.!?]\s+(?:And|Plus|Also|Meanwhile|Elsewhere)\s*,\s+\w")
+
+
 def _is_fluff(title, url=""):
     """True for features/op-eds/documentaries/analysis that aren't a real event worth a dot on the map.
     Deliberately does NOT require an 'event verb' in general — that wrongly dropped real news ('missiles
     have IMPACTED the port', 'president NOMINATES a PM'). Losing real news is worse than keeping a feature.
     The narrow _is_thinkpiece() exception only fires on a 'Country: ideology-theme' headline with NO event
-    verb and NO number, so it can't swallow a real event."""
+    verb and NO number, so it can't swallow a real event. A multi-story newsletter DIGEST is also dropped."""
     low = (url or "").lower()
     for p in _FLUFF_PATHS:
         if p in low:
             return True
-    return bool(_FLUFF_PAT.search(title or "")) or _is_thinkpiece(title or "")
+    return (bool(_FLUFF_PAT.search(title or "")) or _is_thinkpiece(title or "")
+            or bool(_DIGEST_RE.search(title or "")))
 
 
 # A COVERT-SURVEILLANCE / espionage story (a state spying on a dissident, tapping phones, a mercenary

@@ -704,6 +704,9 @@ CLIP_CASES = [
     ("Trump slams California plan to raise the minimum wage for fast-food workers",
      "BREAKING - Trump says Israel 'very happy' about Hamas disarmament deal",
      False, "SHIPPED BUG: a ubiquitous shared name (Trump) + same country (US) pulled an unrelated Hamas clip onto a California min-wage dot. A shared name needs a shared TOPIC, not just the same country."),
+    ("Trump keeps embracing data centers even as they become toxic in midterm races",
+     "US, Canada race to finalize trade deal ahead of Trump deadline", False,
+     "SHIPPED BUG: attached on Trump + the coincidental word 'race' ('midterm RACES' vs 'RACE to finalize'). When the ONLY shared name is a ubiquitous figure, ONE weak word is not the same event."),
     ("Supermarket in Zaporozhye Region attacked by Ukrainian drone",
      "FP-1 strike drones maneuvering before hitting the Syzran oil refinery in Russia's Samara region",
      False, "SHIPPED BUG: attached on {attack, drone, region} — conflict filler"),
@@ -905,6 +908,12 @@ LEAN_CASES = [
 FLUFF_CASES = [
     ("New Scholarships. New Programs. Your Next Step.", "https://toi.li/5Jd4WB", True,
      "SHIPPED BUG: sponsored content sat on the map as an Israel dot — an advert has no event"),
+    # A NEWSLETTER DIGEST joins unrelated stories (". And,/Also,/Meanwhile,") — not one event; it also
+    # mis-pairs wire clips (a clip about one half matched the whole digest dot).
+    ("Trump declares economic warfare on Iran. And, SCOTUS to rule on White House ballroom", "https://t.me/x/9", True,
+     "NPR 'Up First' digest of two stories in one headline -> not a single map dot"),
+    ("Israel strikes Gaza, and civilians flee the north", "https://t.me/x/10", False,
+     "a plain 'and' clause is NOT a digest — one real event, kept"),
     ("From Sudan to Spain: Between war and home", "https://t.me/x/1", True,
      "a personal-journey human-interest FEATURE, not a located event"),
     ("One refugee's journey from Kabul to a new life in Berlin", "/news/x", True, "profile feature, not an event"),
