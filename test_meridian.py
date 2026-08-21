@@ -235,6 +235,11 @@ GEO_CASES = [
     # Secretary Scott Bessent on Iran says…" dotted Iran. Bessent + Treasury Secretary added to the officials.
     ("Treasury Secretary Scott Bessent on Iran says we are going to have the toughest sanctions in history",
      "", "United States", "the US Treasury Secretary speaking about Iran is Washington news, not Tehran"),
+    # A leader RETURNING home from abroad is news in their OWN country, not where they were. SHIPPED BUG:
+    # "Cameroon's President returns from … Switzerland" dotted Switzerland (where he had been staying).
+    ("Cameroon's Aging President Returns From Monthslong Stay Abroad",
+     "Paul Biya, 93, had been in Switzerland since early June. The absence stirred questions about succession.",
+     "Cameroon", "'had been in Switzerland' is the past/origin place; the subject's own country (Cameroon) wins"),
     ("FOMC minutes reveal a split over the pace of interest-rate cuts", "", "United States",
      "FOMC is unambiguously the Federal Reserve's rate-setting committee"),
     ("Volunteers fed thousands of stranded travellers during the storm", "", "!United States",

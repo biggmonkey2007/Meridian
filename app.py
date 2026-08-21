@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.36"
+APP_VERSION = "1.4.37"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d44"   # d44: resweep so retrospective/history features drop off the map (ABC "how a health study
+_DATA_VER = "d45"   # d45: resweep so a leader RETURNING from abroad dots their own country (Cameroon, not
+                    #      Switzerland), and briefs regenerate under the compressed prompt.
+                    # d44: resweep so retrospective/history features drop off the map (ABC "how a health study
                     #      shaped modern medicine") and cutoff briefs re-bake clean.
                     # d43: resweep so a US official's statement about a foreign country dots the US seat (Bessent on
                     #      Iran -> Washington, not Tehran).
@@ -219,7 +221,8 @@ _DATA_VER = "d44"   # d44: resweep so retrospective/history features drop off th
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
                     # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
-_SUM_PROMPT_VER = "20"  # 17: longer briefs for in-depth outlets (NYT/WaPo…) with short attributed quotes; 16 added
+_SUM_PROMPT_VER = "21"  # 21: prompt COMPRESSED ~2,200->~750 tokens (same functions) so the free tiers cover far
+                        #     more of the feed. 20: original-work copyright hardening; 17: longer in-depth briefs; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
 _PORT_VER = "p2"        # bump to invalidate cached port profiles (throughput/vessel figures refresh weekly anyway)
@@ -350,27 +353,38 @@ def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
     """One completion against ONE provider. Returns the assistant text (stripped) or "" on any error
     (including a rate-cap 429). Never raises — an empty return is the signal to try the next provider."""
     timeout = 45 if key == "local" else 25
-    try:
-        payload = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
-                   "messages": [{"role": "system", "content": system},
-                                {"role": "user", "content": user}]}
-        # REASONING MODELS (Groq's gpt-oss): they burn output tokens on hidden reasoning FIRST, so a tight
-        # max_tokens leaves an EMPTY answer. Ask for low reasoning effort and lift the ceiling so the visible
-        # answer always fits. (Only gpt-oss honours these; Gemini and others ignore them.)
-        if "gpt-oss" in model:
-            payload["reasoning_effort"] = "low"
-            payload["max_tokens"] = max(max_tokens, 1200) + 700
-            timeout = max(timeout, 40)
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=body, headers={
-            "Content-Type": "application/json", "Authorization": "Bearer " + key,
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"})   # Groq/OpenAI behind Cloudflare 403 the default urllib UA; Gemini is fine with this too
-        j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
-        msg = (j.get("choices") or [{}])[0].get("message", {}) or {}
-        return (msg.get("content") or "").strip()
-    except Exception:
-        return ""
+    payload = {"model": model, "temperature": temperature, "max_tokens": max_tokens,
+               "messages": [{"role": "system", "content": system},
+                            {"role": "user", "content": user}]}
+    # REASONING MODELS (Groq's gpt-oss): they burn output tokens on hidden reasoning FIRST, so a tight
+    # max_tokens leaves an EMPTY answer. Ask for low reasoning effort and lift the ceiling so the visible
+    # answer always fits. (Only gpt-oss honours these; Gemini and others ignore them.)
+    if "gpt-oss" in model:
+        payload["reasoning_effort"] = "low"
+        payload["max_tokens"] = max(max_tokens, 1200) + 700
+        timeout = max(timeout, 40)
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Authorization": "Bearer " + key,
+               "Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    for attempt in range(2):                 # Gemini's free tier is ~20 req/MIN — a burst 429s; wait the backoff once
+        try:
+            req = urllib.request.Request(url, data=body, headers=headers)
+            j = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "replace"))
+            msg = (j.get("choices") or [{}])[0].get("message", {}) or {}
+            return (msg.get("content") or "").strip()
+        except urllib.error.HTTPError as ex:
+            if getattr(ex, "code", None) == 429 and attempt == 0:
+                try:
+                    m = re.search(r"retry in ([0-9.]+)s", ex.read().decode("utf-8", "replace"))
+                    wait = min(float(m.group(1)) + 0.5, 12) if m else 6
+                except Exception:
+                    wait = 6
+                time.sleep(wait)
+                continue                     # one retry after the rate-limit window
+            return ""
+        except Exception:
+            return ""
+    return ""
 
 
 def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, prefer=None):
@@ -462,124 +476,51 @@ def _summarize(title, text, source="", depth=False):
                 json.load(open(cache, encoding="utf-8")).get("s", ""))))
         except Exception:
             pass
-    system = ("You are a senior wire-service editor — the polish and authority of AP or Reuters — writing in the "
-              "Axios 'Smart Brevity' tradition. Your briefs are clean, original, copyright-free, and precise: "
-              "flawless punctuation (no stray, unbalanced or random quotation marks), no garbled fragments, no "
-              "source or channel name left in the prose. A busy reader understands it at a glance, yet it reads "
-              "as sharp and authoritative as legacy journalism. You NEVER copy the source's wording — every line "
-              "is composed from scratch in your own words — and you shape each brief to the story instead of "
-              "forcing a template.")
-    prompt = ("Write a BRAND-NEW, original news brief that reports the story below, for a world-news map, in the "
-              "spirit of Axios 'Smart Brevity' — but shape it to THIS story; do not force a fixed template. This "
-              "is your OWN composition built from the facts, NOT a rewrite or paraphrase of the article.\n"
-              "Write for a sharp 8th-grade reader: short everyday words, short active sentences, no jargon. "
-              "The reader sees ONLY your brief, so it must stand on its own.\n\n"
-              "The brief must ADD to the headline, never just restate it. If the headline already says what "
-              "happened and there is no more real detail, write ONE short sentence (or even none) — do NOT pad. "
-              "CONTEXT FOR A GENERAL READER: assume the reader knows nothing about this region or politics. In a "
-              "few plain words, identify any group, party, movement, official, agency or place the story names "
-              "that a newcomer wouldn't recognise — who or what it is and which side it's on ('the Cockroach "
-              "Janta Party, an Indian anti-corruption movement'; 'UNIFIL, the UN peacekeeping force in Lebanon') "
-              "— so the brief EXPLAINS the situation and stands on its own. Never leave a bare name or acronym "
-              "unexplained, and never a source-tag like 'DW'/'AP News' in the prose.\n"
-              "Write it in this shape:\n"
-              "1. LEDE — 1 to 3 short sentences of plain prose that say what happened. This carries the brief.\n"
-              "2. BODY (only if the story is rich enough to need it) — you MAY add a short second, and at most a "
-              "third, paragraph of plain prose that gives the next most important context or detail. Match the "
-              "length to the story: a simple item stays ONE paragraph; a big, layered story may run to about "
-              "three short paragraphs. Never pad — every sentence must earn its place.\n"
-              + ("IN-DEPTH SOURCE: this report comes from a publication that covers stories at length, and the "
-                 "text below is rich. You MAY run a little longer — up to about FIVE short paragraphs — to carry "
-                 "the key quotes, figures and context it provides. Prefer a concrete attributed quote of a few "
-                 "words and hard numbers over generalities. Still TIGHT: every sentence earns its place, no "
-                 "padding, and the copyright rule below is absolute.\n" if depth else "")
-              + "3. BULLETS — optionally add 1 or 2 bullets ONLY for a hard specific worth pulling out (a key "
-              "number, a name, a decisive detail). Every bullet must ADD something the lede did NOT already "
-              "say — NEVER restate a number, place or fact that is already in the prose above (do not add a "
-              "'Casualties:' bullet repeating a toll the lede gave, or a 'Location:' bullet repeating where it "
-              "happened). If the prose already covers everything, use NO bullets. NEVER pad to fill space, and "
-              "NEVER write a bullet whose only content is that a fact is missing — no 'Damage: unknown', "
-              "'Status: unclear', 'What's next: not yet disclosed'.\n"
-              "4. WHY IT MATTERS — only if the importance is NOT already obvious from the facts, add ONE final "
-              "bullet that starts 'Why it matters:' and gives the stakes in one sentence. If the significance "
-              "is self-evident, leave it out entirely.\n\n"
-              "Formatting:\n"
-              "- Put the lede FIRST as a normal paragraph — no dash, no label.\n"
-              "- Each bullet on its own line, starting with '- '. You MAY open a bullet with a tiny bold "
-              "label of ONE or TWO words followed by a colon (like **Scale:** or **What's next:**), then "
-              "the sentence. NEVER bold more than two words, and NEVER bold a whole phrase or sentence — if "
-              "you can't say the label in two words, just write the bullet with no label.\n"
-              "- Do NOT open with a wire dateline or place-stamp like 'TEHRAN —' or 'WASHINGTON (Reuters) —'; "
-              "start straight with the news.\n"
-              "- Output nothing else — no headings, no title, no closing line.\n\n"
-              "Report what verifiably happened directly, and do NOT hedge a plain, uncontested fact with "
-              "'reportedly'. No opinion or speculation of your OWN, and never point out what the source leaves "
-              "out (simply omit anything not given).\n"
-              "COPYRIGHT & FAIR USE — this is a legal requirement, not a style note, and it is ABSOLUTE. Your "
-              "brief is an ORIGINAL work of your own authorship; it is NOT a rewrite, paraphrase, abridgement or "
-              "translation of the source article. Facts are free to use — dates, places, numbers, names, who did "
-              "what — so build the brief from the FACTS, stated in wording and sentence structure that are "
-              "entirely your own and do NOT track the source's phrasing or order. You may reproduce a SHORT "
-              "verbatim QUOTE (a distinctive phrase, at most ~15 words) ONLY inside real quotation marks and "
-              "ONLY attributed to the person who said it ('Powell said the Fed would \"proceed carefully\"'); "
-              "never quote the ARTICLE's own prose, only a person's words. NEVER copy four or more consecutive "
-              "words of the source's narration, and never mirror its distinctive sentence shapes. Add ONE short "
-              "paragraph of your OWN neutral CONTEXT/background that a general reader needs (what this body is, "
-              "the wider situation, why it matters) drawn from general knowledge, NOT lifted from the article. "
-              "If the only text you were given IS the source's description, do not echo it — re-express the "
-              "underlying facts from scratch. This keeps the brief fair-use / original across the US, EU, UK, "
-              "Canada and Australia.\n\n"
-              "ATTRIBUTION & NEUTRALITY — this matters as much as accuracy. Much of this wire is one government's "
-              "or channel's account. Treat any CONTESTED claim, accusation, one-sided characterisation or "
-              "political framing as a CLAIM, not a fact: attribute it to WHO is making it, and name the outlet "
-              "when the whole story is one side's telling. Write 'a Russian senator said', 'Moscow claims', "
-              "'according to Russia's TASS', 'Ukraine's military says', 'Israel's army said', 'Hamas claims' — "
-              "NEVER state one party's accusation, casualty figure or loaded label as established fact. In your "
-              "OWN voice stay neutral and de-escalatory: do not adopt a source's loaded epithet ('the Kiev "
-              "regime', 'Nazi', 'terrorist entity', 'martyr', 'liberated') — either drop it or attribute it to "
-              "the source that used it. When the SOURCE OUTLET below is a state or partisan wire and the story is "
-              "its government's line, make that plain ('Russian state media said…'). This applies to EVERY "
-              "source equally — Russian, Ukrainian, Israeli, Iranian, Western outlets and Telegram channels "
-              "alike — so the reader always knows whose account they are reading.\n"
-              "QUOTES: when the story IS a statement by a named person, that is the bare-minimum standard — write "
-              "it as attributed reported speech naming WHO said it, and put the distinctive wording in real "
-              "quotation marks: e.g., Iran's deputy foreign minister called Trump's remarks about the Strait of "
-              "Hormuz a \"delusion\" that Tehran would \"correct.\" Never present a quote as a bare sentence with "
-              "no speaker and no quotation marks.\n\n"
-              "AFTER the brief, on a SEPARATE final line, output the location as exactly `WHERE: <place>` — the "
-              "ONE real place the event PHYSICALLY happened. Apply these rules IN ORDER:\n"
-              "1) If the story is a broad analysis, round-up, trend or feature spanning MANY places with no single "
-              "scene (e.g. 'Europe strains under wars, wildfires and migrants'), output NONE — never pick one "
-              "place to stand for all of them.\n"
-              "2) Name a body of water — a sea, gulf, strait, channel, canal, river or ocean ('Red Sea', 'Strait "
-              "of Hormuz', 'Black Sea') — ONLY when the event ITSELF physically happens ON or OVER that water (a "
-              "ship, a naval strike, a rescue, a sinking). NEVER when the water is just a route, a border, or a "
-              "backdrop that gets mentioned.\n"
-              "3) Otherwise give the most specific real scene: 'City, Country' when a city/town/site is knowable, "
-              "else the 'Country', else NONE. If a named FACILITY is the scene (a refinery, plant, base, "
-              "airport, port), name the CITY it sits in ('Rosneft's Komsomolsk-on-Amur refinery' -> "
-              "'Komsomolsk-on-Amur, Russia').\n"
-              "NEVER name a place mentioned only for COMPARISON, DISTANCE or CONTEXT ('6,500 km from Ukraine', "
-              "'farther than the Orsk refinery', 'unlike Moscow') — only where the event ITSELF happened.\n"
-              "Never give where someone merely REACTED, or a person's nationality. And NEVER give the home "
-              "country of a charity, NGO, aid group, company, agency or foundation that funds, backs, runs, "
-              "donates to or is merely named in the story — even when its name CONTAINS a country ('CARITAS "
-              "Canada', 'Bank of China', 'US Agency'): the place is where the event/project PHYSICALLY happens "
-              "('CARITAS Canada backs an oil-spill clean-up in Akwa Ibom' -> Akwa Ibom, Nigeria, NOT Canada). "
-              "This WHERE line is metadata, not part of the brief.\n\n"
-              "On ONE more separate final line, output `SCOPE: <global|regional|national|local>` — how far this "
-              "story's consequences reach, judged by CONSEQUENCE, not by how dramatic it sounds:\n"
-              "- global: reshapes international politics, security or the economy — a war or strike between "
-              "states, a major-power decision, a leader's or foreign minister's consequential statement, a "
-              "market-moving policy, a major disaster.\n"
-              "- national: changes ONE country's direction — its government, a national policy or election, a "
-              "coup, or a mass-casualty attack/shooting/disaster.\n"
-              "- regional: shifts a region within or across countries.\n"
-              "- local: a local or human-interest story with NO wider consequence — a local crime, a beach "
-              "eroding, an environmental, cultural or lifestyle feature.\n"
-              "Examples: a foreign minister warning of retaliation -> global; a big shooting -> national; "
-              "'illegal sand extraction erodes a beach' -> local. This SCOPE line is metadata, not part of the "
-              "brief.\n\n"
+    # COMPRESSED PROMPT (2026-08-21): the old prompt ran ~2,200 tokens of instructions on EVERY call, so the free
+    # tiers (Groq 200k tokens/day; Gemini 20 req/min) covered only a fraction of a ~190-dot feed and the rest fell
+    # back to the raw teaser. This tight version (~750 tokens) keeps every FUNCTION — original-work copyright,
+    # neutral attribution, the shape, and the WHERE + SCOPE metadata lines — at ~1/3 the tokens, so far more of the
+    # feed gets a real brief. (Bump _SUM_PROMPT_VER whenever this changes.)
+    system = ("You are a senior wire editor (AP/Reuters quality) writing tight, ORIGINAL, copyright-free news "
+              "briefs in the Axios 'Smart Brevity' style — clean punctuation, no source or channel name in the "
+              "prose, every line composed from scratch in your own words (never the source's), shaped to the "
+              "story rather than a fixed template.")
+    prompt = ("Write an ORIGINAL news brief of the story below for a world-news map — YOUR OWN composition built "
+              "from the FACTS, never a rewrite or paraphrase. Write for a sharp 8th-grade reader: short plain "
+              "words, short active sentences. It must ADD to the headline; if there is nothing to add, write ONE "
+              "sentence or none — never pad. Explain in a few plain words any group/party/agency/official/place a "
+              "newcomer wouldn't know ('UNIFIL, the UN peacekeeping force in Lebanon').\n"
+              "SHAPE: a 1-3 sentence prose lede that says what happened; then, ONLY if the story is rich enough, "
+              "1-2 more short paragraphs of the next most important detail; then optionally 1-2 bullets ('- ...') "
+              "for a hard specific the prose did NOT already give (a bullet may open with a 1-2 word bold label "
+              "like '**Scale:**'). Add a final '- Why it matters: ...' bullet ONLY if the stakes aren't obvious. "
+              "No dateline ('TEHRAN —'), no heading, no title, no source tag in the prose. Report what verifiably "
+              "happened; don't hedge a plain fact with 'reportedly', and don't point out what the source omits.\n"
+              + ("IN-DEPTH SOURCE: the text below is rich — you MAY run up to ~5 short paragraphs to carry its key "
+                 "quotes and hard figures, still tight.\n" if depth else "")
+              + "COPYRIGHT (a legal requirement, ABSOLUTE): facts are free — build the brief from them in wording "
+              "and sentence order that are entirely your OWN. NEVER copy 4+ consecutive words of the source and "
+              "never mirror its phrasing. You may reproduce a PERSON'S own distinctive words (<=15) inside real "
+              "quotation marks, attributed to the speaker — never the article's own prose. Include one short "
+              "paragraph of your OWN general-knowledge context. Re-express even a bare source description from "
+              "scratch. This keeps the brief fair-use across the US, EU, UK, Canada and Australia.\n"
+              "NEUTRAL & ATTRIBUTED: treat any contested claim, accusation, casualty figure or loaded framing as "
+              "a CLAIM — attribute it to WHO said it and name the outlet when the story is one side's telling "
+              "('Moscow claims', 'according to Russia's TASS', 'Ukraine's army says'). Keep loaded epithets "
+              "('regime', 'terrorist', 'martyr', 'liberated') out of your OWN voice; apply this to EVERY source "
+              "equally. When the story IS a person's statement, write it as attributed reported speech naming the "
+              "speaker, their distinctive words in quotation marks.\n"
+              "Then output TWO metadata lines, each on its own line, NOT part of the brief:\n"
+              "WHERE: the ONE place the event PHYSICALLY happened — 'City, Country', else 'Country', else NONE. "
+              "NONE for a broad multi-place analysis/round-up. A sea/gulf/strait/river ONLY when the event itself "
+              "happens ON or OVER it. A named facility -> the CITY it sits in. NEVER a place named only for "
+              "comparison/distance/backdrop, where someone merely REACTED, a person's nationality, or the home "
+              "country of an org/charity/company merely named ('CARITAS Canada' -> the project's country).\n"
+              "SCOPE: global | national | regional | local — by CONSEQUENCE, not drama. global=a war/strike "
+              "between states, a major-power or minister decision or consequential statement, a market-moving "
+              "policy, a major disaster. national=changes one country (its government, a national election/policy, "
+              "a coup, a mass-casualty attack). regional=shifts a region. local=a minor local or human-interest "
+              "story with no wider consequence.\n\n"
               "SOURCE OUTLET: " + (source or "unknown") + "\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
     s = _llm_complete(system, prompt, max_tokens=(1000 if depth else 620), temperature=0.3)   # depth: ~5 short paras
@@ -8675,7 +8616,21 @@ def _context_places(hits, words):
         elif (h[1] in ("country", "demonym") and i + 2 < len(words) and words[i + 1] in _BACKER_WORDS
               and words[i + 2] not in _BACKER_VERB_AFTER):
             ctx.add(i)                     # "<Country> funded/backed/led <noun>" -> the sponsor, not the scene
+        elif i >= 1 and words[i - 1] == "from" and any(
+                words[k] in _RETURN_WORDS for k in range(max(0, i - 5), i - 1)):
+            ctx.add(i)                     # "returns/back FROM <place>" -> where the subject WAS, not the scene
+        elif i >= 1 and words[i - 1] == "in" and any(
+                words[k] in _ORIGIN_WORDS for k in range(max(0, i - 4), i - 1)):
+            ctx.add(i)                     # "had BEEN/was/stayed IN <place>" -> a past/origin location
     return ctx
+
+
+# A leader RETURNING home from abroad is news in their OWN country, not where they were. "Cameroon's President
+# returns from … Switzerland" dotted SWITZERLAND. A place after "returns/back FROM" or after "had been/was/
+# stayed IN" is where the subject WAS (past/origin) — drop it so the subject's own country wins.
+_RETURN_WORDS = {"returns", "returned", "return", "returning", "back", "comes", "came", "arrives",
+                 "arrived", "home", "abroad", "overseas"}
+_ORIGIN_WORDS = {"been", "was", "were", "stayed", "staying", "remained", "spent", "spending", "holed"}
 
 
 def _pick_place(hits, words):
