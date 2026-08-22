@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.42"
+APP_VERSION = "1.4.43"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d49"   # d49: resweep so dots carry a geo_confidence field and the self-learning gazetteer starts
+_DATA_VER = "d50"   # d50: resweep so headlines re-clean keeping a SOURCE attribution tail ("… — platoon
+                    #      commander", "… — Zelensky") that was being stripped as if it were a "— Reuters"
+                    #      byline, and a missing space after a comma is repaired. Only publisher bylines drop.
+                    # d49: resweep so dots carry a geo_confidence field and the self-learning gazetteer starts
                     #      pinning AI-named towns (Deir Seryan, Bayout El Siyad) to real coords via Nominatim,
                     #      remembering each forever. Cache-hits summaries/AI-where, so no re-summarize cost.
                     # d48: resweep so this round's build-time rules take effect — unrelated stories at a
@@ -5482,17 +5485,39 @@ def _ruling_party_lean(ruling_qid, ruling_entity=None):
         return None
 
 
+# A trailing "— X" on a headline is a PUBLISHER byline (strip it) only when X is an outlet; when X is who the
+# claim is sourced TO ("— platoon commander", "— Zelensky", "— officials", "— ministry") it is part of the
+# news and stays. A byline is a curated outlet, or a Title-Case name carrying a press-marker word; a lowercase
+# role, or a person/institution being quoted, is an attribution.
+_PRESS_MARKER = re.compile(
+    r"\b(News|Times|Post|Herald|Journal|Daily|Press|Media|Agency|Wire|Newswire|Network|Tribune|Gazette|"
+    r"Chronicle|Observer|Bulletin|Broadcasting|Online|Today|Digest|Insider|Monitor|Dispatch|Telegraph|"
+    r"Guardian|Independent|Reporter|Standard|Mirror|Express)\b")
+
+
+def _is_outlet_byline(tail):
+    tail = (tail or "").strip().strip("\"'.")
+    if not tail or not tail[0].isupper():
+        return False                                            # lowercase role ('platoon commander') = attribution
+    if re.fullmatch(r"(?:" + _OUTLET_NAMES_RE + r")", tail, re.I):
+        return True                                             # a curated outlet name (Reuters, BBC, TASS…)
+    return bool(_PRESS_MARKER.search(tail))                     # "… Daily News", "The X Times" -> a publisher
+
+
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links, "Follow @x for more news", @handles
     t = re.sub(r"\s+([,.;:!?])", r"\1", t)                       # GDELT spaces before punctuation
-    # strip a trailing " - Outlet" whenever a REAL headline (>= 20 chars) remains before the dash — so a short
-    # "UAE says … at it - Reuters" (~50 chars) loses its byline too, not just long ones. SHIPPED BUG: the old
-    # `len(t) > 55` gate left "- Reuters" on shorter headlines. The separator needs whitespace on BOTH sides
-    # (" - Reuters"), so a compound ("anti-corruption", "U-turn", "COVID-19") or a range ("2020–2024") — none
-    # of which space the dash — is never chopped.
-    _m = re.match(r"^(.*\S)\s+[-–—|]\s+[^-–—|]{2,32}$", t)
-    if _m and len(_m.group(1)) >= 20:
+    t = re.sub(r"([a-z]),([A-Za-z])", r"\1, \2", t)             # "positions,militants" -> "positions, militants"
+    # strip a trailing " - Outlet" BYLINE (Google-News aggregation furniture) whenever a REAL headline
+    # (>= 20 chars) remains before the dash — so a short "UAE says … at it - Reuters" loses its byline too.
+    # But a trailing "— X" is ONLY a byline when X is a PUBLISHER; a SOURCE/SPEAKER attribution is part of the
+    # news and MUST stay. SHIPPED BUG: TASS's "Battlegroup North … positions, militants — platoon commander"
+    # lost "— platoon commander" (who the claim is sourced to), which read oddly and dropped real information.
+    # The separator needs whitespace on BOTH sides, so a compound ("anti-corruption", "U-turn", "COVID-19")
+    # or a range ("2020–2024") is never chopped.
+    _m = re.match(r"^(.*\S)\s+[-–—|]\s+([^-–—|]{2,32})$", t)
+    if _m and len(_m.group(1)) >= 20 and _is_outlet_byline(_m.group(2)):
         t = _m.group(1)
     t = re.sub(r"\s{2,}", " ", t).strip()
     if len(t) <= 200:

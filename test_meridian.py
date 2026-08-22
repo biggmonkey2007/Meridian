@@ -1189,6 +1189,18 @@ CLEAN_HEADLINE_CASES = [
      "2014-2015 Minsk", "a year RANGE has no space before the dash"),
     ("Sudan faces a worsening humanitarian crisis as fighting spreads - Reuters",
      "!Reuters", "a GENUINE ' - Outlet' suffix (space before the dash) must still be stripped"),
+    ("Massive fire hits refinery in Rostov region - BBC News",
+     "!BBC", "a multi-word outlet ('BBC News') byline is still stripped"),
+    # SOURCE / SPEAKER ATTRIBUTION is CONTENT, not a byline — it must SURVIVE. SHIPPED BUG: TASS's
+    # "…positions, militants — platoon commander" lost who the claim was sourced to, reading oddly.
+    ("Battlegroup North artillery destroys Kiev forces positions, militants — platoon commander",
+     "platoon commander", "a '— <role>' source attribution is part of the news and must be kept"),
+    ("Ukraine downs 40 Russian drones overnight — Zelensky",
+     "Zelensky", "a '— <speaker>' attribution (who said it) must be kept"),
+    ("Air defenses repelled the attack on the capital — defense ministry",
+     "ministry", "a '— <institution>' attribution must be kept"),
+    ("Battlegroup North artillery destroys Kiev forces positions,militants — platoon commander",
+     "positions, militants", "a missing space after a comma between two words is repaired"),
     # WIRE-TWEET PROMO must never reach a headline or a story body (Insider Paper et al.).
     ("BREAKING - India says four nationals killed in attack on ship in Ukraine READ: https://t.co/fopymj0M2y Follow @InsiderPaper for more news",
      "India says four nationals killed in attack on ship in Ukraine",
