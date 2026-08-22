@@ -782,8 +782,11 @@ body.topo-active .zoomers{bottom:130px}
 .cx-back{position:fixed;inset:0;background:rgba(15,18,28,.55);z-index:5000;display:none;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px)}
 .cx-back.open{display:flex}
 .cx-card{background:var(--panel);border-radius:16px;max-width:560px;width:100%;max-height:84vh;overflow:auto;box-shadow:0 24px 70px rgba(10,14,24,.4)}
-.cx-hero{position:relative;height:150px;background:linear-gradient(135deg,#2b4a73,#1c2e49);border-radius:16px 16px 0 0;overflow:hidden}
-.cx-hero img{width:100%;height:100%;object-fit:cover;position:relative;z-index:1}
+.cx-hero{position:relative;height:172px;background:linear-gradient(135deg,#2b4a73,#1c2e49);border-radius:16px 16px 0 0;overflow:hidden}
+/* Show the WHOLE painting (never crop off the bottom): the foreground is object-fit:CONTAIN, and a blurred,
+   dimmed copy of the same image fills the letterbox behind it — the same treatment as the article hero photos. */
+.cx-hero img{width:100%;height:100%;object-fit:contain;position:relative;z-index:1}
+.cx-hero img.cx-hero-bg{position:absolute;inset:0;object-fit:cover;filter:blur(22px) brightness(.6);transform:scale(1.2);z-index:0}
 /* Header placeholder shown when the topic has no Wikipedia photo — the topic name set on the gradient, so the
    header is never a blank block. Hidden (opacity:0 via JS) the moment a real image loads. */
 .cx-hero-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
@@ -4066,7 +4069,7 @@ const conceptCache={};
 function ensureCxOverlay(){
   if(cxBack) return cxBack;
   cxBack=document.createElement("div"); cxBack.className="cx-back";
-  cxBack.innerHTML=`<div class="cx-card"><div class="cx-hero"><div class="cx-hero-ph"></div><button class="cx-x" aria-label="Close">×</button><img alt="" referrerpolicy="no-referrer" onerror="this.style.display='none';var p=this.parentNode.querySelector('.cx-hero-ph');if(p)p.style.opacity='';"></div><div class="cx-body"><div class="cx-kicker">Concept</div><div class="cx-title"></div><div class="cx-extract"></div><a class="cx-link" target="_blank" rel="noopener">Read the full article on Wikipedia →</a></div></div>`;
+  cxBack.innerHTML=`<div class="cx-card"><div class="cx-hero"><div class="cx-hero-ph"></div><img class="cx-hero-bg" alt="" referrerpolicy="no-referrer"><button class="cx-x" aria-label="Close">×</button><img alt="" referrerpolicy="no-referrer" onerror="this.style.display='none';var p=this.parentNode.querySelector('.cx-hero-ph');if(p)p.style.opacity='';var b=this.parentNode.querySelector('.cx-hero-bg');if(b)b.style.display='none';"></div><div class="cx-body"><div class="cx-kicker">Concept</div><div class="cx-title"></div><div class="cx-extract"></div><a class="cx-link" target="_blank" rel="noopener">Read the full article on Wikipedia →</a></div></div>`;
   document.body.appendChild(cxBack);
   cxBack.addEventListener("click", e=>{ if(e.target===cxBack || e.target.classList.contains("cx-x")) closeConcept(); });
   return cxBack;
@@ -4110,8 +4113,9 @@ async function countryArt(country){
 }
 async function openConcept(title){
   const ov=ensureCxOverlay(); ov.classList.add("open");
-  const img=ov.querySelector(".cx-hero img"), titleEl=ov.querySelector(".cx-title"), ex=ov.querySelector(".cx-extract"), link=ov.querySelector(".cx-link");
-  titleEl.textContent=title; ex.innerHTML=`<span class="xp-loading"><span class="spin"></span>Loading…</span>`; img.style.display="none"; link.style.display="none";
+  const img=ov.querySelector(".cx-hero img:not(.cx-hero-bg)"), bg=ov.querySelector(".cx-hero-bg"), titleEl=ov.querySelector(".cx-title"), ex=ov.querySelector(".cx-extract"), link=ov.querySelector(".cx-link");
+  const setHero=(u)=>{ if(!u){ img.style.display="none"; if(bg) bg.style.display="none"; return; } img.src=u; img.style.display=""; if(bg){ bg.src=u; bg.style.display=""; } const p=ov.querySelector(".cx-hero-ph"); if(p) p.style.opacity="0"; };
+  titleEl.textContent=title; ex.innerHTML=`<span class="xp-loading"><span class="spin"></span>Loading…</span>`; img.style.display="none"; if(bg) bg.style.display="none"; link.style.display="none";
   ov._t=title;
   const ph=ov.querySelector(".cx-hero-ph"); if(ph){ ph.textContent=title; }   // header placeholder = the topic name
   let j=conceptCache[title];
@@ -4140,17 +4144,15 @@ async function openConcept(title){
     const _im = (j.thumbnail && j.thumbnail.source) ? j.thumbnail.source.replace(/\/\d+px-/,"/640px-")
               : ((j.originalimage && j.originalimage.source) || "");
     if(ph){ ph.textContent=j.title||title; }
-    if(_im){ img.src=_im; img.style.display=""; if(ph) ph.style.opacity="0"; }
-    else { img.style.display="none"; if(ph) ph.style.opacity=""; }   // no photo -> the topic name stands as the header
+    if(_im){ setHero(_im); }
+    else { setHero(""); if(ph) ph.style.opacity=""; }   // no photo -> the topic name stands as the header
     // COUNTRY ART header (user preference): an old, iconic public-domain painting from the country this
     // concept was opened from, in place of the Wikipedia flag/emblem. Async so it never delays the text;
     // falls back to whatever was set above (thumbnail, then gradient) if there's no artwork.
     const _ctry = window.__dossierCountry || "";
     if(_ctry){
       countryArt(_ctry).then(artUrl=>{
-        if(artUrl && ov.classList.contains("open") && ov._t===title){
-          img.src=artUrl; img.style.display=""; if(ph) ph.style.opacity="0";
-        }
+        if(artUrl && ov.classList.contains("open") && ov._t===title){ setHero(artUrl); }
       });
     }
     link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
@@ -4462,7 +4464,11 @@ const _WIRE_PROP_STOP=new Set(("israel israeli lebanon lebanese gaza gazan hamas
   +"syria syrian iran iranian iraq iraqi yemen yemeni houthi ukraine ukrainian russia russian moscow kyiv us usa "
   +"united states america american uk britain british europe european china chinese india indian nato un eu "
   +"north south east west northern southern eastern western central air force forces army navy defense defence "
-  +"ministry breaking just update alert live report reports news world today").split(" "));
+  +"ministry breaking just update alert live report reports news world today "
+  // ROLES / TITLES are shared by countless statements ("President X", "Foreign Minister Y") — they don't tell
+  // two events apart; only the person's NAME does. Keep them out of the distinctive-noun match.
+  +"president vice premier minister ministers foreign defence defense prime chancellor chief spokesman "
+  +"spokesperson secretary general governor mayor ambassador official officials president's").split(" "));
 function _wireProps(s){   // the DISTINCTIVE proper nouns (specific place/name) of a headline
   const out=new Set();
   for(const t of (String(s||"").match(/[A-Z][A-Za-z'’\-]{2,}/g)||[])){
