@@ -674,11 +674,18 @@ body.topo-active .zoomers{bottom:130px}
 .st-official{border:1px solid #d7e6da;background:#f5faf6;border-radius:11px;padding:11px 13px;margin-bottom:11px}
 .st-off-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#22633c;margin-bottom:7px}
 .st-verbatim{margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.06em;color:#fff;background:#2e8b57;border-radius:20px;padding:2px 7px;text-transform:none}
-.st-off-item{display:flex;gap:9px;justify-content:space-between;align-items:baseline;text-decoration:none;padding:6px 0;border-bottom:1px solid #e4efe6}
+.st-off-item{display:block;text-decoration:none;padding:9px 0;border-bottom:1px solid #e4efe6}
 .st-off-item:last-of-type{border-bottom:none}
+.st-off-top{display:flex;gap:9px;justify-content:space-between;align-items:baseline}
 .st-off-t{font-size:12.5px;line-height:1.4;color:var(--ink);font-weight:600}
-.st-off-item:hover .st-off-t{color:#1668d6}
 .st-off-d{font-size:10px;color:var(--ink-3);white-space:nowrap;flex:0 0 auto}
+/* the statement QUOTED verbatim — a quiet left rule marks it as a quote; clamped to a few lines with a
+   Read more toggle so a long transcript excerpt doesn't flood the panel. */
+.st-off-q{font-size:12.5px;line-height:1.5;color:var(--ink-2);font-style:italic;margin-top:5px;padding-left:9px;border-left:2px solid #bcd8c3}
+.st-off-q.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.st-off-more{display:inline;margin-top:4px;font-size:11px;font-weight:700;color:#1668d6;cursor:pointer;background:none;border:none;padding:0}
+.st-off-link{font-size:10.5px;color:var(--ink-3);text-decoration:none;margin-left:10px}
+.st-off-link:hover{color:#1668d6}
 .st-off-note{font-size:10.5px;color:#5b7c66;margin-top:7px;font-style:italic}
 .st-cov-h{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:800;color:var(--ink-3);margin:12px 0 8px}
 .st-own-h{color:#22633c}
@@ -3992,8 +3999,17 @@ async function setupStatements(name){
       if(activeCountry!==name || !document.getElementById("ctry-stmts")) return;
       if(rel && rel.curated && rel.items && rel.items.length){
         html+=`<div class="st-official"><div class="st-off-h">Official statements · ${esc(rel.source||"")}<span class="st-verbatim">✓ verbatim</span></div>`+
-          rel.items.map(it=>`<a class="st-off-item" href="${esc(it.link)}" target="_blank" rel="noopener"><span class="st-off-t">${esc(it.title)}</span>${it.date?`<span class="st-off-d">${esc(relDate(it.date))}</span>`:""}</a>`).join("")+
-          `<div class="st-off-note">Straight from ${esc(rel.source||"the government")} — click for the full statement.</div></div>`;
+          rel.items.map(it=>{
+            const q=(it.summary||"").trim();
+            const long=q.length>240;   // clamp a long transcript excerpt; a Read more toggle expands it
+            return `<div class="st-off-item"><div class="st-off-top"><span class="st-off-t">${esc(it.title)}</span>${it.date?`<span class="st-off-d">${esc(relDate(it.date))}</span>`:""}</div>`
+              +(q?`<div class="st-off-q${long?" clamp":""}">${esc(q)}</div>`
+                  +`${long?`<button class="st-off-more" data-more>Read more</button>`:""}`
+                  +`<a class="st-off-link" href="${esc(it.link)}" target="_blank" rel="noopener">full statement →</a>`
+                :`<a class="st-off-link" href="${esc(it.link)}" target="_blank" rel="noopener">read the statement →</a>`)
+              +`</div>`;
+          }).join("")+
+          `<div class="st-off-note">Straight from ${esc(rel.source||"the government")} — verbatim from its own feed.</div></div>`;
       }
     }
   }catch(e){}
@@ -4176,6 +4192,8 @@ async function openConcept(title){
   }
 }
 document.addEventListener("click", e=>{ const chip=e.target.closest("[data-concept]"); if(chip){ openConcept(chip.getAttribute("data-concept")); return; } const jump=e.target.closest("[data-xp-jump]"); if(jump){ const el=document.getElementById(jump.getAttribute("data-xp-jump")); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); } });
+// "Read more" on a clamped official statement (and the leader quotes below) — expand/collapse the quote inline
+document.addEventListener("click", e=>{ const mb=e.target.closest && e.target.closest("[data-more]"); if(!mb) return; const q=mb.parentNode.querySelector(".st-off-q, .ln-q"); if(q){ const clamped=q.classList.toggle("clamp"); mb.textContent=clamped?"Read more":"Show less"; } });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && cxBack && cxBack.classList.contains("open")){ e.stopPropagation(); closeConcept(); } }, true);
 
 /* ---- depth toggle ---- */
@@ -5741,7 +5759,7 @@ document.getElementById("z-out").onclick=()=>zoomBy(1/1.6);
 document.getElementById("z-reset").onclick=resetView;
 
 // window is fixed to the last 24h; refresh the map every 10 min so stale dots expire and fresh news appears
-setInterval(()=>{ const api=aiBridge(); if(api && api.world_events && !activeEvent && !activeCountry){ loadLive(true); if(getStarred().length) refreshStarred(); } }, 5*60000);   // rescan for new news every 5 min
+setInterval(()=>{ const api=aiBridge(); if(api && api.world_events && !activeEvent && !activeCountry){ loadLive(true); if(getStarred().length) refreshStarred(); } }, 2.5*60000);   // rescan for new news every ~2.5 min so the map keeps pace with the live wire
 
 /* ---- IDLE PRELOADER — "crafty loading": while the app sits quiet, quietly warm the things a click will
    need so opening a dot or a country is INSTANT. Runs only when idle (no recent input), one item per

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.46"
+APP_VERSION = "1.4.47"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2773,7 +2773,7 @@ class Api:
             if isinstance(cached.get("clip_owner"), dict):
                 global _CLIP_OWNER
                 _CLIP_OWNER = cached["clip_owner"]
-            if not _fresh(cache, 240):        # rescan news every ~4 min (was 15) so a 5-min client poll always refreshes
+            if not _fresh(cache, 120):        # rescan news every ~2 min so fresh wire news reaches the map fast (AI results cache, so a new post costs ~one call; the rest is re-served from cache)
                 _spawn_world_refresh(self, h)
                 cached = dict(cached)
                 cached["stale"] = True
@@ -3651,8 +3651,20 @@ def _feed_items(url):
         link = (lm.group(1).strip() if lm else "")
         dm = re.search(r"<pubDate>(.*?)</pubDate>", b, re.S) or re.search(r"<updated>(.*?)</updated>", b, re.S) or re.search(r"<published>(.*?)</published>", b, re.S)
         date = (dm.group(1).strip() if dm else "")
+        # the statement TEXT itself (content:encoded is the fullest; description/summary the excerpt) — so the
+        # card can QUOTE what was said, not just link its title. HTML-stripped, entity-decoded, capped.
+        sm = (re.search(r"<content:encoded[^>]*>(.*?)</content:encoded>", b, re.S)
+              or re.search(r"<description[^>]*>(.*?)</description>", b, re.S)
+              or re.search(r"<summary[^>]*>(.*?)</summary>", b, re.S)
+              or re.search(r"<content[^>]*>(.*?)</content>", b, re.S))
+        summary = ""
+        if sm:
+            # UNESCAPE first (the feed's HTML is entity-encoded: &lt;p&gt;…), THEN strip the real tags — else the
+            # tags reappear after decoding. Drop a leading image caption so the quote starts on the words.
+            raw = _htmlmod.unescape(sm.group(1).replace("<![CDATA[", "").replace("]]>", ""))
+            summary = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()[:1200]
         if title:
-            out.append({"title": title, "link": link, "date": date})
+            out.append({"title": title, "link": link, "date": date, "summary": summary})
     return out
 
 
