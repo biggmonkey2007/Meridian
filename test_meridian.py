@@ -736,6 +736,11 @@ CLIP_CASES = [
      "Israeli Air Force airstrike against the outskirts of Deir Seryan, southern Lebanon.", False,
      "SHIPPED BUG (live wire): a fresh Deir Seryan strike opened a DIFFERENT-town Kfar Rumman dot on the "
      "ONLY shared word 'against' + same region — new area = new dot (_STRIKE_GENERIC)."),
+    ("Ukrainian strike drones hit an Ozon logistics hub in Chapayevsk, Samara region",
+     "Putin threatened further attacks on Ukraine, saying attempts to disrupt Russian logistics would be met "
+     "with strikes on Ukrainian infrastructure. You will get a response.", False,
+     "SHIPPED BUG (live wire): a Putin STATEMENT about disrupting 'logistics'/'infrastructure' opened a strike "
+     "ON a 'logistics hub' on that one shared word — conflict-infrastructure filler is not a subject."),
     ("Israeli strike on Deir Seryan, southern Lebanon",
      "Israeli Air Force airstrike against the outskirts of Deir Seryan, southern Lebanon.", True,
      "...but the SAME Deir Seryan strike, differently worded, must still attach on {deir, seryan}."),
@@ -2139,11 +2144,21 @@ def main():
     # in-memory dict so the test writes NO files.
     print("\n=== SELF-LEARNING GAZETTEER (learned places + confidence) ===")
     _lg_fails = []
-    # (1) confidence: a specific city/facility is 'high'; a bare country or a broad region centroid is 'low'
+    # (1) confidence: only a broad REGION/WATER centroid is 'low' (approximate). A specific city is 'high',
+    # and a bare COUNTRY centroid is 'high' too — for a NATIONAL story the country is the right level, so
+    # flagging ~50 of them was noise (the user's complaint). Only a region we couldn't pin within is 'approx'.
     _lg_fails.append(("conf-high", app._geo_confidence((33.38, 35.48, "Deir Seryan, Lebanon", "Lebanon")) == "high"))
     _lg_fails.append(("conf-region", app._geo_confidence((33.4, 35.5, "Southern Lebanon, Lebanon", "Lebanon")) == "low"))
     _laL, _lnL = app.COUNTRY_COORDS.get("Lebanon", (33.8, 35.8))
-    _lg_fails.append(("conf-centroid", app._geo_confidence((_laL, _lnL, "Lebanon", "Lebanon")) == "low"))
+    _lg_fails.append(("conf-country-not-flagged", app._geo_confidence((_laL, _lnL, "Lebanon", "Lebanon")) == "high"))
+    # LEADER STATEMENT -> CAPITAL (offline, rules only). A quote/threat with no scene dots the speaker's
+    # capital; a statement that NAMES a scene keeps it; a non-statement is untouched.
+    _lg_fails.append(("capital-putin", "Moscow" in (app._locate(
+        "Putin threatened further attacks on Ukraine, saying attempts to disrupt Russian logistics would be met with strikes", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("capital-keeps-scene", "Moscow" not in (app._locate(
+        "Putin says Russian forces captured Avdiivka in Donetsk region", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("capital-not-for-strike", "Moscow" not in (app._locate(
+        "Russian forces shell Kharkiv overnight", "", "", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2463,7 +2478,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 7    # + self-learning gazetteer: 3 confidence levels + learned cold-start + nominatim learn + persist + wrong-country guard
+             + 10   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

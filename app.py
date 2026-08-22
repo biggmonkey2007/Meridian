@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.43"
+APP_VERSION = "1.4.44"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d50"   # d50: resweep so headlines re-clean keeping a SOURCE attribution tail ("… — platoon
+_DATA_VER = "d51"   # d51: resweep so leader/official STATEMENTS dot their CAPITAL (Putin -> Moscow), the
+                    #      'approx' flag stops firing on legit country-level national dots (only region/water
+                    #      centroids now), and the 'logistics/infrastructure' clip-filler no longer ties a
+                    #      statement to a strike. Cache-hits summaries/AI-where, so no re-summarize cost.
+                    # d50: resweep so headlines re-clean keeping a SOURCE attribution tail ("… — platoon
                     #      commander", "… — Zelensky") that was being stripped as if it were a "— Reuters"
                     #      byline, and a missing space after a comma is repaired. Only publisher bylines drop.
                     # d49: resweep so dots carry a geo_confidence field and the self-learning gazetteer starts
@@ -4197,7 +4201,10 @@ _TOPIC_GENERIC = set(_stem(w) for w in (
     "make makes making made move moves moving moved ease easing eased bring brings brought raise raises raising "
     "plan plans planned seek seeks progress talks talk meeting meet "
     # coincidental polysemous words that tie unrelated stories: "midterm RACES" vs "RACE to finalize a deal"
-    "race races deadline deadlines push pushes drive drives bid bids"
+    "race races deadline deadlines push pushes drive drives bid bids "
+    # conflict/infrastructure filler — a leader's STATEMENT about 'disrupting logistics' / hitting
+    # 'infrastructure' must not attach to a strike ON a 'logistics hub' on that one shared word
+    "logistics logistic infrastructure infrastructures response responses retaliation"
 ).split())
 
 # Figures who appear across a huge share of the wire — their surname ALONE ties nothing, so a clip that shares
@@ -9508,12 +9515,14 @@ def _sharpen_ai_place(aw, anchor_country, allow_ai):
 
 
 def _geo_confidence(loc):
-    """How precisely we know WHERE: 'high' when the dot sits on a specific city/facility/learned place,
-    'low' when it fell back to a bare COUNTRY or a broad REGION centroid — an APPROXIMATE dot the UI marks
-    so a reader is never misled that a country-centroid pin is the exact spot."""
+    """How precisely we know WHERE. 'low' ONLY when the dot fell back to a broad REGION or WATER centroid —
+    a genuinely APPROXIMATE spot (a strike somewhere in 'Southern Lebanon') the UI marks so a reader isn't
+    misled it's exact. A bare COUNTRY centroid is deliberately NOT flagged: for a NATIONAL story ('Ukraine at
+    35: winter is coming…') the country IS the right level, and flagging all ~50 of them was pure noise. A
+    specific city/facility/learned place is always 'high'."""
     if not loc:
         return "low"
-    if _geo_is_weak(loc) or _is_area_place(loc[2] if len(loc) > 2 else ""):
+    if _is_area_place(loc[2] if len(loc) > 2 else ""):
         return "low"
     return "high"
 
@@ -9533,6 +9542,16 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     r = _geolocate(title, sourcecountry, desc, url)
     ment_list = _context_mentions((title or "") + " " + (desc or ""), url)
     ment = {co for (co, _t) in ment_list}
+    # LEADER / OFFICIAL STATEMENT -> the CAPITAL. A quote, threat or ruling with no specific scene resolves to
+    # a bare country centroid, but officials SPEAK from the capital — so pin it there (Putin -> Moscow,
+    # Zelensky -> Kyiv): a specific dot the reader can place, and its OWN dot (statements are 'politics', which
+    # no longer collapse). Only fires when the rules reached just the country AND the story is an on-record
+    # statement; one that names a real scene ("Putin says Russia took Avdiivka") keeps that scene. The AI WHERE
+    # for a statement returns the ACTOR's country, so this capital is not second-guessed downstream.
+    if (r and _geo_is_weak(r) and r[3] in _CAPITAL_SEAT
+            and _tg_is_statement((title or "") + ". " + (desc or ""))):
+        _cla, _cln, _clbl = _CAPITAL_SEAT[r[3]]
+        r = (_cla, _cln, _clbl + ", " + _co_short(r[3]), r[3])
     # AI PINPOINT (from the summary pass, once this story has been summarised): one AI call wrote the brief AND
     # named WHERE it happened. Trust it — grounded through the gazetteer, anchored to a country the story names
     # (or the rules' own, so the model can't invent one). A cached read (no live call needed) — the "all in one

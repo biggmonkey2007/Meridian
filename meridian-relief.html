@@ -5897,15 +5897,10 @@ async function shareEvent(d, btn){
   }, 1600);
 }
 
-/* THE CHANNEL'S REAL PICTURE. Telegram publishes it on the same preview page we already scrape, so
-   the wire never needed invented letter tiles — those were a placeholder standing in for data we
-   simply were not reading. Initials remain ONLY for a channel that genuinely has no photo. */
+/* NO PROFILE PICTURES in the wire (user preference). Every outlet is identified by its TEXT NAME alone
+   (the bold ".wpost-ch" line), so the feed reads as a clean text log — no avatars, no letter tiles. */
 function wireAvatar(it, nm, col){
-  const ini = esc(wireInit(nm));
-  const fallback = '<div class="wpost-av" style="background:' + col + '">' + ini + '</div>';
-  if(!it.avatar) return fallback;
-  return '<img class="wpost-av wpost-av-img" src="' + esc(it.avatar) + '" alt="" loading="lazy"'
-       + ' referrerpolicy="no-referrer" data-ini="' + ini + '" data-col="' + col + '">';
+  return "";
 }
 // a dead avatar URL quietly becomes the initials tile again
 document.addEventListener("error", function(e){
