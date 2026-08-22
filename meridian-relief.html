@@ -3914,6 +3914,7 @@ async function upgradeLeaderPhotos(){
   }));
 }
 function afterProfileRender(name, fb){
+  window.__dossierCountry = name || "";   // the country this dossier is for -> its art heads the concept cards
   upgradeLeaderPhotos();
   annotateGloss(document.getElementById("ctry-profile"));   // define orgs/treaties inline in the overview
   if(document.getElementById("ctry-stmts")) setupStatements(name);
@@ -4071,6 +4072,42 @@ function ensureCxOverlay(){
   return cxBack;
 }
 function closeConcept(){ if(cxBack) cxBack.classList.remove("open"); }
+/* An OLD, ICONIC PUBLIC-DOMAIN PAINTING from the country whose dossier we're in — a proper header instead of
+   a flag/emblem. Wikimedia Commons, RELEVANCE-ranked search (a category scrape returns junk); kept tasteful
+   and header-shaped by demanding LANDSCAPE orientation + a real Public-Domain licence. One stable pick per
+   country (cached), so the same country always shows the same artwork. Returns "" (and the gradient stands)
+   on any miss or offline — purely additive. */
+const countryArtCache={};
+// The DEMONYM makes a far more iconic search ("Russian landscape painting" -> Shishkin/Levitan; "American"
+// -> the Hudson River School) than the bare country name. Curated for the big ones; any other country falls
+// back to its own name, which already returns good art.
+const ART_DEMONYM={"United States of America":"American","United Kingdom":"British","Russia":"Russian",
+  "China":"Chinese","Japan":"Japanese","France":"French","Germany":"German","Italy":"Italian","Spain":"Spanish",
+  "Ukraine":"Ukrainian","India":"Indian","Iran":"Persian","Turkey":"Turkish","Netherlands":"Dutch",
+  "S. Korea":"Korean","Korea":"Korean","Mexico":"Mexican","Egypt":"Egyptian","Greece":"Greek","Poland":"Polish"};
+async function countryArt(country){
+  const key=(country||"").trim(); if(!key) return "";
+  if(countryArtCache[key]!==undefined) return countryArtCache[key];
+  let out="";
+  try{
+    const term=(ART_DEMONYM[key]||key)+" landscape painting";
+    const url="https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch="
+      +encodeURIComponent(term)+"&gsrnamespace=6&gsrlimit=25"
+      +"&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=900&format=json&origin=*";
+    const r=await fetch(url);
+    if(r.ok){
+      const j=await r.json(), pages=(j.query&&j.query.pages)||{};
+      const cand=Object.values(pages).map(p=>({i:p.index||99,ii:(p.imageinfo&&p.imageinfo[0])||null}))
+        .filter(x=>x.ii).sort((a,b)=>a.i-b.i);
+      for(const c of cand){
+        const ii=c.ii, w=ii.width||0, h=ii.height||0;
+        const lic=((ii.extmetadata&&ii.extmetadata.LicenseShortName&&ii.extmetadata.LicenseShortName.value)||"").toLowerCase();
+        if(w>h && w>=1000 && lic.indexOf("public domain")>=0){ out=ii.thumburl||ii.url||""; break; }
+      }
+    }
+  }catch(e){}
+  countryArtCache[key]=out; return out;
+}
 async function openConcept(title){
   const ov=ensureCxOverlay(); ov.classList.add("open");
   const img=ov.querySelector(".cx-hero img"), titleEl=ov.querySelector(".cx-title"), ex=ov.querySelector(".cx-extract"), link=ov.querySelector(".cx-link");
@@ -4105,6 +4142,17 @@ async function openConcept(title){
     if(ph){ ph.textContent=j.title||title; }
     if(_im){ img.src=_im; img.style.display=""; if(ph) ph.style.opacity="0"; }
     else { img.style.display="none"; if(ph) ph.style.opacity=""; }   // no photo -> the topic name stands as the header
+    // COUNTRY ART header (user preference): an old, iconic public-domain painting from the country this
+    // concept was opened from, in place of the Wikipedia flag/emblem. Async so it never delays the text;
+    // falls back to whatever was set above (thumbnail, then gradient) if there's no artwork.
+    const _ctry = window.__dossierCountry || "";
+    if(_ctry){
+      countryArt(_ctry).then(artUrl=>{
+        if(artUrl && ov.classList.contains("open") && ov._t===title){
+          img.src=artUrl; img.style.display=""; if(ph) ph.style.opacity="0";
+        }
+      });
+    }
     link.href=_url; link.textContent="Read the full article on Wikipedia →"; link.style.display="";
     // reword into Meridian's own words when a summarizer is available; else the attributed Wikipedia text stands
     try{
