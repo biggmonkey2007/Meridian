@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.40"
+APP_VERSION = "1.4.41"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d47"   # d47: resweep so this round's build-time rules take effect — a legal ruling dots its
+_DATA_VER = "d48"   # d48: resweep so this round's build-time rules take effect — unrelated stories at a
+                    #      capital SEAT no longer collapse into one mega-dot (Washington: trade deal + Brazil
+                    #      tariffs + 5 ambassador clips were becoming ONE), a bare "Republic" is no longer a US
+                    #      town (a Türkiye statement dots Turkey), and channel meta/debunk notes are dropped.
+                    # d47: resweep so this round's build-time rules take effect — a legal ruling dots its
                     #      jurisdiction ("UK judge rules" -> UK, not Palestine), routine sports results drop
                     #      (only finals/titles/medals stay), and the merge area-gate checks BOTH places so a
                     #      village-vs-region pair ("Ali al-Taher" vs "Bayout El Siyad") stays two dots.
@@ -1288,6 +1292,21 @@ _TG_FUTURE = re.compile(
     r"plan(?:s|ning)?\s+to|set to|expected to|likely to|about to|preparing to|prepares? to|"
     r"imminent|brace[sd]?\s+for|fear\w*|if\s+(?:iran|russia|china|israel|the\s+us)|"
     r"would\s+(?:strike|attack)|to\s+strike)\b", re.I)
+# CHANNEL META — a post ABOUT the wire itself, not an event: debunking recycled/old/fake footage, or
+# explaining the channel's own coverage decisions. "Ansarullah is recycling 2-6 year old clips … republishing
+# them as new … hence Rerum Novarum's lack of coverage … Note, there are no Abrams tanks in western Yemen."
+# True, useful housekeeping — but it is not news and must never become a map dot. Two shapes: (1) editorial
+# self-reference ("our/…'s lack of coverage", "we won't cover"), (2) a media-authenticity debunk (a recycle/
+# old/fake/staged word next to clips/footage/video). Guarded so a real "Norway recycles bottles" story (no
+# media noun nearby) and plain "video shows the strike" (no debunk word) pass through untouched.
+_TG_META = re.compile(
+    r"\black of coverage\b|\bour coverage\b"
+    r"|\bwe (?:are not|will not|won'?t|do not|don'?t) (?:cover|posting|report\w*|be (?:cover|post|report)\w*)\b"
+    r"|\b(?:recycl\w+|repost\w+|republish\w+|re-?upload\w+|old|years?[-\s]old|staged|faked?|doctored|"
+    r"misattributed|mislabel\w+|unrelated)\b[^.\n]{0,30}\b(?:clips?|footage|videos?|images?|photos?|posts?)\b"
+    r"|\b(?:clips?|footage|videos?|images?|photos?)\b[^.\n]{0,24}\b(?:are|is|were|was)\b[^.\n]{0,20}"
+    r"\b(?:recycl\w+|old|years?[-\s]old|staged|faked?|doctored|misattributed|mislabel\w+|unrelated|"
+    r"reposted|republished|re-?uploaded)\b", re.I)
 # An ATTRIBUTED official statement: a named speaker label ("Lavrov:", "Iran's Foreign Ministry:", kept by
 # _tg_headline as "Speaker: …") OR a saying/announcing verb. These are the statements the map was dropping.
 _TG_STMT_LABEL = re.compile(r"^\s*[\"'“]?[A-Z][\w.'’&/-]*(?:[ ,][\w.'’&/-]+){0,6}\s*:\s+\S")
@@ -1372,6 +1391,9 @@ def _tg_reliable(headline):
                                                            # editorialising ("In my opinion, this is a poor
                                                            # decision…") — the admin's take is never a map dot.
                                                            # Attributed statements ("Lavrov: …") aren't chatter.
+    if _TG_META.search(h):
+        return False                                       # channel meta: debunking old/recycled footage or
+                                                           # explaining its own coverage — housekeeping, not news
     if _TG_RUMOR.search(h):
         return False                                       # unverified rumour -> out, attributed or not
     if _TG_FUTURE.search(h) and not _tg_is_statement(h):
@@ -6070,6 +6092,12 @@ def _is_area_place(place):
     return bool(_AREA_PREFIX.match(place.split(",")[0].strip()))
 
 
+# Co-location only means "one situation" for a PHYSICAL event that actually happens AT a place — a strike,
+# a bombardment, a disaster. A capital is the SEAT of endless separate political/economic stories, so those
+# never collapse on place alone (see `_collapse_colocated`).
+_COLLAPSE_CATS = {"security", "climate"}
+
+
 def _collapse_colocated(events, window_h=6):
     """The map answers "what is happening WHERE". Several dots on the SAME specific place within a few
     hours are one unfolding situation — the Odesa barrage arrived as three terse posts the classifier
@@ -6081,13 +6109,22 @@ def _collapse_colocated(events, window_h=6):
     kept, buckets = [], {}
     for e in events:
         pl, co = e.get("place") or "", e.get("country") or ""
-        # A SEA/OCEAN is a huge area, not one spot: two unrelated stories that both fell back to 'Black Sea'
-        # (a resort strike and a refinery note about 'Black Sea Petroleum') must NOT collapse into one dot.
-        specific = bool(pl) and pl != co and pl != _co_short(co) and not _is_water_place(pl)
+        # A SEA/OCEAN or a directional REGION is a huge area, not one spot: two unrelated stories that both
+        # fell back to 'Black Sea' (a resort strike + a 'Black Sea Petroleum' note) or to 'Southern Lebanon'
+        # (two strikes on different villages) must NOT collapse into one dot.
+        specific = (bool(pl) and pl != co and pl != _co_short(co)
+                    and not _is_water_place(pl) and not _is_area_place(pl))
         if specific:
             hit = None
             for ki in buckets.get(pl, []):
-                if abs(e["hrs"] - kept[ki]["hrs"]) <= window_h:
+                # A CAPITAL/major city is the SEAT of many UNRELATED stories (Washington hosts a trade-deal
+                # story, a Brazil-tariff story, and five ambassador-quote clips at once) — co-location there is
+                # NOT one situation. Only collapse when the cluster is a PHYSICAL EVENT at the scene (a strike,
+                # a disaster): then the terse split-across-categories posts really are one unfolding thing. Pure
+                # statement/politics/economy dots at a shared seat stay separate (the real merges run in
+                # _merge_same_event, which needs shared CONTENT). SHIPPED BUG: 6 Washington dots -> 1 mega-dot.
+                if (abs(e["hrs"] - kept[ki]["hrs"]) <= window_h
+                        and (e.get("cat") in _COLLAPSE_CATS or kept[ki].get("cat") in _COLLAPSE_CATS)):
                     hit = ki
                     break
             if hit is not None:
@@ -6742,7 +6779,13 @@ _NEVER_CITY_WORDS = {"university", "surprise", "middle east", "schengen",
                      # Israeli-politics poll story ("new ToI poll", ToI = The Times of Israel) dotted Toi, JAPAN;
                      # a Kennedy Center story dotted Kennedy, COLOMBIA (a Bogotá district). "Kennedy Center" is a
                      # longer gram (a _MANUAL_PLACE -> Washington) and still matches; bare "kennedy" never does.
-                     "toi", "kennedy"}
+                     "toi", "kennedy",
+                     # "Republic" is a word in dozens of country names ("Republic of Türkiye", "Czech
+                     # Republic", "Republic of Korea"), never a scene on its own. SHIPPED BUG: a Türkiye
+                     # government statement ("The Republic of Türkiye Directorate of Communications…") dotted
+                     # Republic, Missouri. The multi-word "Central African Republic"/"Democratic Republic of
+                     # Congo" are longer grams and still match; bare "republic" never does.
+                     "republic"}
 # These ARE real cities (Sparks NV, Brent in London) but usually appear as a verb / market benchmark / an
 # ADJECTIVE in a proper-noun phrase — a dot ONLY when the sentence locates something there ("in Sparks").
 # SHIPPED: "chipmaker SPARKS fears" -> Sparks, Nevada; "BRENT crude" -> Brent, London; a Trump "'GOLDEN

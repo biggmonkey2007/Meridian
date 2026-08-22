@@ -97,6 +97,12 @@ GEO_CASES = [
      "United Kingdom", "a UK court ruling dots the UK, not 'Palestine' inside the group's name"),
     ("Palestine Action 'Barclays five' won't face terrorism sentences, UK judge rules", "",
      "!Palestine", "...and it must NOT land on Palestine"),
+    # "Republic" is a word in dozens of country names, never a scene on its own. SHIPPED BUG: a Türkiye
+    # government statement dotted "Republic, Missouri". Vetoed as a bare town -> the statement dots Turkey.
+    ("The Republic of Turkiye Directorate of Communications: The Israeli PM Office's rant targeting our "
+     "President Recep Tayyip Erdogan", "", "Turkey", "a Turkish government statement dots Turkey, not 'Republic, US'"),
+    ("The Republic of Turkiye Directorate of Communications targeting our President Erdogan", "",
+     "!Republic", "...and bare 'Republic' must never be the scene"),
     # BATCH of wrong-continent dots: common words / acronyms read as towns, and ambiguous names that picked
     # the wrong country. Curated the real scene (Sizewell, Beaufort Castle); guarded acronyms + common words.
     ("Wildfire near Sizewell nuclear plant causes 'total devastation' to Suffolk landscape",
@@ -1066,6 +1072,15 @@ COLLAPSE_CASES = [
     ([_ev("Kyiv aid deal signed", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
       _ev("Kyiv hit by missile strike", "security", "Kyiv, Ukraine", "Ukraine", 2.0)], 1, "security",
      "co-located within the window collapses to the SEVEREST category (a strike beats an aid story)"),
+    # A CAPITAL is the SEAT of many UNRELATED stories, not one situation. SHIPPED BUG: a US-Canada trade
+    # deal, a Brazil-tariff story and five ambassador-quote clips all sat on Washington and collapsed into
+    # ONE mega-dot whose brief had nothing to do with its headline. Non-physical (politics/economy) dots at
+    # a shared seat must STAY SEPARATE; only a physical scene (security/climate) collapses (the Kyiv case).
+    ([_ev("US, Canada race to finalize trade deal ahead of Trump deadline", "economy", "Washington, D.C.", "United States of America", 1.0),
+      _ev("Brazil president tells Trump US tariffs unfounded", "economy", "Washington, D.C.", "United States of America", 2.0),
+      _ev("U.S. Ambassador says the Turkish military is strong", "politics", "Washington, D.C.", "United States of America", 0.5),
+      _ev("U.S. Ambassador says the Mecca Agreement is not anti-Israel", "politics", "Washington, D.C.", "United States of America", 0.6)], 4, None,
+     "SHIPPED BUG: unrelated political/economic stories at a capital seat collapsed into one mega-dot"),
 ]
 
 # the Live Wire must drop an admin's PERSONAL messages (greetings, sign-offs) but keep real news,
@@ -1115,6 +1130,16 @@ RELIABLE_CASES = [
      False, "an admin's first-person OPINION is never a map dot (editorialising, not reporting)"),
     ("Personally, I think this whole escalation is being blown way out of proportion", False,
      "'personally, I think' = the admin's take, not an event"),
+    # SHIPPED BUG: a channel's META note ABOUT the wire — debunking recycled footage and explaining its own
+    # coverage — got through as news. It provides no event; drop it. Real news that merely mentions video/
+    # recycling (with no debunk framing) must still pass, so the guards below stay True.
+    ("Ansarullah is recycling 2-6 year old clips of attacks on Saudi positions, republishing them as new; "
+     "hence Rerum Novarum's lack of coverage of the clips. Note, there are no Abrams tanks in western Yemen.",
+     False, "channel meta: debunking recycled clips + explaining its own coverage is housekeeping, not news"),
+    ("Norway now recycles 97 percent of its plastic bottles, environment ministry says", True,
+     "GUARD: a real 'recycles' story with no media noun nearby is not a footage debunk"),
+    ("Video shows the aftermath of the Israeli strike on the southern suburbs", True,
+     "GUARD: plain footage of an event (no 'old/fake/recycled' debunk word) is real news"),
 ]
 
 # The IMPORTANCE GATE hides 'local' (AI-scoped) stories from the world map, but _hard_news is the safety
