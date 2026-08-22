@@ -4013,18 +4013,44 @@ async function setupStatements(name){
       }
     }
   }catch(e){}
-  // 2) per-official recent COVERAGE (Google News — honest, not verbatim)
+  // 1.5) DIRECT QUOTES from leaders/officials in the last 24-48h (AI-grounded via web search) — the actual
+  //      WORDS, not a headline "about" what they said. Cached 3h; a cold miss fills in asynchronously so the
+  //      panel never blocks on the (slow) grounded call.
+  try{
+    const renderQ=(sd)=>{
+      const items=((sd&&sd.statements)||[]).filter(s=>s&&(s.quote||"").trim());
+      if(!items.length) return "";
+      return `<div class="st-cov-h">Latest quotes · last 48h</div><div class="st-list">`+items.slice(0,8).map(s=>{
+        const q=(s.quote||"").trim(), long=q.length>230;
+        return `<div class="st-card2"><div class="st-av">${esc((s.name||"?").trim().charAt(0))}</div><div class="st-main">`
+          +`<div class="st-who"><span class="st-name">${esc(s.name||"")}</span>${s.title?`<span class="st-title">${esc(s.title)}</span>`:""}</div>`
+          +`<div class="st-off-q${long?" clamp":""}">“${esc(q)}”</div>${long?`<button class="st-off-more" data-more>Read more</button>`:""}`
+          +`${(s.source||s.when)?`<div class="st-lmeta">${esc(s.source||"")}${s.when?" · "+esc(s.when):""}</div>`:""}</div></div>`;
+      }).join("")+`</div>`;
+    };
+    let sd = api.cached_statements ? await api.cached_statements(name) : null;
+    if(activeCountry!==name || !document.getElementById("ctry-stmts")) return;
+    if(sd && sd.statements && sd.statements.length){ html += renderQ(sd); }
+    else if(api.official_statements){          // no cache yet -> fill in the background, don't block the panel
+      const ph="aiq"+(_uidN++); html += `<div id="${ph}"></div>`;
+      (async()=>{ try{ const r=await api.official_statements(name); if(activeCountry===name){ const el=document.getElementById(ph); if(el) el.innerHTML=renderQ(r); } }catch(e){} })();
+    }
+  }catch(e){}
+  // 2) per-official recent COVERAGE (Google News) — keep ONLY items that carry a real QUOTE; a bare headline
+  //    "about" what a leader said adds nothing (user: fruitless), so those are dropped.
   try{
     if(api.people_news){
       const names = leaders.length ? leaders.map(L=>L.name) : [shortCountry(name)+" government minister"];
       const r=await api.people_news(names, name);
       if(activeCountry!==name || !document.getElementById("ctry-stmts")) return;
-      const people=((r&&r.people)||[]).filter(p=>p.items&&p.items.length && !postedNames.has(p.name));
+      // keep only officials who have at least one item with a REAL embedded quote
+      const people=((r&&r.people)||[]).map(p=>({...p, items:(p.items||[]).filter(it=>it.quote)}))
+        .filter(p=>p.items.length && !postedNames.has(p.name));
       if(people.length){
-        html+=`<div class="st-cov-h">In the news · last 48h</div><div class="st-list">`+people.map(p=>{
+        html+=`<div class="st-cov-h">Quoted in the news · last 48h</div><div class="st-list">`+people.map(p=>{
           const L=leaders.find(x=>x.name===p.name);
           const av=(L&&L.img)?`<div class="st-av has-img" style="background-image:url('${esc(String(L.img).replace(/'/g,''))}')"></div>`:`<div class="st-av">${esc((p.name||"?").trim().charAt(0))}</div>`;
-          const lines=p.items.map(it=>`<div class="st-line">${it.quote?`<span class="st-realq">“${esc(it.quote)}”</span> `:""}${esc(it.title)}<span class="st-lmeta">${esc(it.source||"")}${it.pub?" · "+esc(newsAgo(it.pub)):""}</span></div>`).join("");
+          const lines=p.items.map(it=>`<div class="st-line"><span class="st-realq">“${esc(it.quote)}”</span><span class="st-lmeta">${esc(it.source||"")}${it.pub?" · "+esc(newsAgo(it.pub)):""}</span></div>`).join("");
           return `<div class="st-card2">${av}<div class="st-main"><div class="st-who"><span class="st-name">${esc(p.name)}</span>${L&&L.title?`<span class="st-title">${esc(L.title)}</span>`:""}</div><div class="st-lines">${lines}</div></div></div>`;
         }).join("")+`</div>`;
       }
