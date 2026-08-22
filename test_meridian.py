@@ -2121,6 +2121,58 @@ def main():
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
+    # SELF-LEARNING GAZETTEER — the AI names the exact town the rules can't pin; we geocode it once and
+    # remember the coords forever, so it becomes a free, deterministic, COLD-START hit next time. Fully
+    # offline here: the geocoder and the AI-WHERE are stubbed, and _learn_place is redirected to the
+    # in-memory dict so the test writes NO files.
+    print("\n=== SELF-LEARNING GAZETTEER (learned places + confidence) ===")
+    _lg_fails = []
+    # (1) confidence: a specific city/facility is 'high'; a bare country or a broad region centroid is 'low'
+    _lg_fails.append(("conf-high", app._geo_confidence((33.38, 35.48, "Deir Seryan, Lebanon", "Lebanon")) == "high"))
+    _lg_fails.append(("conf-region", app._geo_confidence((33.4, 35.5, "Southern Lebanon, Lebanon", "Lebanon")) == "low"))
+    _laL, _lnL = app.COUNTRY_COORDS.get("Lebanon", (33.8, 35.8))
+    _lg_fails.append(("conf-centroid", app._geo_confidence((_laL, _lnL, "Lebanon", "Lebanon")) == "low"))
+    _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
+    _injected = []
+    try:
+        # write to the in-memory store only — never touch disk during tests
+        app._learn_place = lambda name, lat, lng, place, country: (
+            app._LEARNED_PLACES.__setitem__(app._lp_key(name),
+                {"lat": lat, "lng": lng, "place": place, "country": country}),
+            _injected.append(app._lp_key(name)))
+        # (2) COLD START (allow_ai=False, no network): a place already LEARNED resolves to its exact coords
+        app._LEARNED_PLACES[app._lp_key("Deir Seryan, Lebanon")] = {
+            "lat": 33.281, "lng": 35.44, "place": "Deir Seryan, Lebanon", "country": "Lebanon"}
+        _injected.append(app._lp_key("Deir Seryan, Lebanon"))
+        app._ai_where = lambda t: "Deir Seryan, Lebanon" if "Deir Seryan" in t else _orig_aw(t)
+        _cold = app._locate("Israeli airstrike on Deir Seryan, southern Lebanon", "",
+                            "Israeli airstrike on Deir Seryan, southern Lebanon", allow_ai=False)
+        _lg_fails.append(("learned-cold-start", bool(_cold) and round(_cold[0], 2) == 33.28
+                          and app._geo_confidence(_cold) == "high"))
+        # (3) LIVE: a NEW town is geocoded once (stubbed), anchored to the story's country, and LEARNED
+        app._geocode_nominatim = lambda q: (33.30, 35.47, "Lebanon") if "Bayout" in q else None
+        app._ai_where = lambda t: "Bayout El Siyad, Lebanon" if "Bayout" in t else _orig_aw(t)
+        _live = app._locate("Two Israeli airstrikes targeted Bayout El Siyad, southern Lebanon", "",
+                            "Two Israeli airstrikes targeted Bayout El Siyad, southern Lebanon", allow_ai=True)
+        _lg_fails.append(("nominatim-learn", bool(_live) and round(_live[0], 2) == 33.30
+                          and app._geo_confidence(_live) == "high"))
+        _lg_fails.append(("persisted", app._learned_place_lookup("Bayout El Siyad, Lebanon") is not None))
+        # (4) GUARD: a geocode to the WRONG country (hallucinated town) is rejected — no false pin
+        app._geocode_nominatim = lambda q: (48.85, 2.35, "France")   # Paris coords for a Lebanon story
+        app._ai_where = lambda t: "Nowheresville, Lebanon" if "Nowheresville" in t else _orig_aw(t)
+        _bad = app._locate("Strike on Nowheresville, southern Lebanon", "",
+                           "Strike on Nowheresville, southern Lebanon", allow_ai=True)
+        _lg_fails.append(("reject-wrong-country", not (_bad and abs(_bad[0] - 48.85) < 0.1)))
+    finally:
+        app._ai_where, app._geocode_nominatim, app._learn_place = _orig_aw, _orig_geo, _orig_learn
+        for k in _injected:
+            app._LEARNED_PLACES.pop(k, None)
+    for _name, _ok in _lg_fails:
+        ran[0] += 1
+        if not _ok:
+            fails.append(("learn-geo", _name, "pass", "FAIL", "self-learning gazetteer / confidence"))
+        print(f"  {'ok ' if _ok else 'FAIL'} {_name}")
+
     # FIRST-REPORTER PROMOTION — the inline dedup adds the FRESHEST copy first, then cites older copies onto it.
     # A story broken by an outlet 12h ago and re-run by another 4h ago must stay attributed to whoever broke it,
     # not the later re-run. _cite_source promotes the earlier reporter's outlet + headline to the shown primary.
@@ -2399,6 +2451,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
+             + 7    # + self-learning gazetteer: 3 confidence levels + learned cold-start + nominatim learn + persist + wrong-country guard
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

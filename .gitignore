@@ -20,6 +20,7 @@ channels.txt
 muted_sources.txt
 feed_base.txt
 learned_terms.json
+learned_places.json
 cache/
 update/
 webview/

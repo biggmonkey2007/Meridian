@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.41"
+APP_VERSION = "1.4.42"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d48"   # d48: resweep so this round's build-time rules take effect — unrelated stories at a
+_DATA_VER = "d49"   # d49: resweep so dots carry a geo_confidence field and the self-learning gazetteer starts
+                    #      pinning AI-named towns (Deir Seryan, Bayout El Siyad) to real coords via Nominatim,
+                    #      remembering each forever. Cache-hits summaries/AI-where, so no re-summarize cost.
+                    # d48: resweep so this round's build-time rules take effect — unrelated stories at a
                     #      capital SEAT no longer collapse into one mega-dot (Washington: trade deal + Brazil
                     #      tariffs + 5 ambassador clips were becoming ONE), a bare "Republic" is no longer a US
                     #      town (a Türkiye statement dots Turkey), and channel meta/debunk notes are dropped.
@@ -2964,7 +2967,7 @@ class Api:
             events.append({
                 "title": title, "cat": cat, "sid": _share_id(url, title),
                 "lat": round(lat, 4), "lng": round(lng, 4),
-                "place": place, "country": country,
+                "place": place, "country": country, "geo_confidence": _geo_confidence(loc),
                 "hrs": round(hrs, 1),
                 "source": (a.get("_src") or _domain_name(a.get("domain") or "")),
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
@@ -3076,7 +3079,8 @@ class Api:
                 events.append({
                     "title": title, "cat": cat, "sid": _share_id(url, title),
                     "lat": round(lat, 4), "lng": round(lng, 4),
-                    "place": place, "country": ev_country, "hrs": round(hrs, 1),
+                    "place": place, "country": ev_country, "geo_confidence": _geo_confidence(loc),
+                    "hrs": round(hrs, 1),
                     "source": _domain_name(a.get("domain") or ""),
                     "domain": a.get("domain") or "", "url": url,
                     "srcnote": _source_note(_domain_name(a.get("domain") or ""), a.get("domain") or ""),
@@ -9346,6 +9350,149 @@ def _place_in_title(label, title):
     return len(city) >= 4 and city in _fold(title).lower()
 
 
+# ================= SELF-LEARNING GAZETTEER =================
+# The AI often NAMES the exact town ("Deir Seryan, Lebanon") the rule gazetteer can't turn into a point, so
+# the dot fell back to a REGION centroid and different towns collapsed onto one dot. Here we geocode that name
+# ONCE via free OpenStreetMap Nominatim and remember the coordinates FOREVER (learned_places.json in DATA_DIR,
+# gitignored, survives a cache clear). Next time it is a free, deterministic, cold-start rule hit — accuracy
+# COMPOUNDS and AI/geocoder calls drop toward zero. Coordinates NEVER come from the LLM (it hallucinates
+# lat/long); only from the geocoder. Purely additive: with no network this is a no-op and the rules stand.
+_LEARNED_PLACES_PATH = os.path.join(DATA_DIR, "learned_places.json")
+_LEARNED_PLACES_LOCK = threading.Lock()
+try:
+    _LEARNED_PLACES = json.load(open(_LEARNED_PLACES_PATH, encoding="utf-8")) if os.path.exists(_LEARNED_PLACES_PATH) else {}
+    if not isinstance(_LEARNED_PLACES, dict):
+        _LEARNED_PLACES = {}
+except Exception:
+    _LEARNED_PLACES = {}
+
+
+def _lp_key(name):
+    return re.sub(r"\s+", " ", (name or "").strip()).lower()
+
+
+def _learned_place_lookup(name):
+    """A previously-learned place -> (lat, lng, 'Display, Country', country), or None. A free, deterministic
+    LOCAL read: works on cold start, costs nothing, and is what makes the gazetteer 'self-learning'."""
+    rec = _LEARNED_PLACES.get(_lp_key(name))
+    if not rec:
+        return None
+    try:
+        return (float(rec["lat"]), float(rec["lng"]), rec.get("place") or name, rec.get("country") or "")
+    except Exception:
+        return None
+
+
+def _learn_place(name, lat, lng, place, country):
+    """Persist a name->coordinates mapping the geocoder resolved, so it is ours forever (atomic write)."""
+    key = _lp_key(name)
+    if not key:
+        return
+    rec = {"lat": round(float(lat), 5), "lng": round(float(lng), 5),
+           "place": place or name, "country": country or "", "ts": int(time.time())}
+    with _LEARNED_PLACES_LOCK:
+        if _LEARNED_PLACES.get(key) == rec:
+            return
+        _LEARNED_PLACES[key] = rec
+        try:
+            tmp = _LEARNED_PLACES_PATH + ".tmp"
+            json.dump(_LEARNED_PLACES, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+            os.replace(tmp, _LEARNED_PLACES_PATH)
+        except Exception:
+            pass
+
+
+_NOMINATIM_MIN_INTERVAL = 1.1          # OSM usage policy: <= ~1 request/second, descriptive User-Agent required
+_nominatim_last = [0.0]
+_nominatim_lock = threading.Lock()
+_nominatim_budget = [0, 0.0]           # [calls_this_window, window_start] — a safety cap on a cold first build
+
+
+def _geocode_nominatim(place):
+    """Resolve a place NAME ('Deir Seryan, Lebanon') to real (lat, lng, country) via free OSM Nominatim.
+    Cached 30 days on disk (misses too), rate-limited + budgeted per OSM policy, and fully error-safe:
+    returns None on any failure or offline, so the feature stays additive. NEVER called on the synchronous
+    cold-start path (guarded by `allow_ai` in `_locate`) — only in the background/live pass."""
+    q = (place or "").strip()
+    if len(q) < 3:
+        return None
+    cache = os.path.join(CACHE_DIR, "geocode_" + hashlib.sha1(q.lower().encode("utf-8")).hexdigest()[:16] + ".json")
+    if _fresh(cache, 30 * 86400):
+        try:
+            j = json.load(open(cache, encoding="utf-8"))
+            return (j["lat"], j["lng"], j.get("country") or "") if j.get("lat") is not None else None
+        except Exception:
+            pass
+    # SAFETY BUDGET: cap live geocodes per rolling window so a cold first build (many new towns) can't run
+    # for many minutes. The rest simply stay rule-placed this build and get learned on later ones.
+    now = time.time()
+    if now - _nominatim_budget[1] > 900:       # 15-min window
+        _nominatim_budget[0], _nominatim_budget[1] = 0, now
+    if _nominatim_budget[0] >= 80:
+        return None
+    out = None
+    try:
+        with _nominatim_lock:
+            wait = _NOMINATIM_MIN_INTERVAL - (time.time() - _nominatim_last[0])
+            if wait > 0:
+                time.sleep(wait)
+            _nominatim_last[0] = time.time()
+        _nominatim_budget[0] += 1
+        url = ("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&q="
+               + urllib.parse.quote(q))
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Meridian-News-Map/%s (news map dot geocoding)" % APP_VERSION})
+        with urllib.request.urlopen(req, timeout=12) as rr:
+            arr = json.loads(rr.read().decode("utf-8"))
+        if arr:
+            top = arr[0]
+            country = ((top.get("address") or {}).get("country")) or ""
+            out = (round(float(top["lat"]), 5), round(float(top["lon"]), 5), country)
+    except Exception:
+        out = None
+    try:
+        json.dump({"lat": out[0] if out else None, "lng": out[1] if out else None,
+                   "country": out[2] if out else ""}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return out
+
+
+def _sharpen_ai_place(aw, anchor_country, allow_ai):
+    """The AI named 'City, Country' but the rules could only reach the region/country centroid. Pin the EXACT
+    city: first from the learned gazetteer (free, cold-start), else a one-time Nominatim geocode (live pass
+    only) whose result is anchored to the story's country and then LEARNED. Returns a specific
+    (lat, lng, place, country) or None (leave the rules' answer in place)."""
+    lp = _learned_place_lookup(aw)
+    if lp and (not anchor_country or not lp[3] or _country_match(lp[3], anchor_country)):
+        return lp
+    if not allow_ai:
+        return None
+    geo = _geocode_nominatim(aw)
+    if not geo:
+        return None
+    lat, lng, ncountry = geo
+    # GUARD: a hallucinated town that geocodes to the wrong country is rejected — the point's country must
+    # match the country the story anchored on (loose match; Nominatim's label may differ from ours).
+    if anchor_country and ncountry and not _country_match(ncountry, anchor_country):
+        return None
+    place = aw if "," in aw else ((aw + ", " + anchor_country) if anchor_country else aw)
+    country = anchor_country or ncountry
+    _learn_place(aw, lat, lng, place, country)
+    return (lat, lng, place, country)
+
+
+def _geo_confidence(loc):
+    """How precisely we know WHERE: 'high' when the dot sits on a specific city/facility/learned place,
+    'low' when it fell back to a bare COUNTRY or a broad REGION centroid — an APPROXIMATE dot the UI marks
+    so a reader is never misled that a country-centroid pin is the exact spot."""
+    if not loc:
+        return "low"
+    if _geo_is_weak(loc) or _is_area_place(loc[2] if len(loc) > 2 else ""):
+        return "low"
+    return "high"
+
+
 def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     """The location for a dot. RULES first (free, deterministic, tested); only when they can't pin a
     specific place does the FREE AI read the whole story and name it — grounded back through the SAME
@@ -9377,6 +9524,13 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
             if ctx_co:
                 g = (g[0], g[1], g[2], ctx_co[0])
         if g and ((g[3] in ment) or (r and g[3] == r[3]) or water):
+            # SELF-LEARNING SHARPEN: the AI named a specific 'City, Country' but the rules could only reach the
+            # region/country centroid ('Deir Seryan, Lebanon' -> 'Southern Lebanon'). Pin the exact town from
+            # the learned gazetteer (free, cold-start) or a one-time geocode (live), then remember it forever.
+            if not water and "," in aw and (_geo_is_weak(g) or _is_area_place(g[2])):
+                sharp = _sharpen_ai_place(aw, g[3] if (g[3] in ment or (r and g[3] == r[3])) else "", allow_ai)
+                if sharp:
+                    return sharp
             if not _geo_is_weak(g):
                 # DON'T override a specific rule scene the HEADLINE itself names with a same-country AI guess
                 # that the headline does NOT name — the AI is often misled by a place cited only for comparison
