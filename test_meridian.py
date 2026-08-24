@@ -97,6 +97,22 @@ GEO_CASES = [
      "United Kingdom", "a UK court ruling dots the UK, not 'Palestine' inside the group's name"),
     ("Palestine Action 'Barclays five' won't face terrorism sentences, UK judge rules", "",
      "!Palestine", "...and it must NOT land on Palestine"),
+    # A CURRENCY PREFIX is not the country. SHIPPED BUG: an Indonesian ministry's aid "(approx US$48,500)"
+    # dotted the United States — "US$" tokenised to a bare "US".
+    ("Ministry earmarks emergency aid for flood victims in Jakarta",
+     "The ministry pledged approximately US$48,500 in relief for the affected schools", "Jakarta",
+     "US$ is a currency, not the country US — Jakarta wins"),
+    ("Ministry earmarks emergency aid for flood victims in Jakarta",
+     "The ministry pledged approximately US$48,500 in relief for the affected schools", "!United States",
+     "...and it must NOT land on the US"),
+    # A strike hitting "X's sites" is an event IN X, not a US action. SHIPPED BUG: "US-Israeli strikes hit
+    # Iran's nuclear, medical sites" dotted Washington — "Iran's" sank as a possessive so the attacker won.
+    ("US-Israeli strikes hit Iran's nuclear, medical sites", "", "Iran",
+     "a strike hitting X's sites dots X (the scene), not the attacker"),
+    ("US-Israeli strikes hit Iran's nuclear, medical sites", "", "!United States",
+     "...never the attacker's country"),
+    ("Russia's attack on Zaporizhzhia kills nine", "", "Zaporizhzhia",
+     "GUARD: 'Russia's ATTACK' (no strike verb before Russia) still sinks the actor -> Zaporizhzhia"),
     # "Republic" is a word in dozens of country names, never a scene on its own. SHIPPED BUG: a Türkiye
     # government statement dotted "Republic, Missouri". Vetoed as a bare town -> the statement dots Turkey.
     ("The Republic of Turkiye Directorate of Communications: The Israeli PM Office's rant targeting our "
@@ -2516,6 +2532,9 @@ def main():
                  and "Muslim Association of Britain" in app._detect_org_phrases("The Muslim Association of Britain urge the UK government to act", set())
                  and "DFAT" in app._detect_org_phrases("Australian dies in Vietnam, DFAT confirms consular assistance", set())   # a bare acronym -> defined
                  and app._detect_org_phrases("The US and UK and NATO met the UN and EU on GDP", set()) == []   # common acronyms are NOT flagged
+                 and "TIMES" not in app._detect_org_phrases("PREMIUM TIMES reported the commission uncovered a fake agency", set())   # SHIPPED: an OUTLET name is not an org to define
+                 and "POST" not in app._detect_org_phrases("THE POST said officials confirmed the arrest", set())
+                 and "IRGC" in app._detect_org_phrases("The IRGC held a parade in Tehran", set())   # GUARD: a real acronym is still defined
                  and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
     ran[0] += 1
     if not _gloss_ok:

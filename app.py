@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.55"
+APP_VERSION = "1.4.56"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d57"   # d57: resweep so an admin GAMBLING/betting-tip post (a bet slip, "my money is on…") is
+_DATA_VER = "d58"   # d58: resweep so a currency prefix isn't the country (US$48,500 no longer dots the US),
+                    #      a strike hitting "X's sites" dots X not the attacker, and US-side reports of one
+                    #      story re-consolidate on Washington. Cache-hits summaries, no re-cost.
+                    # d57: resweep so an admin GAMBLING/betting-tip post (a bet slip, "my money is on…") is
                     #      dropped from the wire and the map. Cache-hits summaries, no re-cost.
                     # d56: resweep so a maritime strike dots the WATER (Houthi strike on a Saudi tanker "in the
                     #      Red Sea" -> the Red Sea, not Sana'a) — which also lets it MERGE with the other Red-Sea
@@ -1805,6 +1808,12 @@ _COMMON_ACRONYMS = {
     "DIY", "CEO", "MP", "MPS", "VP", "AG", "DA", "PR", "HR", "QA", "RD", "IPO", "GMT", "UTC", "AM", "PM",
     "COVID", "AIDS", "HIV", "ISS", "UFO", "SOS", "FYI", "ASAP", "NGO", "NGOS", "GPS", "APEC", "ASEAN", "BRICS",
     "G7", "G20", "OK", "TBD", "CCTV",
+    # OUTLET-NAME words stylised in all-caps ("PREMIUM TIMES reported…", "THE POST said…") are not orgs to
+    # define. SHIPPED BUG: "TIMES" from "PREMIUM TIMES" was bolded as an organisation. These are real English
+    # words, never acronyms — so they never carry a definition.
+    "TIMES", "POST", "NEWS", "PRESS", "DAILY", "WIRE", "HERALD", "MIRROR", "GLOBE", "STAR", "SUN", "MAIL",
+    "TRIBUNE", "JOURNAL", "GAZETTE", "MONITOR", "OBSERVER", "GUARDIAN", "CHRONICLE", "BULLETIN", "REPORT",
+    "TODAY", "WEEKLY", "REVIEW", "DIGEST", "RECORD", "LEDGER", "DISPATCH", "EXAMINER", "SENTINEL",
 }
 
 
@@ -8788,12 +8797,23 @@ _AFTER_STRIKE_NOUN = ("will", "would", "could", "may", "might", "are", "were", "
                       "and", "or", "on", "in", "near", "over", "against", "targeting")
 
 
+_HIT_TARGET_VERBS = {"hit", "hits", "struck", "strike", "strikes", "bombed", "bomb", "bombs", "shelled",
+                     "shell", "shells", "attacked", "attack", "attacks", "targeted", "target", "targets",
+                     "targeting", "destroyed", "destroy", "destroys", "damaged", "damage", "damages", "raided",
+                     "raid", "raids", "pounded", "pounds", "hitting", "striking"}
+
+
 def _is_actor_h(h, words):
     """Does this name WHO DID IT rather than WHERE it happened?"""
     if h[1] == "demonym":
         return True
     nxt = h[0] + len(str(h[7]).split())
     if nxt < len(words) and words[nxt] == "s":         # "Russia" + "s" == "Russia's"
+        # ...UNLESS the possessive is the TARGET of a strike/hit verb: "hit Iran's nuclear sites" -> Iran is
+        # the SCENE (where the sites are), not the actor. "Russia's attack on X" has no verb before it, so it
+        # stays an actor and X wins. SHIPPED BUG: "US-Israeli strikes hit Iran's sites" dotted Washington.
+        if h[0] >= 1 and words[h[0] - 1] in _HIT_TARGET_VERBS:
+            return False
         return True
     if h[1] != "country" or nxt >= len(words):
         return False
@@ -8941,7 +8961,11 @@ def _pick_place(hits, words):
         # Both of these put a non-place in `located`, where it was the only candidate and won.
         # A country/demonym that is the SUBJECT of a strike verb ("US POUNDS Iranian city") is the
         # attacker — an earlier "explosions"/"blast" must not sneak it into `located` over its target.
-        if loc and (_nxt(h) == "s" or _is_nationality(h, words)
+        # ...EXCEPT a possessive that is the TARGET of a strike/hit verb keeps its scene: "hit Iran's nuclear
+        # sites" is an event IN Iran, not a US action. "in Russia's Bashkortostan" has a preposition (not a
+        # strike verb) before it, so it still sinks to Bashkortostan.
+        _strike_target_poss = (_nxt(h) == "s" and h[0] >= 1 and words[h[0] - 1] in _HIT_TARGET_VERBS)
+        if loc and not _strike_target_poss and (_nxt(h) == "s" or _is_nationality(h, words)
                     or (h[1] in ("country", "demonym") and _nxt(h) in _STRIKE_VERBS)):
             loc = False
         # A LEGAL RULING happens in its JURISDICTION: "<Country> judge/court/justice/prosecutor …" makes
@@ -9078,6 +9102,9 @@ def _expand_water_coord(text):
 _OUTLET_GEO_STRIP = re.compile(r"\b(the\s+)?wall\s+street\s+journal\b", re.I)
 
 
+_CURRENCY_GEO_RE = re.compile(r"\bU\.?\s?S\.?\s?\$|\bUSD\b", re.I)   # "US$", "U.S. $", "USD" -> a currency, not the country
+
+
 @functools.lru_cache(maxsize=4096)
 def _geolocate(title, sourcecountry, desc="", url=""):
     """Best location for an event. Context (other countries named + the article's own section) decides
@@ -9087,7 +9114,12 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     Memoized: an article's inputs don't change between the 15-min rebuilds, so re-geolocation is free
     after the first pass. The result is a plain tuple/None (deterministic — depends only on the static
     gazetteer), so caching is safe. Restart clears it, which is exactly what we want after a logic fix."""
-    title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title or ""))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
+    # A CURRENCY PREFIX is not the country. SHIPPED BUG: an Indonesian ministry's aid "(approximately
+    # US$48,500)" dotted the UNITED STATES — "US$" tokenised to a bare "US". Drop the US/USD before a $ amount
+    # so only real country mentions remain.
+    title = _CURRENCY_GEO_RE.sub("$", title or "")
+    desc = _CURRENCY_GEO_RE.sub("$", desc or "")
+    title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
     # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
     # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
     # because the trailing "in" of "JUST IN" read as "…IN Nikita", flipping on the locating context that
