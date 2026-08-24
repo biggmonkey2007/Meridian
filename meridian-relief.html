@@ -2237,12 +2237,12 @@ function highlightCountry(name){
   const parts=[
     L.geoJSON(fill, { style:fillStyle, interactive:false, renderer:rnd }),
     L.geoJSON(eastFillGeo(fill), { style:fillStyle, interactive:false, renderer:rnd }),   // >180° extension (Russia/Alaska)
-    L.polyline(segs.concat(eastSegs(segs)), { color:"#5b95e0", weight:1.2, opacity:0.62, interactive:false, lineJoin:"round", renderer:rnd })
+    L.layerGroup([])   /* NO separate outline: a fixed 50m line can't sit 1:1 on the zoom-varying vector border (Natural Earth far out, OSM up close) — it ran parallel-but-offset. The map's OWN border is now the country's edge; the tint marks the selection. */
   ];
   highlightLayer = L.layerGroup(parts).addTo(map);
   if(mlMap && mlLoaded && mlMap.getSource("g-hl-line")){
     mlMap.getSource("g-hl-fill").setData({type:"FeatureCollection",features:[fill]});
-    mlMap.getSource("g-hl-line").setData(splitFeatureLines(f));
+    mlMap.getSource("g-hl-line").setData({type:"FeatureCollection",features:[]});   // no offset outline — the map's real border is the edge; the fill marks the selection
     positionCountryHighlight();   // ensure the tint sits under the vector water so it clips to the coastline
   }
 }
@@ -3406,8 +3406,8 @@ function setGlobeBasemap(k){
   if(mlMap.getLayer("g-hl-fill")){
     const HL = k==="topo"      ? {fill:"#ffffff", fo:0.22, line:"#ffffff", lw:1.9, lo:0.95}   // WHITE selection over the terrain, thick outline
              : k==="satellite" ? {fill:"#8fc0ff", fo:0.34, line:"#58a6ff", lw:1.9, lo:0.98}   // less transparent over the dark photo — the selected country reads clearly; bright blue border all the way round
-             : k==="osmintl"   ? {fill:"#8bb6ee", fo:0.20, line:"#5b95e0", lw:1.9, lo:0.8}
-             :                   {fill:"#8fb8ef", fo:0.20, line:"#5b95e0", lw:1.9, lo:0.8};
+             : k==="osmintl"   ? {fill:"#8bb6ee", fo:0.26, line:"#5b95e0", lw:1.9, lo:0.8}   // no outline now (see highlightCountry) -> a touch more fill so the selection still reads
+             :                   {fill:"#8fb8ef", fo:0.26, line:"#5b95e0", lw:1.9, lo:0.8};
     try{
       mlMap.setPaintProperty("g-hl-fill","fill-color",HL.fill);
       mlMap.setPaintProperty("g-hl-fill","fill-opacity",HL.fo);
