@@ -1100,21 +1100,22 @@ COLLAPSE_CASES = [
     ([_ev("Kyiv aid deal signed", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
       _ev("Kyiv hit by missile strike", "security", "Kyiv, Ukraine", "Ukraine", 2.0)], 2, None,
      "a statement (politics) and a strike (security) at the same capital are different events — both kept"),
+    # A CAPITAL is a SEAT, never blind-merged: the leader-statement upgrade dots many unrelated stories there.
     ([_ev("Ukraine downs 97 of 127 drones overnight", "security", "Kyiv, Ukraine", "Ukraine", 0.3),
       _ev("Second wave of drones strikes Kyiv district", "security", "Kyiv, Ukraine", "Ukraine", 0.6),
       _ev("Zelensky says Ukraine reached a deal with Germany", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
       _ev("Zelensky warns elections would destroy Ukraine", "politics", "Kyiv, Ukraine", "Ukraine", 1.5),
-      _ev("Ukraine marks State Flag Day", "society", "Kyiv, Ukraine", "Ukraine", 2.0)], 4, None,
-     "SHIPPED BUG: the drone dot swallowed 24 Kyiv statements — now only the two strikes merge; statements stay"),
-    # A CAPITAL is the SEAT of many UNRELATED stories, not one situation. SHIPPED BUG: a US-Canada trade
-    # deal, a Brazil-tariff story and five ambassador-quote clips all sat on Washington and collapsed into
-    # ONE mega-dot whose brief had nothing to do with its headline. Non-physical (politics/economy) dots at
-    # a shared seat must STAY SEPARATE; only a physical scene (security/climate) collapses (the Kyiv case).
-    ([_ev("US, Canada race to finalize trade deal ahead of Trump deadline", "economy", "Washington, D.C.", "United States of America", 1.0),
-      _ev("Brazil president tells Trump US tariffs unfounded", "economy", "Washington, D.C.", "United States of America", 2.0),
-      _ev("U.S. Ambassador says the Turkish military is strong", "politics", "Washington, D.C.", "United States of America", 0.5),
-      _ev("U.S. Ambassador says the Mecca Agreement is not anti-Israel", "politics", "Washington, D.C.", "United States of America", 0.6)], 4, None,
-     "SHIPPED BUG: unrelated political/economic stories at a capital seat collapsed into one mega-dot"),
+      _ev("Ukraine marks State Flag Day", "society", "Kyiv, Ukraine", "Ukraine", 2.0)], 5, None,
+     "SHIPPED BUG: the drone dot swallowed Kyiv statements — a capital is a SEAT, so nothing blind-merges there"),
+    # SHIPPED BUG (the newest mega-dot): a Hasan-Piker culture story misclassified as security, a SOUTHCOM
+    # airstrike and a drug-boat strike all sat on Washington (the leader-statement upgrade + being the seat)
+    # and the same-category collapse folded the three UNRELATED security stories into one. A capital never
+    # blind-merges — only shared CONTENT (in _merge_same_event) may fold two dots at a seat.
+    ([_ev("Hasan Piker mocks Charlie Kirk over assassination tribute song", "security", "Washington, D.C.", "United States of America", 0.1),
+      _ev("US Southern Command airstrike destroys cartel vessel in Eastern Pacific", "security", "Washington, D.C.", "United States of America", 0.5),
+      _ev("US military strike on alleged drug-smuggling boat kills two", "security", "Washington, D.C.", "United States of America", 2.0),
+      _ev("Trump threatens 50% tariffs on Canadian cars", "economy", "Washington, D.C.", "United States of America", 1.0)], 4, None,
+     "three DIFFERENT security stories at a capital + an economy one -> all four stay separate"),
 ]
 
 # the Live Wire must drop an admin's PERSONAL messages (greetings, sign-offs) but keep real news,

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.52"
+APP_VERSION = "1.4.53"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d54"   # d54: resweep so a truncated wire headline never ends on "and."/"…" (dangling connector
+_DATA_VER = "d55"   # d55: resweep so a CAPITAL seat no longer blind-merges — different security stories at
+                    #      Washington (a Hasan-Piker culture item, a SOUTHCOM strike, a drug-boat strike) were
+                    #      collapsing into one 19-source mega-dot. A capital is now excluded from co-location
+                    #      collapse; only shared CONTENT may fold two dots at a seat.
+                    # d54: resweep so a truncated wire headline never ends on "and."/"…" (dangling connector
                     #      trimmed), and summaries round-robin Groq+Gemini so more dots get a real brief.
                     # d53: resweep so the culture/entertainment fluff filter drops non-events (a "British
                     #      podcasters" NYT feature was a UK dot). Cache-hits summaries, no re-cost.
@@ -6218,7 +6222,8 @@ def _collapse_colocated(events, window_h=6):
         # fell back to 'Black Sea' (a resort strike + a 'Black Sea Petroleum' note) or to 'Southern Lebanon'
         # (two strikes on different villages) must NOT collapse into one dot.
         specific = (bool(pl) and pl != co and pl != _co_short(co)
-                    and not _is_water_place(pl) and not _is_area_place(pl))
+                    and not _is_water_place(pl) and not _is_area_place(pl)
+                    and not _is_capital_place(pl))   # a capital SEAT accumulates unrelated stories — never blind-merge there
         if specific:
             hit = None
             for ki in buckets.get(pl, []):
@@ -8324,6 +8329,15 @@ _CAPITAL_SEAT = {
     "Brazil": (-15.794, -47.882, "Brasilia"),
     "Hungary": (47.498, 19.040, "Budapest"),
 }
+# A CAPITAL is a SEAT where diverse, unrelated stories pile up — the leader-statement upgrade dots every
+# "Trump says…", "SOUTHCOM announces…" here, and the co-location collapse then blindly merged those that
+# happened to share a category. So a capital is EXCLUDED from `_collapse_colocated`: at a seat, only a real
+# same-event match (shared content, in _merge_same_event) may fold two dots together, never mere co-location.
+_CAPITAL_NAMES = {v[2].split(",")[0].strip().lower() for v in _CAPITAL_SEAT.values()}
+
+
+def _is_capital_place(place):
+    return bool(place) and place.split(",")[0].strip().lower() in _CAPITAL_NAMES
 
 
 def _is_policy_target(h, words):
