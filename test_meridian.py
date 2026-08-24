@@ -959,6 +959,18 @@ LEAN_CASES = [
 
 # (headline, url, should_be_dropped, why)
 # A routine international result is true but not world news; a final/title/medal/record IS. (title, keep?)
+# A climate/weather dot must be an EXTREME event, not a forecast or a rained-off match. (title, worthy?)
+CLIMATE_WORTHY_CASES = [
+    ("Cyclists run for cover as hailstorm forces La Vuelta stage cancellation", False),
+    ("Rain delays the third Test match in Manchester", False),
+    ("Storm cancels the season opener race", False),
+    ("Sunny weather expected across the region this weekend", False),
+    ("Hurricane makes landfall in Florida, thousands evacuated", True),
+    ("Earthquake kills 200 in Afghanistan", True),
+    ("Severe flooding submerges dozens of villages in Pakistan", True),
+    ("Record heatwave grips southern Europe as wildfires spread", True),
+]
+
 SPORTS_WORTHY_CASES = [
     ("Turkey beat Lithuania in Women's volleyball", False),
     ("Real Madrid beat Barcelona 2-1", False),
@@ -1000,6 +1012,12 @@ FLUFF_CASES = [
      "GUARD: a summit is a real event — 'to meet at summit' is NOT filtered"),
     ("Officials to speak at press conference on the overnight strike", "", False,
      "GUARD: a press conference is news, not a lecture"),
+    # An ART / PHOTO exhibition is the culture desk, not a world-news dot.
+    ("Denis Rouvre in Salvador: 43 Free Photographs on Climate", "", True,
+     "SHIPPED BUG: a photo exhibition at a cultural centre was a dot"),
+    ("National gallery opens major retrospective of the painter", "", True, "an art retrospective is not news"),
+    ("Satellite photographs show Russian troop buildup near the border", "", False,
+     "GUARD: 'photographs' in a real intel story is not an exhibition"),
     # A NEWSLETTER DIGEST joins unrelated stories (". And,/Also,/Meanwhile,") — not one event; it also
     # mis-pairs wire clips (a clip about one half matched the whole digest dot).
     ("Trump declares economic warfare on Iran. And, SCOTUS to rule on White House ballroom", "https://t.me/x/9", True,
@@ -1278,6 +1296,14 @@ CLEAN_HEADLINE_CASES = [
      "...and the dangling 'says video' callout is dropped with it"),
     ("New Colombia president orders migrant deportations says video bit.ly/4qyMxQB", "migrant deportations",
      "...leaving the actual news intact"),
+    # A long statement CHAR-truncated to ~200 must not end on a dangling connector. SHIPPED BUG (again): a
+    # Katz statement was cut to "…launching of kites and." — the length cut created a fresh dangling "and".
+    ("Israel's Minister of Defense, Israel Katz says Prime Minister Netanyahu and I have instructed the IDF to "
+     "adopt a policy of zero tolerance and zero containment toward the launching of kites and balloons from Gaza",
+     "!kites and", "the truncation must not leave a dangling 'kites and.'"),
+    ("Israel's Minister of Defense, Israel Katz says Prime Minister Netanyahu and I have instructed the IDF to "
+     "adopt a policy of zero tolerance and zero containment toward the launching of kites and balloons from Gaza",
+     "launching of kites", "...it ends cleanly on the content word"),
     ("Massive fire hits refinery in Rostov region - BBC News",
      "!BBC", "a multi-word outlet ('BBC News') byline is still stripped"),
     # SOURCE / SPEAKER ATTRIBUTION is CONTENT, not a byline — it must SURVIVE. SHIPPED BUG: TASS's
@@ -1375,6 +1401,15 @@ def main():
         ran[0] += 1
         if not ok:
             fails.append(("sports", title, keep, got, "major result -> keep; routine result -> drop"))
+        print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if keep else 'DROP'}) {title[:44]}")
+
+    print("\n=== CLIMATE WORTHINESS (only EXTREME weather reaches the map) ===")
+    for title, keep in CLIMATE_WORTHY_CASES:
+        got = app._climate_worthy(title)
+        ok = got == keep
+        ran[0] += 1
+        if not ok:
+            fails.append(("climate", title, keep, got, "extreme weather -> keep; forecast/rained-off match -> drop"))
         print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if keep else 'DROP'}) {title[:44]}")
 
     print("\n=== QUOTE IMPORTANCE (leader cards carry substance, not small talk) ===")
@@ -2561,7 +2596,7 @@ def main():
                       "the story's groups are defined; ordinary words never trip a definition"))
     print(f"  {'ok ' if _gloss_ok else 'FAIL'} {_terms1}")
 
-    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
+    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(CLIMATE_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1

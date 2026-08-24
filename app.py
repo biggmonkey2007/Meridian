@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.57"
+APP_VERSION = "1.4.58"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d59"   # d59: resweep so headlines lose bare short-links (bit.ly) + a "says video" callout and get
+_DATA_VER = "d60"   # d60: resweep so a length-truncated headline never ends on a dangling connector (the
+                    #      "…kites and." bug), routine weather (a rained-off race) and art/photo exhibitions
+                    #      drop off the map, and state-media dots carry their ownership tag. No re-summarize cost.
+                    # d59: resweep so headlines lose bare short-links (bit.ly) + a "says video" callout and get
                     #      even spacing/parentheses; a merge no longer glues two DIFFERENT statements into one
                     #      paragraph; a "to discuss … at a lecture" pre-event notice is dropped; "Jackson Hole"
                     #      dots Wyoming, not Jackson, Mississippi. Cache-hits summaries, no re-cost.
@@ -2956,6 +2959,8 @@ class Api:
                 cat = "sports"
             if cat == "sports" and not _sports_worthy(title):
                 continue
+            if cat == "climate" and not _climate_worthy(title, a.get("desc") or ""):
+                continue                                    # weather is a dot only when it's EXTREME (not a rained-off race)
             # IMPORTANCE GATE. The world map is for news that is COUNTRY-, REGION- or WORLD-changing — a war
             # move, a leader's consequential statement, a mass-casualty event — not every true-but-minor local
             # story ("illegal sand extraction erodes a beach"), and not a broad analysis with no place to pin.
@@ -4581,6 +4586,37 @@ def _sports_worthy(title):
     beat Lithuania in women's volleyball') or transfer/preview chatter is true but not world news, so a
     bare 'beat/won' no longer qualifies; the headline must name the big stage or prize."""
     return bool(_SPORTS_MAJOR.search(title or ""))
+
+
+# A CLIMATE/weather dot must be an EXTREME event, not the daily forecast or a rained-off match. SHIPPED BUG:
+# "hailstorm forces La Vuelta stage cancellation" was a dot — weather affecting a bike race is not world news.
+_CLIMATE_DISASTER = re.compile(
+    r"\b(kill\w*|dead|death\w*|dies|died|fatal\w*|missing|injur\w*|hurt|trapp\w*|strand\w*|displac\w*|"
+    r"homeless|evacuat\w*|rescu\w*|destroy\w*|devastat\w*|damag\w*|flatten\w*|submerg\w*|washed away|"
+    r"collaps\w*|emergency|disaster|catastroph\w*|deadly|record[-\s]?(?:breaking|high|low)|historic|"
+    r"unprecedented|state of emergency|makes? landfall|erupt\w*|eruption|tsunami|magnitude|"
+    r"cut off|without power|power outage|wildfire\w*\s+(?:spread|rage|burn|engulf)|"
+    r"thousands|millions|hundreds)\b", re.I)
+_CLIMATE_STOP = (r"cancel\w*|cancellation|postpon\w*|postponement|delay\w*|suspend\w*|suspension|halt\w*|"
+                 r"abandon\w*|abandonment|disrupt\w*|wash(?:ed)?[-\s]?out|washout|call(?:ed)?\s+off")
+_CLIMATE_EVENT = (r"match|matches|race|races|game|games|stage|event|tournament|fixture|flight|festival|"
+                  r"concert|parade|ceremony|final|round|play|season|schedule")
+_CLIMATE_TRIVIAL = re.compile(
+    # a weather-forced cancellation/delay of an EVENT, in EITHER order ("stage cancellation" / "cancels race")
+    r"\b(?:" + _CLIMATE_STOP + r")\b[^.\n]{0,45}?\b(?:" + _CLIMATE_EVENT + r")\b"
+    r"|\b(?:" + _CLIMATE_EVENT + r")\b[^.\n]{0,25}?\b(?:" + _CLIMATE_STOP + r")\b"
+    # ...or a plain forecast / routine weather note
+    r"|\b(?:rain|hail|snow|wind|heat|cold|weather|fog|frost|sunshine|shower\w*|breeze|humid\w*)\b"
+    r"[^.\n]{0,30}?\b(?:forecast|expected|advisory|to hit|to bring|in store|ahead|likely)\b", re.I)
+
+
+def _climate_worthy(title, desc=""):
+    """A climate/weather story earns a map dot only when it is an EXTREME event — casualties, destruction,
+    evacuation, an emergency, a record/landfall. A rained-off match or a routine forecast is not world news."""
+    t = (title or "") + " " + (desc or "")
+    if _CLIMATE_DISASTER.search(t):
+        return True
+    return not _CLIMATE_TRIVIAL.search(t)
 # Features, op-eds, documentaries, listicles and quizzes are not events — they make dots that show nothing.
 # The article's URL SECTION is the most reliable signal (an Al Jazeera "featured-documentaries" piece is
 # never breaking news), so block on that first. Note /video/ alone is NOT fluff — France24 files real news
@@ -4628,6 +4664,12 @@ _FLUFF_PAT = re.compile(
     r"smash hit|streaming (?:hit|sensation|giant)|hit (?:show|series|podcast|album|single|movie|film)|"
     r"binge-?watch|fan-?favou?rite|goes? viral|viral (?:video|clip|moment|sensation)|"
     r"dating app|horoscope|zodiac|makeover|recipe)\b|"
+    # ART / EXHIBITION listings are the culture desk, not a world-news dot. SHIPPED BUG: "Denis Rouvre in
+    # Salvador: 43 Free Photographs on Climate" (a photo show at a cultural centre) was a dot.
+    r"\b(?:art\s+(?:exhibition|exhibit|show|fair|installation|festival|biennale)|photo(?:graph)?\s+exhibition|"
+    r"exhibition\s+(?:opens|runs|features|of)|retrospective|vernissage|gallery\s+(?:show|opening)|"
+    r"on\s+(?:display|show)\s+at|unveils?\s+(?:a\s+)?(?:mural|statue|monument|sculpture|artwork))\b|"
+    r"\b\d+\s+(?:free\s+)?photographs?\b|"                     # "43 Free Photographs" -> a photo exhibition, not news
     # PRE-EVENT ANNOUNCEMENT: "X to discuss/speak at a lecture/webinar/panel" — nothing has HAPPENED, it's a
     # notice that people will talk later. SHIPPED BUG: "Sanwo-Olu, Lai Mohammed… to discuss 2027 elections at
     # 7th Freedom Online lecture" was a dot. A real summit/press conference names an outcome, not a schedule.
@@ -5625,6 +5667,12 @@ def _is_outlet_byline(tail):
 
 _DANGLE_TAIL_RE = re.compile(r"[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|"
                              r"including|during|amid|plus|versus|vs)\s*[.…]*\s*$", re.I)
+# For a mid-sentence CHAR truncation (not a natural end) we can also drop trailing PREPOSITIONS — a cut on
+# "…toward the" or "…launching of" is unambiguously incomplete. Repeats so "…toward the" -> "…" fully.
+_TRUNC_DANGLE_RE = re.compile(
+    r"(?:[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|of|to|in|on|at|for|with|from|by|"
+    r"into|onto|upon|over|under|toward|towards|against|about|as|per|via|amid|between|among|including|during))+"
+    r"\s*[.…]*\s*$", re.I)
 
 
 # ONE tidy pass shared by headlines and briefs: no space before punctuation, a space after a glued comma/
@@ -5667,13 +5715,14 @@ def _clean_headline(t):
     if len(t) <= 200:
         return t
     # NEVER a mid-word chop (shipped "…and Western offici"): trim to the last clause break, else the last
-    # whole word, within the limit, and mark it continued with "…".
+    # whole word, within the limit. The CUT itself can land on a dangling connector ("…of kites and",
+    # "…toward the") — SHIPPED BUG: a long Katz statement truncated to "…launching of kites and." — so drop
+    # any trailing conjunction/preposition/article so the truncated headline still reads as a finished thought.
     seg = t[:200]
     mcl = max(seg.rfind(", "), seg.rfind("; "))
-    if mcl >= 100:
-        return seg[:mcl].rstrip(" ,;:–—-.") + "."
-    sp = seg.rfind(" ")
-    return (seg[:sp] if sp >= 100 else seg).rstrip(" ,;:–—-.") + "."
+    cut = seg[:mcl] if mcl >= 100 else (seg[:seg.rfind(" ")] if seg.rfind(" ") >= 100 else seg)
+    cut = _TRUNC_DANGLE_RE.sub("", cut.rstrip(" ,;:–—-.")).rstrip(" ,;:–—-.")
+    return cut + "."
 
 
 def _good_img(u):

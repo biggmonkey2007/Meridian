@@ -5566,6 +5566,7 @@ function applyWorldEvents(items){
       place:String(it.place||it.country||"").slice(0,90),
       country:String(it.country||"").slice(0,60),
       geo_confidence:String(it.geo_confidence||""),   // 'low' -> UI marks the dot as an approximate area
+      srcnote:String(it.srcnote||""),                 // e.g. "Russian state media" — a subtle ownership/bias tag by the source
       reportedAt:Date.now()-hrs*3600000, occurredAt:Date.now()-hrs*3600000,   // absolute, off the live clock so age (and the 24h expiry) stays correct however long the app is open
       heat:4, src: it.source?[String(it.source)]:[],
       body:"", facts:[], context:"", views:[], outlook:"",
@@ -5617,6 +5618,7 @@ function _mkStarEvent(it, idx){
     place:String(it.place||it.country||"").slice(0,90),
     country:String(it.country||"").slice(0,60),
     geo_confidence:String(it.geo_confidence||""),   // 'low' -> UI marks the dot as an approximate area
+    srcnote:String(it.srcnote||""),                 // e.g. "Russian state media" — a subtle ownership/bias tag by the source
     reportedAt:Date.now()-hrs*3600000, occurredAt:Date.now()-hrs*3600000,
     heat:4, src: it.source?[String(it.source)]:[],
     body:"", facts:[], context:"", views:[], outlook:"",
