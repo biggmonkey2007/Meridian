@@ -113,6 +113,9 @@ GEO_CASES = [
      "...never the attacker's country"),
     ("Russia's attack on Zaporizhzhia kills nine", "", "Zaporizhzhia",
      "GUARD: 'Russia's ATTACK' (no strike verb before Russia) still sinks the actor -> Zaporizhzhia"),
+    # "Jackson Hole" is the Fed's Wyoming symposium — bare "Jackson" matched the bigger Jackson, MISSISSIPPI.
+    ("Bond market anxiety raises stakes for Warsh's debut Jackson Hole speech", "", "Jackson Hole",
+     "SHIPPED BUG: dotted Jackson, Mississippi (~1,800 km off) instead of Jackson Hole, Wyoming"),
     # "Republic" is a word in dozens of country names, never a scene on its own. SHIPPED BUG: a Türkiye
     # government statement dotted "Republic, Missouri". Vetoed as a bare town -> the statement dots Turkey.
     ("The Republic of Turkiye Directorate of Communications: The Israeli PM Office's rant targeting our "
@@ -989,6 +992,14 @@ FLUFF_CASES = [
      "GUARD: real hard news must NEVER be dropped by the culture filter"),
     ("Historians uncover mass grave from the civil war", "", False,
      "GUARD: 'historians' is not automatically culture fluff — a real discovery stays"),
+    # A PRE-EVENT talk announcement is not a dot: nothing has happened, people will TALK later.
+    ("Sanwo-Olu, Lai Mohammed, Gbenga Daniel to discuss 2027 elections, insecurity at 7th Freedom Online lecture",
+     "", True, "SHIPPED BUG: a 'to discuss at a lecture' notice was a dot"),
+    ("Analysts to speak on the economy at a fintech webinar", "", True, "a webinar talk preview"),
+    ("Trump and Putin to meet at Alaska summit on Ukraine", "", False,
+     "GUARD: a summit is a real event — 'to meet at summit' is NOT filtered"),
+    ("Officials to speak at press conference on the overnight strike", "", False,
+     "GUARD: a press conference is news, not a lecture"),
     # A NEWSLETTER DIGEST joins unrelated stories (". And,/Also,/Meanwhile,") — not one event; it also
     # mis-pairs wire clips (a clip about one half matched the whole digest dot).
     ("Trump declares economic warfare on Iran. And, SCOTUS to rule on White House ballroom", "https://t.me/x/9", True,
@@ -1260,6 +1271,13 @@ CLEAN_HEADLINE_CASES = [
      "GUARD: a legit headline ending in a stranded preposition is NEVER trimmed"),
     ("Russia and Ukraine agree to a ceasefire", "Russia and Ukraine",
      "GUARD: a mid-sentence 'and' is never touched"),
+    # A bare short-link stapled to a headline ("… says video bit.ly/4qyMxQB") is furniture, not news.
+    ("New Colombia president orders migrant deportations says video bit.ly/4qyMxQB", "!bit.ly",
+     "SHIPPED BUG: a bare bit.ly link stayed in the headline"),
+    ("New Colombia president orders migrant deportations says video bit.ly/4qyMxQB", "!video",
+     "...and the dangling 'says video' callout is dropped with it"),
+    ("New Colombia president orders migrant deportations says video bit.ly/4qyMxQB", "migrant deportations",
+     "...leaving the actual news intact"),
     ("Massive fire hits refinery in Rostov region - BBC News",
      "!BBC", "a multi-word outlet ('BBC News') byline is still stripped"),
     # SOURCE / SPEAKER ATTRIBUTION is CONTENT, not a byline — it must SURVIVE. SHIPPED BUG: TASS's

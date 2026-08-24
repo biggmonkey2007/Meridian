@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.56"
+APP_VERSION = "1.4.57"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d58"   # d58: resweep so a currency prefix isn't the country (US$48,500 no longer dots the US),
+_DATA_VER = "d59"   # d59: resweep so headlines lose bare short-links (bit.ly) + a "says video" callout and get
+                    #      even spacing/parentheses; a merge no longer glues two DIFFERENT statements into one
+                    #      paragraph; a "to discuss … at a lecture" pre-event notice is dropped; "Jackson Hole"
+                    #      dots Wyoming, not Jackson, Mississippi. Cache-hits summaries, no re-cost.
+                    # d58: resweep so a currency prefix isn't the country (US$48,500 no longer dots the US),
                     #      a strike hitting "X's sites" dots X not the attacker, and US-side reports of one
                     #      story re-consolidate on Washington. Cache-hits summaries, no re-cost.
                     # d57: resweep so an admin GAMBLING/betting-tip post (a bet slip, "my money is on…") is
@@ -1098,7 +1102,17 @@ def _clean_channel(name):
 # Wire-tweet accounts (Insider Paper, etc.) staple promo onto a post: a leading "BREAKING -", a trailing
 # link, "READ: <url>", "Follow @Handle for more news". A headline — and its summary — is a sentence, not a
 # call to action. Strip it from BOTH so a link or a "go follow @them" never becomes a dot or a story body.
-_PROMO_URL    = re.compile(r"(?:https?://|www\.)\S+|\bt\.co/\S+", re.I)
+_PROMO_URL    = re.compile(
+    r"(?:https?://|www\.)\S+"
+    # BARE short-links a wire post staples on ("… says video bit.ly/4qyMxQB") have no http/www but are still a
+    # link, not news — strip a known URL-shortener domain + its path. Word-bounded so real prose is untouched.
+    r"|\b(?:bit\.ly|tinyurl\.com|goo\.gl|ow\.ly|buff\.ly|is\.gd|cutt\.ly|rb\.gy|shorturl\.at|t\.co|t\.me|"
+    r"dlvr\.it|trib\.al|wp\.me|fb\.me|amzn\.to|youtu\.be|rebrand\.ly|shorte\.st|adf\.ly)/\S+", re.I)
+# A trailing MEDIA CALLOUT the link hung off of ("… deportations says video", "watch the footage") is furniture
+# once the link is gone — drop it so the headline ends on the news.
+_MEDIA_TAIL   = re.compile(
+    r"\s*[-–—,:;]?\s*(?:says?|watch|see|view|full|link)?\s*(?:the\s+)?"
+    r"(?:video|footage|clip|photos?|images?|pics?|thread|link)\s*[:.\s]*$", re.I)
 _PROMO_LEAD   = re.compile(r"^\s*(?:breaking|just\s?in|update|developing|exclusive|alert|flash|watch|new|now|urgent|live|hot|latest)\s*[-:–—]+\s*", re.I)
 # Aggregator BOILERPLATE that is not a story at all — Google News' channel blurb ("Comprehensive up-to-date
 # news coverage, aggregated from sources all over the world by Google News") lands as an article's og:desc and
@@ -1227,6 +1241,7 @@ def _sharpen_desc(text, n=460):
     t = _TRAIL_OUTLET.sub("", t).strip(" ,;:–—-")   # "…injures 6 AP News." -> drop a bare trailing outlet byline
     t = _start_at_sentence(t)                        # never open on a lower-case sentence fragment
     t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.)
+    t = _tidy_spacing(t)                             # even spacing: after a glued comma/period, around parentheses
     t = _to_last_sentence(t)                         # a mid-sentence truncation -> cut back to the last WHOLE sentence
     return _end_stop(_clip_sentence(t, n))           # then length-clip; end on a COMPLETE sentence, never mid-thought
 
@@ -4613,6 +4628,13 @@ _FLUFF_PAT = re.compile(
     r"smash hit|streaming (?:hit|sensation|giant)|hit (?:show|series|podcast|album|single|movie|film)|"
     r"binge-?watch|fan-?favou?rite|goes? viral|viral (?:video|clip|moment|sensation)|"
     r"dating app|horoscope|zodiac|makeover|recipe)\b|"
+    # PRE-EVENT ANNOUNCEMENT: "X to discuss/speak at a lecture/webinar/panel" — nothing has HAPPENED, it's a
+    # notice that people will talk later. SHIPPED BUG: "Sanwo-Olu, Lai Mohammed… to discuss 2027 elections at
+    # 7th Freedom Online lecture" was a dot. A real summit/press conference names an outcome, not a schedule.
+    r"\bto\s+(?:discuss|debate|deliberate(?:\s+on)?|speak\s+(?:on|about|at)|present|headline|"
+    r"deliver\s+(?:a\s+)?(?:lecture|talk|keynote|address|speech))\b[^.\n]{0,90}?"
+    r"\bat\b[^.\n]{0,50}?\b(?:lecture|webinar|seminar|panel|forum|symposium|colloquium|"
+    r"masterclass|fireside|round\s?table|expo|book fair)\b|"
     r"\?\s*$"                                       # question headlines are debates, not events
     r")")
 
@@ -5605,11 +5627,26 @@ _DANGLE_TAIL_RE = re.compile(r"[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|wh
                              r"including|during|amid|plus|versus|vs)\s*[.…]*\s*$", re.I)
 
 
+# ONE tidy pass shared by headlines and briefs: no space before punctuation, a space after a glued comma/
+# period, a space on the OUTSIDE of parentheses (never the inside), and collapsed runs. "text(approx US$5),He
+# said" -> "text (approx US$5), He said". Numbers ("1,574") and abbreviations ("U.S.") are left alone.
+def _tidy_spacing(t):
+    t = t or ""
+    t = re.sub(r"\s+([,.;:!?%])", r"\1", t)                      # no space before punctuation
+    t = re.sub(r"([^\s\d]),(?=[A-Za-z])", r"\1, ", t)          # "positions,militants" -> "positions, militants" (never inside "1,574")
+    t = re.sub(r"([a-z]{2,})\.(?=[A-Z][a-z])", r"\1. ", t)      # "status.He" -> "status. He" (sentence glued)
+    t = re.sub(r"([A-Za-z0-9\"'])\(", r"\1 (", t)               # "word(" -> "word ("
+    t = re.sub(r"\)([A-Za-z0-9])", r") \1", t)                  # ")word" -> ") word"
+    t = re.sub(r"\(\s+", "(", t)                                # "( word" -> "(word"
+    t = re.sub(r"\s+\)", ")", t)                                # "word )" -> "word)"
+    return re.sub(r"\s{2,}", " ", t).strip()
+
+
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
-    t = _strip_promo(t)                                          # bare links, "Follow @x for more news", @handles
-    t = re.sub(r"\s+([,.;:!?])", r"\1", t)                       # GDELT spaces before punctuation
-    t = re.sub(r"([a-z]),([A-Za-z])", r"\1, \2", t)             # "positions,militants" -> "positions, militants"
+    t = _strip_promo(t)                                          # bare links (incl. bit.ly), "Follow @x", @handles
+    t = _MEDIA_TAIL.sub("", t).strip()                          # "… deportations says video" (link already gone) -> drop the callout
+    t = _tidy_spacing(t)                                         # spaces, commas, parentheses
     # strip a trailing " - Outlet" BYLINE (Google-News aggregation furniture) whenever a REAL headline
     # (>= 20 chars) remains before the dash — so a short "UAE says … at it - Reuters" loses its byline too.
     # But a trailing "— X" is ONLY a byline when X is a PUBLISHER; a SOURCE/SPEAKER attribution is part of the
@@ -6076,9 +6113,14 @@ def _absorb_source(primary, dup):
     for ds in (dup.get("sources") or [_src_of(dup)]):     # carry the dup's whole citation list (chained merges)
         if not any(s.get("url") == ds.get("url") and s.get("name") == ds.get("name") for s in srcs):
             srcs.append(ds)
+    # FILL an EMPTY primary sum from the dup; NEVER concatenate. SHIPPED BUG: an Iran army-chief statement
+    # ("Iran is not a testing ground…") got a SECOND, different statement ("countries allowing money laundering
+    # removed from the US dollar system") glued onto it from the other source — a conflation of two separate
+    # events into one paragraph. The primary keeps ITS OWN text; the AI brief (which sees every cited source's
+    # article) does any real synthesis, cleanly.
     extra = _strip_promo(dup.get("sum") or "")
-    if extra and extra[:40].lower() not in (primary.get("sum") or "").lower():
-        primary["sum"] = _clip(((primary.get("sum") or "") + " " + extra).strip(), 900)
+    if extra and not (primary.get("sum") or "").strip():
+        primary["sum"] = _clip(extra, 900)
     if not primary.get("image") and dup.get("image"):
         primary["image"] = dup["image"]
     # the dot stays FRESH: its timestamp tracks the most recent update, even though the primary keeps the
@@ -6952,6 +6994,9 @@ _MONTHS = {"january", "february", "march", "april", "may", "june", "july",
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
 _CASED_PLACE_WORDS = {"polish", "china", "turkey", "guinea", "chad"}
 _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
+    # Jackson Hole, Wyoming — home of the Fed's annual economic symposium, so it recurs in markets news. The
+    # gazetteer matched bare "Jackson" to the bigger Jackson, MISSISSIPPI (~1,800 km off). Pin the real valley.
+    "jackson hole": (43.48, -110.76, "United States of America"),
     # Gulf ENERGY hubs the gazetteer misses but that recur constantly in oil/gas strike news — without these
     # a "fire at Jubail" story drops on the country centroid (Riyadh), miles from the actual coast.
     "jubail": (27.00, 49.66, "Saudi Arabia"), "al jubail": (27.00, 49.66, "Saudi Arabia"),

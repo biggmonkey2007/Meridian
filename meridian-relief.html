@@ -1468,7 +1468,12 @@ function tidyLead(s){
   const OUT="AP News|Associated Press|Reuters|BBC(?: News)?|CNN|DW|Deutsche Welle|AFP|Bloomberg|Al ?Jazeera|Fox News|NBC News|CBS News|ABC News|Sky News|Anadolu|TASS|RT|Xinhua|CGTN|NPR|PBS|Politico|Axios|The Guardian|New York Times|NYT|Washington Post|WSJ|Times of Israel|The Hindu|Press TV|Kyodo|Yonhap|SCMP|South China Morning Post";
   s=s.replace(new RegExp("\\s*[.,;:–—-]*\\s*(?:"+OUT+")\\s+has\\s+more\\b[.\\s]*","gi"),". ");   // inline "DW has more."
   s=s.replace(new RegExp("\\s*[\\s,.;:–—-]+(?:"+OUT+")\\s*\\.?\\s*$","i"),"");                    // trailing byline
-  s=s.replace(/\s+([.,;:!?])/g,"$1").replace(/\.\s*\.\s*/g,". ").replace(/\s{2,}/g," ").trim();
+  // even spacing (mirrors the backend _tidy_spacing): no space before punctuation, a space after a glued
+  // comma/period, a space on the OUTSIDE of parentheses only. Numbers ("1,574") and abbreviations ("U.S.") stay.
+  s=s.replace(/(?:https?:\/\/|www\.)\S+|\b(?:bit\.ly|tinyurl\.com|t\.co|t\.me|goo\.gl|ow\.ly|buff\.ly)\/\S+/gi," ");
+  s=s.replace(/\s+([.,;:!?%])/g,"$1").replace(/([^\s\d]),(?=[A-Za-z])/g,"$1, ").replace(/([a-z]{2,})\.(?=[A-Z][a-z])/g,"$1. ");
+  s=s.replace(/([A-Za-z0-9"'])\(/g,"$1 (").replace(/\)([A-Za-z0-9])/g,") $1").replace(/\(\s+/g,"(").replace(/\s+\)/g,")");
+  s=s.replace(/\.\s*\.\s*/g,". ").replace(/\s{2,}/g," ").trim();
   return s;
 }
 // A teaser truncated mid-ATTRIBUTION reads badly ("…if the suspect is convicted, The Telegraph has…",
