@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.53"
+APP_VERSION = "1.4.54"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d55"   # d55: resweep so a CAPITAL seat no longer blind-merges — different security stories at
+_DATA_VER = "d56"   # d56: resweep so a maritime strike dots the WATER (Houthi strike on a Saudi tanker "in the
+                    #      Red Sea" -> the Red Sea, not Sana'a) — which also lets it MERGE with the other Red-Sea
+                    #      tanker-strike dot. Cache-hits summaries, no re-cost.
+                    # d55: resweep so a CAPITAL seat no longer blind-merges — different security stories at
                     #      Washington (a Hasan-Piker culture item, a SOUTHCOM strike, a drug-boat strike) were
                     #      collapsing into one 19-source mega-dot. A capital is now excluded from co-location
                     #      collapse; only shared CONTENT may fold two dots at a seat.
@@ -9615,6 +9618,28 @@ def _geo_confidence(loc):
     return "high"
 
 
+_MARITIME_VESSEL = re.compile(r"\b(?:(?:oil\s+)?tankers?|ships?|vessels?|boats?|frigates?|destroyers?|"
+                              r"warships?|freighters?|cargo\s+ship|container\s+ship|dhows?|"
+                              r"naval\s+vessel\w*|fleet)\b", re.I)
+_MARITIME_ACT = re.compile(r"\b(strikes?|struck|strike|attack\w*|hit|hits|target\w*|sink|sank|sunk|"
+                           r"downed|missile|drone|torpedo\w*|seiz\w*|board\w*|ablaze|set\s+ablaze|on\s+fire)\b", re.I)
+
+
+def _maritime_water(text):
+    """A strike/attack on a SHIP/TANKER/VESSEL happens AT SEA: if the story names a water, that water is the
+    scene — the ship's location — beating the actor's country or capital. "Houthis claim strikes on a Saudi
+    oil tanker in the Red Sea" dots the RED SEA, not Sana'a. Returns the water NAME to ground, or ''."""
+    t = text or ""
+    if not (_MARITIME_VESSEL.search(t) and _MARITIME_ACT.search(t)):
+        return ""
+    low = t.lower()
+    best = ""
+    for name in _WATER_NAMES:
+        if len(name) > len(best) and re.search(r"\b" + re.escape(name) + r"\b", low):
+            best = name
+    return best
+
+
 def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     """The location for a dot. RULES first (free, deterministic, tested); only when they can't pin a
     specific place does the FREE AI read the whole story and name it — grounded back through the SAME
@@ -9630,6 +9655,17 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     r = _geolocate(title, sourcecountry, desc, url)
     ment_list = _context_mentions((title or "") + " " + (desc or ""), url)
     ment = {co for (co, _t) in ment_list}
+    # MARITIME STRIKE -> the WATER. A strike on a ship/tanker/vessel happens AT SEA, so if the story names a
+    # water it is the scene — overriding the actor's country/capital AND a competing land target. SHIPPED BUG:
+    # "Yemen's Houthis claim strikes on a Saudi oil tanker in the Red Sea and troop concentrations in eastern
+    # Yemen" dotted Sana'a (the AI mistook the strike-CLAIM for a statement); it belongs on the RED SEA — which
+    # also lets it MERGE with the other Red-Sea tanker-strike dot instead of standing apart.
+    _mw = _maritime_water((title or "") + ". " + (desc or ""))
+    if _mw:
+        _wr = _geolocate(_mw, "", _mw, "")
+        if _wr and _is_water_place(_wr[2]):
+            _mco = [c for (c, _t) in ment_list if c in COUNTRY_COORDS]   # fly the story's own flag over the water
+            return (_wr[0], _wr[1], _wr[2], _mco[0] if _mco else _wr[3])
     # LEADER / OFFICIAL STATEMENT -> the CAPITAL. A quote, threat or ruling with no specific scene resolves to
     # a bare country centroid, but officials SPEAK from the capital — so pin it there (Putin -> Moscow,
     # Zelensky -> Kyiv): a specific dot the reader can place, and its OWN dot (statements are 'politics', which

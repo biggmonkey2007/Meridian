@@ -2209,6 +2209,13 @@ def main():
         "Putin says Russian forces captured Avdiivka in Donetsk region", "", "", allow_ai=False)[2] or "")))
     _lg_fails.append(("capital-not-for-strike", "Moscow" not in (app._locate(
         "Russian forces shell Kharkiv overnight", "", "", allow_ai=False)[2] or "")))
+    # MARITIME STRIKE -> the WATER (the ship's location), overriding the actor's country/capital — so it also
+    # co-locates with, and merges into, the other tanker-strike dot instead of standing apart on Sana'a.
+    _lg_fails.append(("maritime-water", "Red Sea" in (app._locate(
+        "Yemen's Houthis claim strikes on Saudi oil tanker, troop concentrations", "",
+        "targeting a Saudi oil tanker in the Red Sea and troop concentrations in eastern Yemen", allow_ai=False)[2] or "")))
+    _lg_fails.append(("maritime-guard-land", "Samara" in (app._locate(
+        "Ukrainian drone strikes an oil refinery in Samara", "", "", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2528,7 +2535,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 10   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital
+             + 12   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
