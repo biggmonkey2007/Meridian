@@ -951,9 +951,28 @@ SPORTS_WORTHY_CASES = [
     ("Kenya sets new world record in the marathon", True),
 ]
 
+# A leader card should carry IMPORTANT quotes, not personal small talk. (quote, is_important?)
+QUOTE_IMPORTANT_CASES = [
+    ("I Know Rumen Radev Well", False),          # SHIPPED: this led a leader card — tells a reader nothing
+    ("Thank you all for the warm welcome", False),
+    ("I like the idea", False),
+    ("We will retaliate against any attack on our territory", True),
+    ("Russia must withdraw all its troops immediately", True),
+    ("The ceasefire agreement will hold despite the provocations", True),
+]
+
 FLUFF_CASES = [
     ("New Scholarships. New Programs. Your Next Step.", "https://toi.li/5Jd4WB", True,
      "SHIPPED BUG: sponsored content sat on the map as an Israel dot — an advert has no event"),
+    # CULTURE / ENTERTAINMENT features are not world-news dots. SHIPPED BUG: a NYT podcast feature was a UK dot.
+    ("How Two British Historians Made a Smash Hit Podcast", "", True,
+     "a podcast culture feature is the arts desk, not a located world-news event"),
+    ("Marvel blockbuster smashes box office records worldwide", "", True, "entertainment, not a map event"),
+    ("Celebrity chef's new memoir goes viral", "", True, "celebrity/culture human-interest"),
+    ("Ukraine downs 97 of 127 Russian drones overnight", "", False,
+     "GUARD: real hard news must NEVER be dropped by the culture filter"),
+    ("Historians uncover mass grave from the civil war", "", False,
+     "GUARD: 'historians' is not automatically culture fluff — a real discovery stays"),
     # A NEWSLETTER DIGEST joins unrelated stories (". And,/Also,/Meanwhile,") — not one event; it also
     # mis-pairs wire clips (a clip about one half matched the whole digest dot).
     ("Trump declares economic warfare on Iran. And, SCOTUS to rule on White House ballroom", "https://t.me/x/9", True,
@@ -1302,6 +1321,15 @@ def main():
         if not ok:
             fails.append(("sports", title, keep, got, "major result -> keep; routine result -> drop"))
         print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if keep else 'DROP'}) {title[:44]}")
+
+    print("\n=== QUOTE IMPORTANCE (leader cards carry substance, not small talk) ===")
+    for q, keep in QUOTE_IMPORTANT_CASES:
+        got = app._quote_important(q)
+        ok = got == keep
+        ran[0] += 1
+        if not ok:
+            fails.append(("quote", q, keep, got, "important statement -> keep; personal small talk -> drop"))
+        print(f"  {'ok ' if ok else 'FAIL'} {'KEEP' if got else 'DROP'} (want {'KEEP' if keep else 'DROP'}) {q[:44]}")
 
     print("\n=== GEOLOCATION (article URL as a country hint) ===")
     for title, desc, url, want, why in GEO_URL_CASES:
@@ -2468,7 +2496,7 @@ def main():
                       "the story's groups are defined; ordinary words never trip a definition"))
     print(f"  {'ok ' if _gloss_ok else 'FAIL'} {_terms1}")
 
-    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES)
+    total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
              + len(SAME_PERSON_CASES) + len(DEAD_LEADER_CASES) + len(TG_CLEAN_CASES) + 1

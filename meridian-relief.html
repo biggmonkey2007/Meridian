@@ -3997,16 +3997,18 @@ async function setupStatements(name){
     if(api.official_releases){
       const rel=await api.official_releases(name);
       if(activeCountry!==name || !document.getElementById("ctry-stmts")) return;
-      if(rel && rel.curated && rel.items && rel.items.length){
+      // ONLY items that carry the actual STATEMENT TEXT — a bare headline + "read the statement" link is
+      // nonsense (user), so those are dropped. Each kept item shows the verbatim quote with a Read-more toggle.
+      const relItems=((rel&&rel.items)||[]).filter(it=>(it.summary||"").trim().length>0);
+      if(rel && rel.curated && relItems.length){
         html+=`<div class="st-official"><div class="st-off-h">Official statements · ${esc(rel.source||"")}<span class="st-verbatim">✓ verbatim</span></div>`+
-          rel.items.map(it=>{
+          relItems.map(it=>{
             const q=(it.summary||"").trim();
             const long=q.length>240;   // clamp a long transcript excerpt; a Read more toggle expands it
             return `<div class="st-off-item"><div class="st-off-top"><span class="st-off-t">${esc(it.title)}</span>${it.date?`<span class="st-off-d">${esc(relDate(it.date))}</span>`:""}</div>`
-              +(q?`<div class="st-off-q${long?" clamp":""}">${esc(q)}</div>`
-                  +`${long?`<button class="st-off-more" data-more>Read more</button>`:""}`
-                  +`<a class="st-off-link" href="${esc(it.link)}" target="_blank" rel="noopener">full statement →</a>`
-                :`<a class="st-off-link" href="${esc(it.link)}" target="_blank" rel="noopener">read the statement →</a>`)
+              +`<div class="st-off-q${long?" clamp":""}">${esc(q)}</div>`
+              +`${long?`<button class="st-off-more" data-more>Read more</button>`:""}`
+              +`<a class="st-off-link" href="${esc(it.link)}" target="_blank" rel="noopener">full statement →</a>`
               +`</div>`;
           }).join("")+
           `<div class="st-off-note">Straight from ${esc(rel.source||"the government")} — verbatim from its own feed.</div></div>`;

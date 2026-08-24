@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.50"
+APP_VERSION = "1.4.51"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d52"   # d52: resweep to UNDO the mega-merge — a physical event no longer vacuums co-located
+_DATA_VER = "d53"   # d53: resweep so the culture/entertainment fluff filter drops non-events (a "British
+                    #      podcasters" NYT feature was a UK dot). Cache-hits summaries, no re-cost.
+                    # d52: resweep to UNDO the mega-merge — a physical event no longer vacuums co-located
                     #      STATEMENTS (a Kyiv drone dot had absorbed 24 "Zelensky says…" posts + wrong sources);
                     #      _collapse_colocated now needs BOTH dots physical. Cache-hits summaries, no re-cost.
                     # d51: resweep so leader/official STATEMENTS dot their CAPITAL (Putin -> Moscow), the
@@ -1992,11 +1994,11 @@ class Api:
                                 "ts": e.get("timestamp") or e.get("release_timestamp")})
             out.sort(key=lambda c: (c.get("ts") or 0), reverse=True)
             _now = time.time()
-            # RECENT footage only: prefer the last WEEK, widen to a MONTH at most. A clip we can't date is
+            # RECENT footage only: prefer the last COUPLE DAYS, widen to a WEEK at most. A clip we can't date is
             # excluded (we can't prove it's recent), and we NEVER fall back to older videos — a person with no
-            # recent clips shows NONE rather than years-old footage (a 2022 NYSE panel under a live leader).
-            out = ([c for c in out if c.get("ts") and (_now - c["ts"]) < 8 * 86400]
-                   or [c for c in out if c.get("ts") and (_now - c["ts"]) < 31 * 86400])
+            # recent clips shows NONE rather than stale footage (the shipped 28-day-old "bombshell" clip).
+            out = ([c for c in out if c.get("ts") and (_now - c["ts"]) < 3 * 86400]
+                   or [c for c in out if c.get("ts") and (_now - c["ts"]) < 7 * 86400])   # last couple days, a week at most — never a 28-day-old clip
             res = {"clips": out[:n]}
             try:
                 json.dump(res, open(cache, "w", encoding="utf-8"))
@@ -2619,7 +2621,7 @@ class Api:
                 for it in raw:
                     sp, q = _analyze_headline(it.get("title", ""), nm)
                     it["speaker"] = sp
-                    it["quote"] = q
+                    it["quote"] = q if _quote_important(q) else ""   # drop trivial small talk ("I know X well")
                 # order: the official actually quoted/speaking first, then other recent coverage
                 raw.sort(key=lambda it: (2 if it["quote"] and it["speaker"] else 1 if it["speaker"] else 0), reverse=True)
                 people.append({"name": nm, "items": raw[:3], "any": len(raw)})
@@ -3695,6 +3697,29 @@ def _analyze_headline(title, name):
     return speaker, (qm.group(1).strip() if qm else "")
 
 
+# An IMPORTANT quote carries policy/consequence — not personal small talk. SHIPPED: a leader's card led with
+# Lavrov's "I Know Rumen Radev Well", which tells a reader nothing. A quote qualifies when it names something
+# consequential OR is a substantial sentence; a short personal/relational remark is dropped.
+_TRIVIAL_QUOTE = re.compile(r"^\s*(?:i (?:know|met|like|love|respect|admire|remember|thank|appreciate|enjoy|"
+                            r"believe in|trust)\b|(?:thank you|thanks|good (?:morning|evening|luck|day)|"
+                            r"happy|congratulations|congrats|welcome|hello|greetings)\b)", re.I)
+_STRONG_QUOTE = re.compile(r"\b(war|peace|cease[- ]?fire|attack|strike|missile|drone|nuclear|sanction|tariff|"
+                           r"deal|agreement|treaty|election|threat\w*|retaliat\w*|offensive|troops?|weapon|"
+                           r"invasion|occupation|genocide|terror\w*|security|alliance|nato|summit|negotiat\w*|"
+                           r"defen[cs]e|demand\w*|condemn\w*|reject\w*|billion|million|killed|dead|victory|"
+                           r"defeat|surrender|independence|sovereignty|corruption|border|energy|economy|"
+                           r"will not|must|never|no longer|not allow|red line)\b", re.I)
+
+
+def _quote_important(q):
+    q = (q or "").strip().strip('“”"\'')
+    if len(q) < 12:
+        return False
+    if _TRIVIAL_QUOTE.search(q) and not _STRONG_QUOTE.search(q):
+        return False
+    return len(q) >= 28 or bool(_STRONG_QUOTE.search(q))
+
+
 def _port_prompt(where):
     """One prompt shared by the grounded (Gemini) and open-LLM port-profile fetchers. Asks for a compact,
     factual JSON — and to leave a field EMPTY rather than invent a figure, so we never show a made-up stat."""
@@ -4538,6 +4563,13 @@ _FLUFF_PAT = re.compile(
     r"book your|sign up (today|now)|find out how|learn more today|discount code)\b|"
     # the ESSAY shape: "The UK and international law – Palestine is the test" is a column, not an event
     r"[–—]\s*\w+ is the (test|answer|problem|solution|key|question|real|future|point)\b|"
+    # CULTURE / ENTERTAINMENT feature — not a located event on a world news map. SHIPPED: "How Two British
+    # Historians Made a Smash Hit Podcast" was a dot in the UK. Podcasts, box-office, celebrity, viral clips,
+    # streaming hits, memoirs — the arts desk, not the front page.
+    r"\b(podcast|box office|red carpet|blockbuster|memoir|celebrity|reality (?:tv|show)|"
+    r"smash hit|streaming (?:hit|sensation|giant)|hit (?:show|series|podcast|album|single|movie|film)|"
+    r"binge-?watch|fan-?favou?rite|goes? viral|viral (?:video|clip|moment|sensation)|"
+    r"dating app|horoscope|zodiac|makeover|recipe)\b|"
     r"\?\s*$"                                       # question headlines are debates, not events
     r")")
 
