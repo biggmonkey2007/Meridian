@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.51"
+APP_VERSION = "1.4.52"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d53"   # d53: resweep so the culture/entertainment fluff filter drops non-events (a "British
+_DATA_VER = "d54"   # d54: resweep so a truncated wire headline never ends on "and."/"…" (dangling connector
+                    #      trimmed), and summaries round-robin Groq+Gemini so more dots get a real brief.
+                    # d53: resweep so the culture/entertainment fluff filter drops non-events (a "British
                     #      podcasters" NYT feature was a UK dot). Cache-hits summaries, no re-cost.
                     # d52: resweep to UNDO the mega-merge — a physical event no longer vacuums co-located
                     #      STATEMENTS (a Kyiv drone dot had absorbed 24 "Zelensky says…" posts + wrong sources);
@@ -413,7 +415,10 @@ def _llm_one(name, key, url, model, system, user, max_tokens, temperature):
     return ""
 
 
-def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, prefer=None):
+_llm_rr = [0]   # round-robin cursor across providers (see `spread` below)
+
+
+def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, prefer=None, spread=False):
     """ONE chat completion over the free LLM path, with automatic FAILOVER. Tries providers in order —
     primary (Groq/OpenAI), then Gemini (a free backup) — and returns the FIRST non-empty answer, so a Groq
     daily-cap 429 (which comes back empty) rolls straight to Gemini instead of losing the brief. `model`
@@ -425,6 +430,13 @@ def _llm_complete(system, user, max_tokens=300, temperature=0.3, model=None, pre
     provs = _llm_providers()
     if prefer:
         provs.sort(key=lambda p: 0 if p[0] == prefer else 1)     # stable: preferred first, rest keep order
+    elif spread and len(provs) > 1:
+        # ROUND-ROBIN across providers so BOTH free daily budgets are spent, not just Groq's small one — this
+        # ~doubles how many summaries get an AI brief before anything caps (the user's "use both AIs
+        # interchangeably"). Failover still applies: if the chosen leader is capped/empty, it rolls to the next.
+        n = _llm_rr[0] % len(provs)
+        _llm_rr[0] = (_llm_rr[0] + 1) % 100000
+        provs = provs[n:] + provs[:n]
     if not provs:                                                # no hosted key -> the free local Ollama
         loc = _local_llm()
         if not loc:
@@ -549,7 +561,7 @@ def _summarize(title, text, source="", depth=False):
               "story with no wider consequence.\n\n"
               "SOURCE OUTLET: " + (source or "unknown") + "\n"
               "HEADLINE: " + (title or "") + "\n\nSOURCE TEXT:\n" + text)
-    s = _llm_complete(system, prompt, max_tokens=(1000 if depth else 620), temperature=0.3)   # depth: ~5 short paras
+    s = _llm_complete(system, prompt, max_tokens=(1000 if depth else 620), temperature=0.3, spread=True)   # depth: ~5 short paras; spread across BOTH providers so the daily budgets stack
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
@@ -5558,6 +5570,10 @@ def _is_outlet_byline(tail):
     return bool(_PRESS_MARKER.search(tail))                     # "… Daily News", "The X Times" -> a publisher
 
 
+_DANGLE_TAIL_RE = re.compile(r"[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|"
+                             r"including|during|amid|plus|versus|vs)\s*[.…]*\s*$", re.I)
+
+
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links, "Follow @x for more news", @handles
@@ -5574,6 +5590,12 @@ def _clean_headline(t):
     if _m and len(_m.group(1)) >= 20 and _is_outlet_byline(_m.group(2)):
         t = _m.group(1)
     t = re.sub(r"\s{2,}", " ", t).strip()
+    # A wire post truncated mid-clause becomes a headline that ends on "…" or a dangling connector
+    # ("…improve its domestic production of long-range missiles and."). Drop the ellipsis and the dangling
+    # conjunction/article so the headline reads as a finished thought — it should never end on "and."/"…".
+    if len(t) > 40:
+        t = re.sub(r"\s*(?:\.{2,}|…)+\s*$", "", t).strip()
+        t = _DANGLE_TAIL_RE.sub("", t).strip()
     if len(t) <= 200:
         return t
     # NEVER a mid-word chop (shipped "…and Western offici"): trim to the last clause break, else the last
@@ -9357,7 +9379,7 @@ def _geolocate_ai(title, text):
             "- 'NONE' if there is genuinely no location.\n"
             "No explanation, no coordinates, no quotes — just the place name.\n\n"
             "HEADLINE: " + title + "\n\nSTORY:\n" + text)
-    out = _geolocate_grounded(title, text) or _llm_complete(system, user, max_tokens=24, temperature=0.0)
+    out = _geolocate_grounded(title, text) or _llm_complete(system, user, max_tokens=24, temperature=0.0, spread=True)
     out = ((out or "").splitlines() or [""])[0]
     out = re.sub(r'^[\s"\'.•*\-]+|[\s"\'.\-]+$', "", out).strip()
     if out.upper() == "NONE" or not (3 <= len(out) <= 60):

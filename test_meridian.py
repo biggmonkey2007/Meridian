@@ -1223,6 +1223,17 @@ CLEAN_HEADLINE_CASES = [
      "2014-2015 Minsk", "a year RANGE has no space before the dash"),
     ("Sudan faces a worsening humanitarian crisis as fighting spreads - Reuters",
      "!Reuters", "a GENUINE ' - Outlet' suffix (space before the dash) must still be stripped"),
+    # A wire post truncated mid-clause must never end a headline on "…" or a dangling connector.
+    ("UK PM to visit Kyiv to help improve its production of long-range missiles and.",
+     "!and", "SHIPPED BUG: the headline ended on 'missiles and.' — drop the dangling conjunction"),
+    ("UK PM to visit Kyiv to help improve its production of long-range missiles and.",
+     "long-range missiles", "…and the real content survives"),
+    ("Iran warns ships in Strait of Hormuz of fines, detention or...", "detention",
+     "'detention or...' -> the ellipsis and dangling 'or' are trimmed"),
+    ("What Iran is really capable of", "capable of",
+     "GUARD: a legit headline ending in a stranded preposition is NEVER trimmed"),
+    ("Russia and Ukraine agree to a ceasefire", "Russia and Ukraine",
+     "GUARD: a mid-sentence 'and' is never touched"),
     ("Massive fire hits refinery in Rostov region - BBC News",
      "!BBC", "a multi-word outlet ('BBC News') byline is still stripped"),
     # SOURCE / SPEAKER ATTRIBUTION is CONTENT, not a byline — it must SURVIVE. SHIPPED BUG: TASS's

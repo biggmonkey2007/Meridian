@@ -1494,14 +1494,21 @@ function leadText(s){
 // sentence so it reads finished, not cut mid-word — AND capitalize a lower-case continuation ("soon his
 // delusion…" -> "Soon his delusion…") so a headline/body split never leaves a mid-sentence body. Mirrors the
 // backend _finish_brief + _cap_first.
+// A dangling word a truncated fragment can end on — a conjunction, preposition or article. Ending a card on
+// "…missiles and." or "…detention or." reads as broken; we drop it so the clause finishes cleanly.
+const _DANGLE=/[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|including|during|amid|plus|versus|vs)\s*[.…]*\s*$/i;
 function finishText(s){
   s=tidyLead(s); if(!s) return s;
   s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").replace(_ATTR_TAIL,"").trim();   // strip the truncation marker AND a dangling ", X reports/has…" tail
+  s=s.replace(_DANGLE,"").trim();                                        // …and a trailing conjunction/preposition ("missiles and")
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
   if(/[.!?"'’”)\]]$/.test(s)) return s;
   const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
   if(m && m[0].trim().length>=15) return m[0].trim();
-  return s.replace(/\s+\S+$/,"").replace(/[,;:\-–—\s]+$/,"").trim()+"…";   // no whole sentence -> drop the chopped last word
+  // no whole sentence: drop the chopped last word, drop any dangling connector, and END WITH A PERIOD so the
+  // card never shows "…" or an abrupt cut (the user's rule).
+  let tail=s.replace(/\s+\S+$/,"").replace(_DANGLE,"").replace(/[,;:\-–—\s]+$/,"").trim();
+  return tail ? tail+"." : "";
 }
 // Does the fallback teaser ADD real information beyond the headline, or just reword it? Reduce both to
 // significant content words; a teaser that introduces too few NEW ones is a restatement.
@@ -1525,7 +1532,8 @@ function teaserAddsInfo(text, headline){
 // No inline source tag: the story is already attributed by the "Source" line above and the "Read the original"
 // button below, so it stays fair-use without an ugly "SOURCE —" prefix leaking into the prose.
 function leadFallbackHTML(text, headline){
-  text=(text||"").trim(); if(!text) return "";
+  text=finishText((text||"").trim());   // NEVER show a raw teaser: strip "…", a chopped last word and a dangling connector so it reads finished
+  if(!text) return "";
   if(!teaserAddsInfo(text, headline)) return "";
   return flagifyText(text);
 }
