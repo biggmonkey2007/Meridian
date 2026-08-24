@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.49"
+APP_VERSION = "1.4.50"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d51"   # d51: resweep so leader/official STATEMENTS dot their CAPITAL (Putin -> Moscow), the
+_DATA_VER = "d52"   # d52: resweep to UNDO the mega-merge — a physical event no longer vacuums co-located
+                    #      STATEMENTS (a Kyiv drone dot had absorbed 24 "Zelensky says…" posts + wrong sources);
+                    #      _collapse_colocated now needs BOTH dots physical. Cache-hits summaries, no re-cost.
+                    # d51: resweep so leader/official STATEMENTS dot their CAPITAL (Putin -> Moscow), the
                     #      'approx' flag stops firing on legit country-level national dots (only region/water
                     #      centroids now), and the 'logistics/infrastructure' clip-filler no longer ties a
                     #      statement to a strike. Cache-hits summaries/AI-where, so no re-summarize cost.
@@ -6170,9 +6173,14 @@ def _collapse_colocated(events, window_h=6):
                 # NOT one situation. Only collapse when the cluster is a PHYSICAL EVENT at the scene (a strike,
                 # a disaster): then the terse split-across-categories posts really are one unfolding thing. Pure
                 # statement/politics/economy dots at a shared seat stay separate (the real merges run in
-                # _merge_same_event, which needs shared CONTENT). SHIPPED BUG: 6 Washington dots -> 1 mega-dot.
+                # _merge_same_event, which needs shared CONTENT). SHIPPED BUG: 6 Washington dots -> 1 mega-dot;
+                # then a WORSE one — with leader statements now dotting the capital, ONE Kyiv drone-defence dot
+                # (security) vacuumed 24 co-located "Zelensky says…" statements into a 25-source mega-dot. So
+                # BOTH dots must be physical (a strike + another strike in the same barrage), never a physical
+                # event pulling in every co-located statement. Different physical events at a capital scene are
+                # still one unfolding situation within the window; statements stay their own dots.
                 if (abs(e["hrs"] - kept[ki]["hrs"]) <= window_h
-                        and (e.get("cat") in _COLLAPSE_CATS or kept[ki].get("cat") in _COLLAPSE_CATS)):
+                        and e.get("cat") in _COLLAPSE_CATS and kept[ki].get("cat") in _COLLAPSE_CATS):
                     hit = ki
                     break
             if hit is not None:

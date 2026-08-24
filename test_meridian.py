@@ -1065,18 +1065,28 @@ def _clip_assignment_ok():
 
 COLLAPSE_CASES = [
     ([_ev("Kh-22/32 impacts in Odesa", "security", "Odesa, Ukraine", "Ukraine", 0.5),
-      _ev("2 on course for Odesa/Chornomorsk", "politics", "Odesa, Ukraine", "Ukraine", 0.6),
+      _ev("2 missiles on course for Odesa/Chornomorsk", "security", "Odesa, Ukraine", "Ukraine", 0.6),
       _ev("Explosions in Odesa Port", "security", "Odesa, Ukraine", "Ukraine", 0.7)], 1, "security",
-     "SHIPPED BUG: one barrage arrived as 3 terse posts split across categories and STACKED as 3 dots"),
+     "one barrage arrived as 3 terse SECURITY posts sharing only the place -> collapse to one dot"),
     ([_ev("Russia strike A", "security", "Russia", "Russia", 1.0),
       _ev("Russia strike B", "security", "Russia", "Russia", 2.0)], 2, None,
      "GUARD: a bare COUNTRY is not a specific place — two Russia stories are different events"),
     ([_ev("Gaza strike at dawn", "security", "Gaza, Palestine", "Palestine", 1.0),
       _ev("Gaza aid talks at night", "politics", "Gaza, Palestine", "Palestine", 10.0)], 2, None,
      "GUARD: same place but 9h apart — different incidents, both kept"),
+    # SHIPPED BUG (the WORST over-merge): leader statements now dot the capital, so ONE Kyiv drone-defence dot
+    # (security) VACUUMED every co-located "Zelensky says…" statement into a 25-source mega-dot whose text ran
+    # drones -> Flag Day -> Netanyahu. A physical event must NOT absorb co-located STATEMENTS; both dots must be
+    # physical to collapse. An aid-deal signing and a missile strike are DIFFERENT events -> both kept.
     ([_ev("Kyiv aid deal signed", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
-      _ev("Kyiv hit by missile strike", "security", "Kyiv, Ukraine", "Ukraine", 2.0)], 1, "security",
-     "co-located within the window collapses to the SEVEREST category (a strike beats an aid story)"),
+      _ev("Kyiv hit by missile strike", "security", "Kyiv, Ukraine", "Ukraine", 2.0)], 2, None,
+     "a statement (politics) and a strike (security) at the same capital are different events — both kept"),
+    ([_ev("Ukraine downs 97 of 127 drones overnight", "security", "Kyiv, Ukraine", "Ukraine", 0.3),
+      _ev("Second wave of drones strikes Kyiv district", "security", "Kyiv, Ukraine", "Ukraine", 0.6),
+      _ev("Zelensky says Ukraine reached a deal with Germany", "politics", "Kyiv, Ukraine", "Ukraine", 1.0),
+      _ev("Zelensky warns elections would destroy Ukraine", "politics", "Kyiv, Ukraine", "Ukraine", 1.5),
+      _ev("Ukraine marks State Flag Day", "society", "Kyiv, Ukraine", "Ukraine", 2.0)], 4, None,
+     "SHIPPED BUG: the drone dot swallowed 24 Kyiv statements — now only the two strikes merge; statements stay"),
     # A CAPITAL is the SEAT of many UNRELATED stories, not one situation. SHIPPED BUG: a US-Canada trade
     # deal, a Brazil-tariff story and five ambassador-quote clips all sat on Washington and collapsed into
     # ONE mega-dot whose brief had nothing to do with its headline. Non-physical (politics/economy) dots at
