@@ -1123,6 +1123,15 @@ COLLAPSE_CASES = [
 CHATTER_CASES = [
     ("Good night, sleep well and see you all tomorrow!", True,
      "SHIPPED BUG: an admin sign-off showed on the wire as if it were a news post"),
+    # SHIPPED BUG: an admin's GAMBLING tip (a bet slip) showed on the wire as if it were news.
+    ("La Liga time, my money is on Betis for this one. Valencia is in the mud. Do you guys agree?", True,
+     "a personal betting tip is not news"),
+    ("Best bets for tonight: parlay of the day inside, cash out early", True, "gambling promo"),
+    ("Place your bets on Rainbet before kickoff", True, "a betting-platform plug"),
+    ("High-stakes ceasefire talks resume in Geneva", False,
+     "GUARD: 'high-stakes' is not gambling — a real story stays"),
+    ("Analysts weigh the odds of a Russian winter offensive", False,
+     "GUARD: 'the odds of' is idiom, not a bet slip"),
     ("Thanks for following today, back tomorrow morning", True, "a thank-you + sign-off"),
     ("That's all for today, stay safe everyone", True, "a wrap-up greeting"),
     ("Subscribe to our backup channel for more", True, "channel self-promotion"),

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.54"
+APP_VERSION = "1.4.55"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d56"   # d56: resweep so a maritime strike dots the WATER (Houthi strike on a Saudi tanker "in the
+_DATA_VER = "d57"   # d57: resweep so an admin GAMBLING/betting-tip post (a bet slip, "my money is on…") is
+                    #      dropped from the wire and the map. Cache-hits summaries, no re-cost.
+                    # d56: resweep so a maritime strike dots the WATER (Houthi strike on a Saudi tanker "in the
                     #      Red Sea" -> the Red Sea, not Sana'a) — which also lets it MERGE with the other Red-Sea
                     #      tanker-strike dot. Cache-hits summaries, no re-cost.
                     # d55: resweep so a CAPITAL seat no longer blind-merges — different security stories at
@@ -1400,14 +1402,27 @@ _TG_CHATTER = re.compile(
     r"in\s+my\s+(honest\s+)?opinion|let'?s\s+be\s+(honest|real))\b", re.I)
 
 
+# A GAMBLING / BETTING-TIP post — the admin sharing a personal wager or a bet slip ("La Liga time, my money
+# is on Betis… Do you guys agree?" + a Rainbet slip). Not news; drop it from the wire and the map. Distinctive
+# betting language only, so a real story ("high-stakes talks", "the odds of a ceasefire") is never touched.
+_TG_GAMBLING = re.compile(
+    r"\bmy money(?:'?s| is) on\b|\bi'?m (?:betting|backing) (?:on|the)\b|"
+    r"\bmy (?:bet|pick|play|parlay|acca)\s+(?:is|for|of)\b|\block of the (?:day|night|week)\b|"
+    r"\bvalue bet\b|\bwho (?:do you have|are you (?:taking|backing))\b|\bbest bets?\b|\bfree (?:bet|pick|tip)s?\b|"
+    r"\b(?:parlay|parlays|accumulator|betslip|bet slip)\b|\bcash\s?out\b|\bpotential win\b|\btotal odds\b|"
+    r"\bticket id\b|\bwithdrawable\b|\bstake\s*[:=]\s*\$?\d|"
+    r"\b(?:rainbet|bet365|1xbet|betway|draftkings|fanduel|stake\.com|betmgm|parimatch|22bet|melbet|bovada|"
+    r"betfair|williamhill|paddypower|ladbrokes)\b", re.I)
+
+
 def _tg_is_chatter(text):
     """The admin talking TO the audience rather than reporting an event — a greeting, a sign-off, a
-    thank-you, or channel self-promotion. Filtered from the wire; the firehose keeps everything else
+    thank-you, channel self-promotion, or a personal GAMBLING tip. Filtered from the wire; the firehose keeps
     (including speculative breaking posts, which `_tg_reliable` drops only for MAP dots)."""
     h = (text or "").strip()
     if not h:
         return True
-    return bool(_TG_CHATTER.search(h) or _TG_HOUSEKEEPING.search(h))
+    return bool(_TG_CHATTER.search(h) or _TG_HOUSEKEEPING.search(h) or _TG_GAMBLING.search(h))
 
 
 def _tg_reliable(headline):

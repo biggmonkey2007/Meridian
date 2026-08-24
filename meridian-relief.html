@@ -1218,7 +1218,7 @@ video{color-scheme:dark}
   <div class="wire-resize" id="wire-resize" title="Drag to resize"></div>
   <div class="wire-head">
     <div class="wire-title"><span class="wire-bolt">⚡</span> Live Wire <span class="wire-live">LIVE</span><span class="wire-unread" id="wire-unread"></span></div>
-    <div class="wire-sub" id="wire-sub">breaking news, as it drops</div>
+    <div class="wire-sub" id="wire-sub" style="display:none"></div>
     <button class="wire-x" id="wire-x" aria-label="Close">✕</button>
   </div>
   <div class="wire-body" id="wire-body"><div class="wire-load"><span class="spin"></span> Connecting to the wire…</div></div>
@@ -6211,7 +6211,7 @@ document.querySelectorAll(".wire-tab").forEach(t=>t.addEventListener("click", ()
   const fb=document.getElementById("wire-body"), cb=document.getElementById("wire-clips");
   if(fb) fb.style.display = tab==="feed"?"":"none";
   if(cb) cb.style.display = tab==="clips"?"":"none";
-  const sub=document.getElementById("wire-sub"); if(sub) sub.textContent = tab==="clips" ? "official clips & footage, newest first" : "breaking news, as it drops";
+  const sub=document.getElementById("wire-sub"); if(sub){ const _st = tab==="clips" ? "official clips & footage, newest first" : ""; sub.textContent=_st; sub.style.display=_st?"":"none"; }
   wireActiveLoad(false);
 }));
 // mobile bottom bar (briefing button removed)

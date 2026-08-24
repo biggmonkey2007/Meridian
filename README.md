@@ -67,6 +67,22 @@ Read this before changing anything. Every design decision below exists to serve 
 - **Correctness is the product.** A dot in the wrong country, a clip under the wrong story,
   or a war story filed under "Science & Tech" is an "entry-level mistake" — treat them as P0.
 
+### Voice and tone — neutral, factual, non-partisan
+
+The writing has **one job: report what happened, accurately and plainly.** The tone is professional and
+neutral — the voice of a wire desk, not a columnist. This is deliberate and it is a feature, not a gap:
+
+- **No editorial slant is written into the news** — not left, not right, not for or against any nation,
+  party, religion, or group. A contested claim or loaded label is **attributed to whoever said it**
+  ("a Russian senator said", "according to Israel's government"); our own voice states only uncontested
+  facts. This is what makes the app trustworthy to *every* reader and keeps the summaries fair-use rather
+  than derivative.
+- **The credibility is the product.** The moment the writing tilts to flatter one side, it stops being
+  news and becomes advocacy — and a reader who senses the tilt stops trusting every other dot on the map.
+  A million-dollar newsroom's reputation dies the same way. So the summarizer is instructed to be neutral
+  (see `_summarize` in `app.py`), and that instruction is not to be replaced with a partisan, ideological,
+  or identity-based ("pro/anti a race, religion, or nation") point of view. Keep the facts; drop the spin.
+
 ### The target is ALL the news, ALL of it correctly placed
 
 **Both. Not a trade between them.** An earlier draft of this file said a wrong dot is "worse
@@ -167,6 +183,18 @@ on the next launch instead of self-healing over a later cycle. (The per-feature 
 `_AIWHERE_VER` — still exist for targeted invalidation; `_DATA_VER` is the big hammer that resweeps all
 of it.) AI geolocation is what deciphers the traps the rules can't — a program *name* like
 `'Golden Fleet'` is not the town of Golden, CO — so a resweep is what lets that judgment reach the map.
+
+---
+
+### RULE 6 — Verify from the user's seat before you ship.
+A change is not done when the code runs — it is done when it **actually works and makes the app better
+for the person using it.** After every change, check both:
+1. **Does it work?** Run `test_meridian.py`, and exercise the actual path — build the feed, open the
+   affected card/panel/dot, and confirm the change does what it claims (not just that nothing errored).
+2. **Is the user's experience better?** Look at the result the way someone reading the app would: is the
+   headline clean and complete, the dot in the right place, the photo real, the text publishable? A change
+   that passes tests but leaves the card worse to read has not improved anything. If you cannot see it
+   improve from the reader's perspective, it is not finished.
 
 ---
 
