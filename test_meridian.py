@@ -2412,6 +2412,24 @@ def main():
     _lg_fails.append(("georgia-country-guard", (app._locate(
         "Mass protests erupt in Georgia over disputed election", "",
         "Demonstrators gathered in Tbilisi as the Georgian Dream party claimed victory.", allow_ai=False)[3]) == "Georgia"))
+    # CONTAINMENT via the DESC: the title names only the COUNTRY, but the body hands us the specific scene
+    # ("in Bihar's capital"). SHIPPED BUG: dotted New Delhi. The "'s capital" possessive had SUNK Bihar.
+    _lg_fails.append(("desc-containment", "Bihar" in (app._locate(
+        "India police clash with protesters a month after Gen Z demonstrations", "",
+        "Police used water cannons as protesters broke through barricades in Bihar's capital.", allow_ai=False)[2] or "")))
+    _lg_fails.append(("desc-containment-noabroad", (app._locate(     # a body place ABROAD must NOT hijack
+        "India summons envoy over remarks", "", "The ministry acted after comments made in Paris.",
+        allow_ai=False)[3]) == "India"))
+    # A VESSEL strike happens AT SEA — a Houthi/Yemen tanker strike lands on the Red Sea, never the target's
+    # capital, even when the same line "warns Riyadh"; the physical strike beats the statement upgrade.
+    _lg_fails.append(("vessel-strike-water", app._is_water_place(app._locate(
+        "Yemen strikes Saudi oil tanker, warns Riyadh of graveyard and hell", "",
+        "Yemeni commanders warned Saudi Arabia.", allow_ai=False)[2] or "")))
+    _lg_fails.append(("vessel-strike-not-riyadh", "Riyadh" not in (app._locate(
+        "Yemen strikes Saudi oil tanker, warns Riyadh of graveyard and hell", "", "", allow_ai=False)[2] or "")))
+    # GUARD: a pure THREAT ("warns of strikes") still resolves to the speaker's capital.
+    _lg_fails.append(("threat-still-capital", "Moscow" in (app._locate(
+        "Putin warns of strikes on Ukraine if talks fail", "", "", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2827,7 +2845,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 23   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state
+             + 28   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

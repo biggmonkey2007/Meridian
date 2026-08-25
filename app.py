@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.65"
+APP_VERSION = "1.4.66"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d67"   # d67: resweep so a named FAR-EAST facility beats the capital (the Amur Gas Chemical Complex
+_DATA_VER = "d68"   # d68: resweep so the SCENE named in the body wins — the title's country is refined to the
+                    #      specific place inside it ("India … in Bihar's capital" -> Patna/Bihar, not New Delhi;
+                    #      "X's capital" reads as a place, not a sunk possessive) — a VESSEL strike dots the water
+                    #      (a Houthi tanker strike -> Red Sea, never Riyadh), and a physical strike is never
+                    #      capital-upgraded even when the same line "warns" a capital.
+                    # d67: resweep so a named FAR-EAST facility beats the capital (the Amur Gas Chemical Complex
                     #      explosion dots Amur Oblast, not Moscow) and "Georgia" resolves to the US STATE when the
                     #      story is clearly US (a Savannah/GBI/Kemp story), not the Caucasus country.
                     # d66: resweep so a strike on a "<name> OIL refinery" dots the site (Afipsky/Omsk -> Russia)
@@ -7541,6 +7546,18 @@ _WAR_PLACES = {
     "sistan and baluchestan": (29.500, 60.900, "Iran"), "hormozgan": (27.500, 56.000, "Iran"),
     "west azerbaijan": (37.500, 45.200, "Iran"), "east azerbaijan": (37.800, 46.600, "Iran"),
     "baluchistan": (28.000, 63.000, "Pakistan"),
+    # Indian STATES -> their CAPITAL city (where most state news happens), so "protests in Bihar" / "Bihar's
+    # capital" dots Patna, not the India centroid (New Delhi). Regional Indian news is high-volume. ("Punjab"
+    # is omitted — ambiguous India/Pakistan; a named city inside still refines these centroids.)
+    "bihar": (25.594, 85.136, "India"), "uttar pradesh": (26.85, 80.95, "India"),
+    "maharashtra": (19.08, 72.88, "India"), "west bengal": (22.57, 88.36, "India"),
+    "tamil nadu": (13.08, 80.27, "India"), "karnataka": (12.97, 77.59, "India"),
+    "kerala": (8.52, 76.94, "India"), "gujarat": (23.02, 72.57, "India"),
+    "rajasthan": (26.91, 75.79, "India"), "madhya pradesh": (23.26, 77.41, "India"),
+    "telangana": (17.38, 78.49, "India"), "andhra pradesh": (16.51, 80.52, "India"),
+    "odisha": (20.30, 85.82, "India"), "assam": (26.14, 91.79, "India"),
+    "jharkhand": (23.34, 85.31, "India"), "chhattisgarh": (21.25, 81.63, "India"),
+    "uttarakhand": (30.32, 78.03, "India"), "himachal pradesh": (31.10, 77.17, "India"),
 }
 
 # Places GeoNames ranks WRONG — the world-famous one loses to a bigger namesake, or is missing.
@@ -9444,6 +9461,11 @@ _CURRENCY_GEO_RE = re.compile(r"\bU\.?\s?S\.?\s?\$|\bUSD\b", re.I)   # "US$", "U
 # to the ACTOR's country (a Ukrainian strike on a Russian refinery dotted UKRAINE). Collapse the qualifier so
 # "<name> oil refinery" reads as "<name> refinery" and matches the registered site.
 _REFINERY_NORM = re.compile(r"\b(oil|gas(?:\s+condensate)?|petroleum|petrochemical|crude)\s+(refiner(?:y|ies)|depot|plant|terminal)\b", re.I)
+# "Bihar's capital" is a LOCATION (the capital OF Bihar = Patna), not Bihar acting as a possessive — but the
+# "'s" made the geolocator SINK Bihar like "Iran's sites", so the dot fell to the country centroid (New Delhi).
+# Drop the "'s capital / largest city" phrase so the place resolves as a scene. When the capital is also NAMED
+# ("Bihar's capital Patna"), Patna already wins; this only helps the unnamed "X's capital" reference.
+_CAPITAL_OF_RE = re.compile(r"\b([A-Za-z][\w-]+)'s\s+(?:capital|largest\s+city|biggest\s+city|second\s+city|main\s+city)\b", re.I)
 
 
 @functools.lru_cache(maxsize=4096)
@@ -9462,6 +9484,8 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     desc = _CURRENCY_GEO_RE.sub("$", desc or "")
     title = _REFINERY_NORM.sub(r"\2", title)     # "Afipsky oil refinery" -> "Afipsky refinery" (match the site)
     desc = _REFINERY_NORM.sub(r"\2", desc)
+    title = _CAPITAL_OF_RE.sub(r"\1", title)     # "Bihar's capital" -> "Bihar" (a location, not a possessive)
+    desc = _CAPITAL_OF_RE.sub(r"\1", desc)
     title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
     # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
     # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
@@ -9526,6 +9550,20 @@ def _geolocate(title, sourcecountry, desc="", url=""):
             b = _pick_place(_pref or _match or dscenes, dw)
             if b is not None:
                 return b[2], b[3], b[4], _sea_country(b, mentions)
+    # CONTAINMENT via the DESC: the title named only a COUNTRY ("India police clash …" -> India), but the body
+    # hands us a specific place INSIDE it ("… in Bihar's capital" / "… in Patna"). Dot the city/region, never
+    # the country centroid — the reader's own article names the spot. Guarded to the SAME country, so a place
+    # named abroad in the body can never hijack the story. SHIPPED BUG: "Bihar's capital" ignored -> New Delhi.
+    if hits and desc:
+        _gs = _genuine_scenes(hits, words)
+        _ccos = {h[5] for h in _gs if h[1] in ("country", "demonym")}
+        if _ccos and all(h[1] in ("country", "demonym") for h in _gs):     # title scene(s) are ONLY countries
+            dh, dw = _scan_places(desc[:400], _person_spans(desc[:400]), mentions)
+            inside = [h for h in _genuine_scenes(dh, dw) if h[5] in _ccos and h[1] not in ("country", "demonym")]
+            if inside:
+                b = _pick_place(inside, dw)
+                if b is not None:
+                    return b[2], b[3], b[4], _sea_country(b, mentions)
     if hits:
         best = _pick_place(hits, words)
         # "<Compass> <Country>" is a foreign REGION that GeoNames ALSO lists as a small US town — "South
@@ -10015,12 +10053,42 @@ _MARITIME_ACT = re.compile(r"\b(strikes?|struck|strike|attack\w*|hit|hits|target
                            r"downed|missile|drone|torpedo\w*|seiz\w*|board\w*|ablaze|set\s+ablaze|on\s+fire)\b", re.I)
 
 
+def _is_vessel_strike(text):
+    """A strike/attack on a ship/tanker/vessel — happens AT SEA, never in a landlocked capital."""
+    t = text or ""
+    return bool(_MARITIME_VESSEL.search(t) and _MARITIME_ACT.search(t))
+
+
+_STRIKE_VERB_RE = re.compile(r"\b(strikes?|struck|hits?|bombed|bombs?|shelled|shells?|attacked|attacks?|"
+                             r"destroyed|destroys?|sank|sunk|sinks?|downed|stormed|storms?|raided|raids?|"
+                             r"explosion|explodes?|exploded|blast|ablaze|shot\s+down)\b", re.I)
+_STATEMENT_VERB_RE = re.compile(r"\b(warns?|warned|vows?|vowed|threatens?|threatened|says?|said|claims?|"
+                                r"urges?|urged|calls?|called|declares?|declared|announces?|announced)\b", re.I)
+
+
+def _physical_strike_leads(title):
+    """Does the headline report a physical strike/attack that HAPPENED (an event with a scene), rather than
+    one merely THREATENED in a statement? A strike verb that leads the line ('Yemen STRIKES a tanker, warns
+    Riyadh') is an event; a strike NOUN inside a threat ('Putin warns OF strikes', 'Iran vows to strike') is
+    not. Used to stop the capital-statement upgrade from hijacking a real strike to the target's capital."""
+    t = title or ""
+    ms = _STRIKE_VERB_RE.search(t)
+    if not ms:
+        return False
+    if re.search(r"\b(?:of|for|threat\s+of|to)\s+$", t[max(0, ms.start() - 9):ms.start()].lower()):
+        return False                                   # "warns OF strikes", "vows TO strike" — threatened, not done
+    mst = _STATEMENT_VERB_RE.search(t)
+    if mst and mst.start() < ms.start():
+        return False                                   # a statement verb leads; the strike is what's warned about
+    return True
+
+
 def _maritime_water(text):
     """A strike/attack on a SHIP/TANKER/VESSEL happens AT SEA: if the story names a water, that water is the
     scene — the ship's location — beating the actor's country or capital. "Houthis claim strikes on a Saudi
     oil tanker in the Red Sea" dots the RED SEA, not Sana'a. Returns the water NAME to ground, or ''."""
     t = text or ""
-    if not (_MARITIME_VESSEL.search(t) and _MARITIME_ACT.search(t)):
+    if not _is_vessel_strike(t):
         return ""
     low = t.lower()
     best = ""
@@ -10028,6 +10096,27 @@ def _maritime_water(text):
         if len(name) > len(best) and re.search(r"\b" + re.escape(name) + r"\b", low):
             best = name
     return best
+
+
+# A vessel strike whose water isn't NAMED in the teaser still happens in the ACTOR's known naval theater — a
+# Houthi/Yemeni strike on a ship is the Red Sea / Bab-el-Mandeb, never Riyadh. SHIPPED BUG: "Yemen strikes
+# Saudi oil tanker, warns Riyadh" dotted RIYADH (the target's capital, via the "warns" statement upgrade). The
+# AI WHERE refines the exact water once the story is summarised; this keeps the cold-start dot on WATER.
+_MARITIME_THEATERS = [
+    (re.compile(r"\b(houthis?|ansar\s*allah|yemen\w*|sana'?a|sanaa)\b", re.I), "red sea"),
+]
+
+
+def _maritime_theater(text):
+    """The naval theater of a maritime actor, for a vessel strike that names no explicit water (a last resort
+    so the dot lands on water, not a capital). Only well-established theaters; else ''."""
+    t = text or ""
+    if not _is_vessel_strike(t):
+        return ""
+    for pat, water in _MARITIME_THEATERS:
+        if pat.search(t):
+            return water
+    return ""
 
 
 # US FINANCIAL MARKETS -> NEW YORK (Wall Street). A stocks/bonds/futures/crypto story tied to the US belongs
@@ -10131,7 +10220,8 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     # "Yemen's Houthis claim strikes on a Saudi oil tanker in the Red Sea and troop concentrations in eastern
     # Yemen" dotted Sana'a (the AI mistook the strike-CLAIM for a statement); it belongs on the RED SEA — which
     # also lets it MERGE with the other Red-Sea tanker-strike dot instead of standing apart.
-    _mw = _maritime_water((title or "") + ". " + (desc or ""))
+    _blob = (title or "") + ". " + (desc or "")
+    _mw = _maritime_water(_blob) or _maritime_theater(_blob)   # named water, else the actor's naval theater
     if _mw:
         _wr = _geolocate(_mw, "", _mw, "")
         if _wr and _is_water_place(_wr[2]):
@@ -10159,8 +10249,12 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     # no longer collapse). Only fires when the rules reached just the country AND the story is an on-record
     # statement; one that names a real scene ("Putin says Russia took Avdiivka") keeps that scene. The AI WHERE
     # for a statement returns the ACTOR's country, so this capital is not second-guessed downstream.
+    # ...but NOT when the headline reports a PHYSICAL strike/attack that HAPPENED — that is an event with a
+    # scene, not a capital statement, even if the same line also carries a "warns"/"vows" (a Yemen tanker strike
+    # + a threat to Riyadh must never dot Riyadh). A pure threat ("Putin warns of strikes") still upgrades.
     if (r and _geo_is_weak(r) and r[3] in _CAPITAL_SEAT
-            and _tg_is_statement((title or "") + ". " + (desc or ""))):
+            and _tg_is_statement((title or "") + ". " + (desc or ""))
+            and not _physical_strike_leads(title or "")):
         _cla, _cln, _clbl = _CAPITAL_SEAT[r[3]]
         r = (_cla, _cln, _clbl + ", " + _co_short(r[3]), r[3])
     # AI PINPOINT (from the summary pass, once this story has been summarised): one AI call wrote the brief AND
