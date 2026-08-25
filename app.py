@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.62"
+APP_VERSION = "1.4.63"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d64"   # d64: resweep so a mismatched picture can't become a dot's hero — image transfers on
+_DATA_VER = "d65"   # d65: resweep so a person's OBITUARY dots their own country (the nationality in the title),
+                    #      not a country that only paid tribute ("Dolly Parton dies" had dotted the UK) and not a
+                    #      capital "statement"; and a shared distinctive NAME + near-identical wording now MERGES a
+                    #      person's-death duplicate even across countries. Overrides a stale AI-WHERE, no resummarize.
+                    # d64: resweep so a mismatched picture can't become a dot's hero — image transfers on
                     #      merge/promotion are subject-gated, a promotion swaps in the new story's image, and a
                     #      multi-topic ROUNDUP post's own image is dropped (a Dolly-Parton tribute image had sat
                     #      atop a SpaceX story). No re-summarize cost.
@@ -6419,12 +6423,21 @@ def _merge_same_event(events, window_h=18):
         inj = _injured_toll(blob)
         key = _sigwords(e.get("title") or "") - _GENERIC_WORDS - _WEAK_MATCH
         toks = _norm_tokens(e.get("title") or "")
+        prp = _proper_words(e.get("title") or "") - _WEAK_MATCH   # distinctive NAMES (person/place), minus demonyms
         pl, co = e.get("place") or "", e.get("country") or ""
         la, ln = e.get("lat"), e.get("lng")
         hit = None
-        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln) in enumerate(metas):
-            if mco != co or abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
+        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln, mprp) in enumerate(metas):
+            # A COUNTRY MISMATCH normally blocks a merge (many different events happen in one country), EXCEPT
+            # when both share a DISTINCTIVE multi-token NAME (a person / specific entity) AND near-identical
+            # wording — then it is ONE story wherever it was datelined. SHIPPED BUG: "US … Dolly Parton dies"
+            # (mis-dotted UK) stood apart from "Dolly Parton has died" (US); a person's death is one event.
+            _name_bridge = len(prp & mprp) >= 2
+            if abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
                 continue
+            if mco != co and not _name_bridge:
+                continue
+            same_country = (mco == co)
             near = (None not in (la, ln, mla, mln)
                     and (la - mla) ** 2 + (ln - mln) ** 2 < 0.6)     # ~<0.77 deg, so Kyiv≈Ukraine-centroid merges
             _pl_match = (bool(pl) and pl == mpl) or near             # the SAME scene (place string, or coords)
@@ -6437,8 +6450,8 @@ def _merge_same_event(events, window_h=18):
             # city-to-city pair (neither an area) and the hard casualty fingerprint below are never gated.
             _area_ok = (not (_is_area_place(pl) or _is_area_place(mpl))) or bool(_shared_content - _STRIKE_GENERIC)
             same = ((_same_story(toks, mtoks) and _area_ok)          # a re-headlined copy of the same wire
-                    or (toll and mtoll and toll == mtoll and near)   # the SAME casualty figure at the SAME spot
-                    or (toll and mtoll and toll == mtoll             # ...or BOTH killed AND injured match: a
+                    or (same_country and toll and mtoll and toll == mtoll and near)   # SAME casualty figure at the SAME spot
+                    or (same_country and toll and mtoll and toll == mtoll   # ...or BOTH killed AND injured match: a
                         and inj and minj and inj == minj)            # two-number fingerprint, valid anywhere
                     # REWORDED SAME EVENT at the SAME scene: 3+ shared content tokens, 2+ of them NOT mere actor
                     # names. The event nouns ('ballistic', 'missile', 'transaction') that _key strips as generic
@@ -6449,7 +6462,7 @@ def _merge_same_event(events, window_h=18):
                     # shared tokens must include something BEYOND strike boilerplate — else two separate strikes
                     # in 'Southern Lebanon' merge on 'air force airstrike against southern' alone. New area = new
                     # dot, exactly as the reader expects; a real city dot is never gated (`_is_area_place` False).
-                    or (_pl_match and len(_shared) >= 3 and len(_shared_content) >= 2 and _area_ok))
+                    or (same_country and _pl_match and len(_shared) >= 3 and len(_shared_content) >= 2 and _area_ok))
             if same:
                 hit = i
                 break
@@ -6458,7 +6471,7 @@ def _merge_same_event(events, window_h=18):
             continue
         e.setdefault("sources", [_src_of(e)])   # keep any citations the inline dedup already added
         kept.append(e)
-        metas.append((co, toll, inj, key, toks, pl, la, ln))
+        metas.append((co, toll, inj, key, toks, pl, la, ln, prp))
     return kept
 
 
@@ -9996,6 +10009,29 @@ _FOREIGN_MARKET = re.compile(
 _US_VENUE = re.compile(r"\b(?:wall\s*street|dow|nasdaq|nyse|s&p)\b", re.I)
 
 
+# A PERSON'S OBITUARY — a named individual's death (not a casualty COUNT). SHIPPED BUG: "US country music
+# legend Dolly Parton dies aged 80" dotted the UNITED KINGDOM (a tribute the article body quoted), and so it
+# stood apart from the other 'Dolly Parton has died' dot instead of merging. A death is located at the
+# person's OWN country (here 'US', in the title), never a country that merely reacted.
+_OBIT_RE = re.compile(
+    r"\b(?:dies?|died|passes?\s+away|passed\s+away|has\s+died|is\s+dead|found\s+dead|"
+    r"death\s+of|obituary|dead\s+at|dies?\s+aged|dead\s+aged)\b", re.I)
+_OBIT_PERSON = re.compile(
+    r"\b(?:aged\s+\d{1,3}|at\s+(?:the\s+)?age\s+of\s+\d{1,3}|at\s+\d{2,3}\b|legend|icon|star|singer|"
+    r"actor|actress|musician|author|writer|artist|composer|comedian|rapper|novelist|poet|painter|"
+    r"laureate|veteran|founder|co-?founder|pioneer|dame|\bsir\b|widow|frontman|guitarist|drummer)\b", re.I)
+
+
+def _is_obituary(text):
+    """True for a NAMED PERSON's death (a celebrity/figure obituary), NOT a casualty report. A count of the
+    dead ('50 killed') is a located event and keeps its scene; a personal death is placed at the person's
+    own country and never relocated to a country that only paid tribute."""
+    t = text or ""
+    if _death_toll(t):                # a casualty COUNT -> a real located event, not a personal obituary
+        return False
+    return bool(_OBIT_RE.search(t) and _OBIT_PERSON.search(t))
+
+
 def _us_markets(text):
     """True when the story is a US financial-markets report (Wall Street / a US index or mega-cap / the Fed),
     and not dominated by a FOREIGN exchange — so it dots New York, not a country cited only as a market mover.
@@ -10038,6 +10074,12 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     # country cited only as a market driver (an "Iran threat" the traders are eyeing).
     if _us_markets((title or "") + ". " + (desc or "")):
         return (40.706, -74.009, "New York, United States", "United States of America")
+    # A PERSON'S OBITUARY is located at the person's OWN country (the nationality named in the HEADLINE), never
+    # a country that only paid tribute and never a capital "statement". Only when the rules already pinned a
+    # country FROM THE TITLE (so a body-only tribute can't win); a title with no nationality (bare "X has died")
+    # falls through to the AI WHERE, which is where the deceased actually was.
+    if r and _is_obituary(title or ""):
+        return (COUNTRY_COORDS[r[3]][0], COUNTRY_COORDS[r[3]][1], _co_short(r[3]), r[3]) if r[3] in COUNTRY_COORDS else r
     # LEADER / OFFICIAL STATEMENT -> the CAPITAL. A quote, threat or ruling with no specific scene resolves to
     # a bare country centroid, but officials SPEAK from the capital — so pin it there (Putin -> Moscow,
     # Zelensky -> Kyiv): a specific dot the reader can place, and its OWN dot (statements are 'politics', which

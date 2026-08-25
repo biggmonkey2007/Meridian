@@ -2298,7 +2298,24 @@ def main():
                          "hrs": 0.2, "cat": "security", "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
                         {"title": "Two Israeli Air Force airstrikes against Ali al-Taher Hill, southern Lebanon",
                          "place": "Ali Al Taher, Lebanon", "country": "Lebanon", "lat": 33.38, "lng": 35.48,
-                         "hrs": 0.1, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
+                         "hrs": 0.1, "cat": "security", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2
+                    # A PERSON'S DEATH is ONE story wherever datelined: a shared 2-token NAME + near-identical
+                    # wording merges even across countries (a US death a UK wire mis-datelined). SHIPPED BUG: two
+                    # Dolly-Parton death dots (one mis-dotted UK, one US) stood apart.
+                    and len(app._merge_same_event([
+                        {"title": "US country music legend Dolly Parton dies aged 80", "place": "United Kingdom",
+                         "country": "United Kingdom", "lat": 54.0, "lng": -2.0, "hrs": 2.0, "cat": "society",
+                         "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
+                        {"title": "Dolly Parton has died aged 80.", "place": "United States",
+                         "country": "United States of America", "lat": 39.8, "lng": -98.6, "hrs": 1.5,
+                         "cat": "society", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 1
+                    # GUARD: two DIFFERENT templated events in different countries (no shared distinctive name)
+                    # must NEVER merge cross-country.
+                    and len(app._merge_same_event([
+                        {"title": "Earthquake kills dozens in Turkey", "place": "Turkey", "country": "Turkey",
+                         "lat": 39, "lng": 35, "hrs": 2.0, "cat": "climate", "sources": [{"name": "a", "url": "a"}], "sum": "", "image": ""},
+                        {"title": "Earthquake kills dozens in Japan", "place": "Japan", "country": "Japan",
+                         "lat": 36, "lng": 138, "hrs": 1.5, "cat": "climate", "sources": [{"name": "b", "url": "b"}], "sum": "", "image": ""}])) == 2)
     _me_ok = (len(_m) == 2                                                # 3 Kyiv reports -> 1, + Odesa
               and _kdot is not None and len(_kdot.get("sources", [])) == 3
               and _kdot["sources"][0]["name"] == "France 24"             # first reporter is the primary source
@@ -2355,6 +2372,14 @@ def main():
         "Tokyo stocks close higher as the Nikkei gains", "", "", allow_ai=False)[2] or "")))
     _lg_fails.append(("markets-guard-strike", "New York" not in (app._locate(
         "US could carry out further strikes on Iran", "", "", allow_ai=False)[2] or "")))
+    # A PERSON'S OBITUARY dots the person's OWN country (the nationality in the title), never a country that
+    # only paid tribute. SHIPPED BUG: "US … Dolly Parton dies aged 80" dotted the UK (a body tribute).
+    _lg_fails.append(("obit-nationality", (app._locate(
+        "US country music legend Dolly Parton dies aged 80", "",
+        "The family announced her passing. Tributes came from British fans across the United Kingdom.",
+        allow_ai=False)[3]) == "United States of America"))
+    _lg_fails.append(("obit-is", app._is_obituary("US country music legend Dolly Parton dies aged 80")))
+    _lg_fails.append(("obit-guard-casualties", not app._is_obituary("50 dead in Kabul suicide bombing")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2770,7 +2795,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 16   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC
+             + 19   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

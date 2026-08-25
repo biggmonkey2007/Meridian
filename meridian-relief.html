@@ -5240,7 +5240,7 @@ function selectEvent(d){
   // its count. The first noteMedia() for it will set the real baseline — otherwise the media that was
   // there all along would read as "new" and instantly un-gray the dot you just opened.
   const _rk=readKeyOf(d);
-  if(!readEvents.has(_rk)){ markReadKey(_rk); drawDots(); }   // persisted, so it stays read next session
+  if(!readEvents.has(_rk)){ markReadKey(_rk); drawDots(); updateLegendCounts(); }   // persisted + tick the category count down
   clearCountryHighlight();
   clearCities();
   clearCountry();
@@ -5813,7 +5813,9 @@ function renderLegend(){
 }
 function updateLegendCounts(){
   const cut=Date.now()-windowH*3600000;
-  const inWin=EVENTS.filter(e=>e.reportedAt>=cut);
+  // the count is UNREAD news per category — it ticks DOWN as you open/read each dot, so the legend shows how
+  // much is still new to you (a read dot no longer counts).
+  const inWin=EVENTS.filter(e=>e.reportedAt>=cut && !isRead(e));
   const cnt={}; CAT_ORDER.forEach(c=>{ cnt[c]=inWin.filter(e=>e.cat===c).length; });
   CAT_ORDER.forEach(c=>{ const n=document.getElementById("lc-"+c); if(n) n.textContent=cnt[c]; });
   legItems.querySelectorAll("[data-cat]").forEach(n=>n.classList.toggle("off",!filterCats.has(n.dataset.cat)));
