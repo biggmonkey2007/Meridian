@@ -401,9 +401,18 @@ GEO_CASES = [
     ("Tripoli clashes leave 5 dead as militias fight", "Fighting erupted in the Libyan capital.", "Libya",
      "the same name, the other country"),
     # --- facility-level precision (dot on the site, not the city) ---
-    ("FP-1 drones hitting the Syzran oil refinery in Russia's Samara region", "", "Syzran Oil Refinery",
-     "SHIPPED BUG: 'in RUSSIA's Samara region' grabbed the preposition -> dot on Moscow"),
-    ("Ukrainian drone strike hits the Omsk oil refinery", "", "Omsk Oil Refinery", "facility, not city centre"),
+    ("FP-1 drones hitting the Syzran oil refinery in Russia's Samara region", "", "Syzran Refinery",
+     "SHIPPED BUG: 'in RUSSIA's Samara region' grabbed the preposition -> dot on Moscow ('oil refinery'->'refinery' norm)"),
+    ("Ukrainian drone strike hits the Omsk oil refinery", "", "Omsk Refinery", "facility, not city centre ('oil refinery' normalised to 'refinery')"),
+    # A strike on a NAMED refinery lands AT the refinery, not in the ACTOR's country. SHIPPED BUG: "Ukraine
+    # struck the Afipsky OIL refinery" dotted UKRAINE — the "oil" qualifier broke the "afipsky refinery" match.
+    ("Ukraine struck the Afipsky oil refinery on August 25", "", "Afipsky Refinery",
+     "the site is in Russia (Krasnodar), not Ukraine the attacker; the 'oil refinery' norm restores the match"),
+    ("Ukraine struck the Afipsky oil refinery on August 25", "", "!Ukraine", "...and it must NOT dot the attacker"),
+    # A named REGION must win over the capital. SHIPPED BUG: "in Ukraine's Mykolaiv region" dotted KYIV — the
+    # common EN spelling "Mykolaiv" was missing from the gazetteer (only "Mykolayiv"/"Nikolaev" were listed).
+    ("A Russian drone struck a suburban passenger train in Ukraine's Mykolaiv region, damaging several carriages",
+     "According to Ukrzaliznytsia. No one was injured.", "Mykolaiv", "the named region, not the capital Kyiv"),
     ("Iran strikes tanker in the Strait of Hormuz", "", "Strait of Hormuz", "a dot in the strait itself"),
     # A curated strategic water must resolve even NAKED (no locating preposition to force it): spaCy NER
     # tags "Hormuz"/"Bosphorus" as a PERSON, and while a 5M-prior region entry got vetoed and deleted, a
@@ -1082,6 +1091,15 @@ FLUFF_CASES = [
      "GUARD: a presenter in a REAL event (resignation) is NOT filtered"),
     ("20 years of war in Afghanistan leave lasting scars", "", False,
      "GUARD: 'N years' about a real subject (war), not a media career, stays"),
+    # A CEREMONIAL / HOLIDAY EXHORTATION (a governor's festival sermon) is filler, not a located event.
+    ("Eid-el-Maulud: Abiodun urges Muslims to embrace Prophet's teachings of peace, compassion", "", True,
+     "SHIPPED BUG: a governor's Eid greeting/sermon made the map"),
+    ("Governor felicitates with Christians on Christmas", "", True, "a festival greeting is not news"),
+    ("Cleric urges worshippers to shun violence and embrace peace", "", True, "a sermon platitude, not an event"),
+    ("UN urges immediate ceasefire in Gaza", "", False, "GUARD: a concrete political demand is real news"),
+    ("Zelensky urges allies to send more air defense", "", False, "GUARD: 'urges allies to send' is not ceremonial"),
+    ("Christmas market attack kills 5 in Germany", "", False, "GUARD: a holiday word in a real attack stays"),
+    ("Trump urges Ukraine to accept peace deal", "", False, "GUARD: a diplomatic push, not a sermon"),
     # A FIRST-PERSON PERSONAL ESSAY / MEMOIR is a lived-experience column, not a located event.
     ("I was too young to understand infertility when diagnosed at 16", "", True,
      "SHIPPED BUG: a first-person personal-health memoir was a dot on the world map"),

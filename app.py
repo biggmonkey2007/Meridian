@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.63"
+APP_VERSION = "1.4.64"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d65"   # d65: resweep so a person's OBITUARY dots their own country (the nationality in the title),
+_DATA_VER = "d66"   # d66: resweep so a strike on a "<name> OIL refinery" dots the site (Afipsky/Omsk -> Russia)
+                    #      not the attacker, "Mykolaiv" (the common EN spelling) resolves so a named region beats
+                    #      the capital, and a ceremonial festival sermon ("Eid: governor urges Muslims to embrace…")
+                    #      drops off the map. Pairs with _SUM_PROMPT_VER 23 (briefs explain technical jargon).
+                    # d65: resweep so a person's OBITUARY dots their own country (the nationality in the title),
                     #      not a country that only paid tribute ("Dolly Parton dies" had dotted the UK) and not a
                     #      capital "statement"; and a shared distinctive NAME + near-identical wording now MERGES a
                     #      person's-death duplicate even across countries. Overrides a stale AI-WHERE, no resummarize.
@@ -288,7 +292,10 @@ _DATA_VER = "d65"   # d65: resweep so a person's OBITUARY dots their own country
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
                     # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
-_SUM_PROMPT_VER = "22"  # 22: brief must ALWAYS ground a newcomer — at least one plain sentence of background/context
+_SUM_PROMPT_VER = "23"  # 23: brief must also explain any TECHNICAL / financial / specialist term the headline leans
+                        #     on (what it measures + why it matters) — a "max ruble-deposit rate" story left the
+                        #     reader lost. A bit more context almost never hurts.
+                        # 22: brief must ALWAYS ground a newcomer — at least one plain sentence of background/context
                         #     (what the wider crisis/dispute/policy is), so no card is a bare one-line quote.
                         # 21: prompt COMPRESSED ~2,200->~750 tokens (same functions) so the free tiers cover far
                         #     more of the feed. 20: original-work copyright hardening; 17: longer in-depth briefs; 16 added
@@ -572,8 +579,11 @@ def _summarize(title, text, source="", depth=False):
               "statement or single-quote story gets at least one plain sentence of that context (what the wider "
               "crisis, dispute or policy actually is — 'The Rohingya are a Muslim minority who fled a 2017 military "
               "crackdown in Myanmar'). Never pad with empty filler or repeat the headline, but never leave the "
-              "reader without the basics. Explain in a few plain words any group/party/agency/official/place a "
-              "newcomer wouldn't know ('UNIFIL, the UN peacekeeping force in Lebanon').\n"
+              "reader without the basics — a bit more context almost never hurts. Explain in a few plain words any "
+              "group/party/agency/official/place a newcomer wouldn't know ('UNIFIL, the UN peacekeeping force in "
+              "Lebanon'), AND any TECHNICAL, financial or specialist term the headline leans on — what it measures "
+              "and why it matters ('the max ruble-deposit rate is the top interest Russian banks pay savers, a "
+              "gauge of how tight money is; it tracks the central bank's key rate').\n"
               "SHAPE: a 1-3 sentence prose lede that says what happened AND the one piece of context needed to "
               "make sense of it; then, ONLY if the story is rich enough, "
               "1-2 more short paragraphs of the next most important detail; then optionally 1-2 bullets ('- ...') "
@@ -4738,6 +4748,21 @@ _FLUFF_PAT = re.compile(
     r"book your|sign up (today|now)|find out how|learn more today|discount code)\b|"
     # the ESSAY shape: "The UK and international law – Palestine is the test" is a column, not an event
     r"[–—]\s*\w+ is the (test|answer|problem|solution|key|question|real|future|point)\b|"
+    # CEREMONIAL / HOLIDAY EXHORTATION — a politician's festival greeting or a sermon-style "embrace the
+    # teachings / imbibe the spirit / pray for peace" platitude is not a located EVENT, just filler (a staple of
+    # regional wires). SHIPPED BUG: "Eid-el-Maulud: Abiodun urges Muslims to embrace the Prophet's teachings of
+    # peace" was a dot. Keyed on the ceremonial FRAME (a religious holiday + a greeting verb, "felicitates", or
+    # "urges/calls on <the faithful/citizens> to embrace/pray/imbibe…") so a concrete political demand ("urges a
+    # ceasefire", "urges allies to send arms", "calls FOR peace") is left untouched.
+    r"\bfelicitat(?:e|es|ed|ing|ion|ions)\b|"
+    r"\b(?:eid|maulud|mawlid|milad|sallah|ramadan|easter|christmas|yuletide|diwali|hanukkah|vesak|nativity)\b"
+    r"[^.\n]{0,45}?\b(?:message|greeting|felicitat\w*|urges?|calls?|celebrat\w*|marks?|wishes|tasks?|charges?|"
+    r"admonish\w*|enjoins?|preach\w*)\b|"
+    r"\b(?:urges?|calls?\s+(?:on|upon)|tasks?|charges?|admonish\w*|enjoins?|implores?|appeals?\s+to)\s+"
+    r"(?:muslims|christians|the\s+faithful|worshipp?ers|citizens|nationals|nigerians|kenyans|ghanaians|"
+    r"ugandans|the\s+people|the\s+public|congregants|adherents|believers|residents)\b[^.\n]{0,70}?"
+    r"\b(?:embrace|imbibe|uphold|shun|eschew|reflect|pray|piety|godliness|tolerance|virtue|brotherhood|"
+    r"peaceful\s+co-?existence|compassion|forgiveness|teachings|spirit\s+of|values|righteousness|good\s+deeds)\b|"
     # CULTURE / ENTERTAINMENT feature — not a located event on a world news map. SHIPPED: "How Two British
     # Historians Made a Smash Hit Podcast" was a dot in the UK. Podcasts, box-office, celebrity, viral clips,
     # streaming hits, memoirs — the arts desk, not the front page.
@@ -7311,6 +7336,7 @@ _PLACE_ALIASES = {
     "zaporizhia": (47.84, 35.14, "Ukraine"), "zaporozhia": (47.84, 35.14, "Ukraine"),
     "kharkov": (49.99, 36.23, "Ukraine"), "odessa": (46.48, 30.73, "Ukraine"),
     "nikolaev": (46.98, 31.99, "Ukraine"), "mykolayiv": (46.98, 31.99, "Ukraine"),
+    "mykolaiv": (46.98, 31.99, "Ukraine"), "mikolaiv": (46.98, 31.99, "Ukraine"),   # common EN spelling (the wire's "Mykolaiv region")
     "lugansk": (48.57, 39.31, "Ukraine"), "luhansk": (48.57, 39.31, "Ukraine"),
     "dnepropetrovsk": (48.46, 35.05, "Ukraine"), "dnipropetrovsk": (48.46, 35.05, "Ukraine"),
     "chernigov": (51.50, 31.29, "Ukraine"), "vinnitsa": (49.23, 28.47, "Ukraine"),
@@ -9405,6 +9431,11 @@ _OUTLET_GEO_STRIP = re.compile(r"\b(the\s+)?wall\s+street\s+journal\b", re.I)
 
 
 _CURRENCY_GEO_RE = re.compile(r"\bU\.?\s?S\.?\s?\$|\bUSD\b", re.I)   # "US$", "U.S. $", "USD" -> a currency, not the country
+# "Afipsky OIL refinery" / "Novoshakhtinsk GAS refinery" — the gazetteer lists the site as "<town> refinery",
+# so a "oil/gas/petroleum" qualifier between the name and "refinery" broke the match and the strike fell back
+# to the ACTOR's country (a Ukrainian strike on a Russian refinery dotted UKRAINE). Collapse the qualifier so
+# "<name> oil refinery" reads as "<name> refinery" and matches the registered site.
+_REFINERY_NORM = re.compile(r"\b(oil|gas(?:\s+condensate)?|petroleum|petrochemical|crude)\s+(refiner(?:y|ies)|depot|plant|terminal)\b", re.I)
 
 
 @functools.lru_cache(maxsize=4096)
@@ -9421,6 +9452,8 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     # so only real country mentions remain.
     title = _CURRENCY_GEO_RE.sub("$", title or "")
     desc = _CURRENCY_GEO_RE.sub("$", desc or "")
+    title = _REFINERY_NORM.sub(r"\2", title)     # "Afipsky oil refinery" -> "Afipsky refinery" (match the site)
+    desc = _REFINERY_NORM.sub(r"\2", desc)
     title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
     # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
     # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
