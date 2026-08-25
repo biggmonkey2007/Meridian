@@ -1365,6 +1365,17 @@ CLEAN_HEADLINE_CASES = [
      "!Follow", "a 'Follow @handle for more news' promo tail must be stripped"),
     ("Follow the money: how sanctioned oligarchs moved billions offshore",
      "Follow the money", "a legitimate 'Follow the …' headline must NOT be stripped as promo"),
+    # A media word is only a callout to strip when it is SET OFF (a separator or a 'watch/says' cue), never a
+    # bare noun ending a real headline. SHIPPED BUG: "…Over Anti-Iran Video" lost "Video" (the video IS the story).
+    ("Iraqi Teen Decapitated in Baghdad Over Anti-Iran Video", "Anti-Iran Video",
+     "a meaningful trailing 'Video' (the video the teen posted) must NOT be stripped as a media callout"),
+    ("Massive explosion rocks Beirut port - video", "!video",
+     "a genuine '— video' callout (set off by a dash) IS still stripped"),
+    # Inline emoji copied from a Telegram post must never reach a headline.
+    ("\U0001f525 Massive explosion rocks Beirut port", "Massive explosion rocks Beirut port",
+     "a leading fire emoji is stripped from the headline"),
+    ("Protesters clash with police ➡️ dozens detained", "Protesters clash with police dozens detained",
+     "an inline arrow emoji is stripped from the headline"),
 ]
 
 
@@ -2333,6 +2344,17 @@ def main():
         "targeting a Saudi oil tanker in the Red Sea and troop concentrations in eastern Yemen", allow_ai=False)[2] or "")))
     _lg_fails.append(("maritime-guard-land", "Samara" in (app._locate(
         "Ukrainian drone strikes an oil refinery in Samara", "", "", allow_ai=False)[2] or "")))
+    # US FINANCIAL MARKETS -> NEW YORK (Wall Street), overriding a country cited only as a market driver.
+    _lg_fails.append(("markets-nyc", "New York" in (app._locate(
+        "Stocks stagger and oil rises as traders eye Iran threat, Nvidia results", "",
+        "Stocks fell on a US plan for the economic asphyxiation of Iran, while tech firms struggled after a "
+        "down day on Wall Street ahead of earnings from Nvidia.", allow_ai=False)[2] or "")))
+    _lg_fails.append(("markets-nyc-wallst", "New York" in (app._locate(
+        "Wall Street rallies as the Dow hits a record high", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("markets-guard-foreign", "New York" not in (app._locate(
+        "Tokyo stocks close higher as the Nikkei gains", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("markets-guard-strike", "New York" not in (app._locate(
+        "US could carry out further strikes on Iran", "", "", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2675,6 +2697,38 @@ def main():
                       "see _shares_subject", "a markets wrap never becomes the body of an Iran-sanctions dot"))
     print(f"  {'ok ' if _sc_ok else 'FAIL'} off-topic->drop, same-event->keep")
 
+    # The SOURCE label is the reporting OUTLET, never a photo/wire CREDIT. SHIPPED BUG: a France24 story was
+    # bylined "© Siddiqullah Alizai, AP" (the hero photo's credit), so "Read the original at © Siddiqullah
+    # Alizai, AP" linked to france24.com — a name/link mismatch. A credit-looking name falls back to the domain.
+    print("\n=== SOURCE NAME (a photo credit is not the outlet) ===")
+    _src_ok = (app._clean_source_name("© Siddiqullah Alizai, AP", "france24.com") == "France 24"
+               and app._clean_source_name("Kent Nishimura/AFP", "france24.com") == "France 24"
+               and app._clean_source_name("File photo", "reuters.com") == "Reuters"
+               and app._clean_source_name("", "france24.com") == "France 24"
+               # GUARD: a real outlet name is kept as-is (incl. a bare wire like "AP")
+               and app._clean_source_name("Reuters", "reuters.com") == "Reuters"
+               and app._clean_source_name("AP", "apnews.com") == "AP"
+               and app._clean_source_name("NOELREPORTS", "") == "NOELREPORTS")
+    ran[0] += 1
+    if not _src_ok:
+        fails.append(("source", "clean-name", "photo credit -> outlet; real name kept",
+                      "see _clean_source_name", "the byline must match the link the reader opens"))
+    print(f"  {'ok ' if _src_ok else 'FAIL'} photo-credit->outlet, real-name->kept")
+
+    # Telegram channels carry a factual, EVEN-HANDED lean note (pro-Ukraine AND pro-Russia by the same standard),
+    # exactly like the state-media ownership notes; an aggregator with no documented lean stays unlabelled.
+    print("\n=== CHANNEL LEAN (even-handed, only when documented) ===")
+    _lean_ok = (app._source_note("NOELREPORTS", "t.me") == "Pro-Ukraine coverage"
+                and app._source_note("Rybar", "t.me") == "Pro-Russia coverage"
+                and app._source_note("Bellum Acta", "t.me") == ""          # no documented lean -> silent
+                and app._source_note("TASS", "tass.ru") == "Russian state media"   # state media still wins first
+                and app._source_note("France 24", "france24.com") == "French public broadcaster")
+    ran[0] += 1
+    if not _lean_ok:
+        fails.append(("lean", "channel-note", "documented lean labelled; unknown silent; state-media unaffected",
+                      "see _source_note/_TG_LEAN", "even-handed, never a guessed political label"))
+    print(f"  {'ok ' if _lean_ok else 'FAIL'} NOELREPORTS=pro-UA, Rybar=pro-RU, unknown silent")
+
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(CLIMATE_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -2695,7 +2749,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 12   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water
+             + 16   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
@@ -2703,7 +2757,9 @@ def main():
              + 1    # + heads-of-state list overrides a stale head of government
              + 1    # + name-based dedup (a re-headlined copy is caught by shared names)
              + 1    # + roundup media guard (a multi-topic post's own photo is not trusted to match the dot)
-             + 1)   # + subject coherence (an off-topic report can't fill a dot's paragraph)
+             + 1    # + subject coherence (an off-topic report can't fill a dot's paragraph)
+             + 1    # + source name (a photo credit is not the outlet; byline matches the link)
+             + 1)   # + channel lean (even-handed Telegram-channel bias note, only when documented)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.60"
+APP_VERSION = "1.4.61"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d62"   # d62: resweep so a first-person personal essay ("I was too young to understand infertility…")
+_DATA_VER = "d63"   # d63: resweep so a US stocks/bonds/futures wrap dots New York (Wall Street) not a country it
+                    #      only cites; a source shows the OUTLET not a photo credit ("© …, AP"); a headline keeps a
+                    #      meaningful trailing "Video" and loses inline emoji; and followed Telegram channels carry
+                    #      an even-handed lean note (NOELREPORTS -> Pro-Ukraine). No re-summarize cost.
+                    # d62: resweep so a first-person personal essay ("I was too young to understand infertility…")
                     #      drops off the map, and an off-topic report can no longer fill a dot's paragraph (no
                     #      "Stoxx 600 ends flat" body under an Iran-sanctions headline). Pairs with _SUM_PROMPT_VER
                     #      22, which regenerates every brief to always ground a newcomer with a line of context.
@@ -727,6 +731,20 @@ _CREDIT_BRACKET = re.compile(
 _LEAD_FLAG  = re.compile(r"^(?:[\U0001F1E6-\U0001F1FF]\s*){1,6}[\s\-–—:|•·]*")
 _LEAD_EMOJI = re.compile(r"^(?:[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣]\s*)+")
 _LEAD_CC    = re.compile(r"^[A-Z]{2,3}(?:[ /][A-Z]{2,3}){0,3}\s*[-–—:|•·]\s+")   # a country code + dash the emoji tag left
+# Any emoji/pictograph/dingbat ANYWHERE (not just leading) — a Telegram post's inline "➡️", "🔥", "✅" bleeds
+# into the body copy we show. SHIPPED BUG: "Video ➡️ A 15-year-old boy…" carried the arrow straight onto the
+# card. Same code-point ranges as _LEAD_EMOJI, unanchored. Smart quotes (U+2018/2019) and dashes sit BELOW
+# U+2190, so they're untouched. Callers collapse the double space a removed mid-sentence emoji leaves.
+_EMOJI_ANY  = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣]")
+
+
+def _strip_emoji(t):
+    """Remove every emoji/flag/dingbat from a string and tidy the spacing it leaves behind."""
+    if not t:
+        return t
+    t = _EMOJI_ANY.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" \t​")
+    return re.sub(r"\s+([,.;:!?])", r"\1", t)   # no space before punctuation the emoji had preceded
 # A reposter's attribution STAMP on the front of a quoted statement — "President Trump via Truth Social:",
 # "Donald Trump on Truth Social —", "Netanyahu via Telegram:". The header already names the source and the
 # speaker, so this preface is just clutter in the body. Strip a leading "<name/title> via|on <platform>:".
@@ -1129,9 +1147,17 @@ _PROMO_URL    = re.compile(
     r"dlvr\.it|trib\.al|wp\.me|fb\.me|amzn\.to|youtu\.be|rebrand\.ly|shorte\.st|adf\.ly)/\S+", re.I)
 # A trailing MEDIA CALLOUT the link hung off of ("… deportations says video", "watch the footage") is furniture
 # once the link is gone — drop it so the headline ends on the news.
+# A trailing MEDIA CALLOUT ("— video", ": watch the footage", "(photos)") points at the attached clip and is
+# not part of the story — strip it. But the media word must be SET OFF as a tag (a separator before it, or a
+# 'watch/see/full' cue), NEVER a bare noun ending a real headline. SHIPPED BUG: "…Over Anti-Iran Video" lost
+# its "Video" (the video the teen posted IS the story), leaving a truncated "…Over Anti-Iran".
 _MEDIA_TAIL   = re.compile(
-    r"\s*[-–—,:;]?\s*(?:says?|watch|see|view|full|link)?\s*(?:the\s+)?"
-    r"(?:video|footage|clip|photos?|images?|pics?|thread|link)\s*[:.\s]*$", re.I)
+    r"\s*(?:"
+      r"[-–—,:;|(\[]\s*(?:says?|watch|see|view|full|link)?\s*(?:the\s+)?"
+      r"(?:video|footage|clip|photos?|images?|pics?|thread|link)"                     # "— video", ": watch footage", "(photos"
+      r"|\b(?:says?|watch|see|view|full)\s+(?:the\s+)?"
+      r"(?:video|footage|clip|photos?|images?|pics?)"                                 # "watch the footage", "says video"
+    r")\s*[:.)\]\s]*$", re.I)
 _PROMO_LEAD   = re.compile(r"^\s*(?:breaking|just\s?in|update|developing|exclusive|alert|flash|watch|new|now|urgent|live|hot|latest)\s*[-:–—]+\s*", re.I)
 # Aggregator BOILERPLATE that is not a story at all — Google News' channel blurb ("Comprehensive up-to-date
 # news coverage, aggregated from sources all over the world by Google News") lands as an article's og:desc and
@@ -1251,6 +1277,7 @@ def _sharpen_desc(text, n=460):
     while prev != t:
         prev = t
         t = _PROMO_LEAD.sub("", _LEAD_DATELINE.sub("", _strip_lead_flag(t)))
+    t = _strip_emoji(t)                     # drop any inline emoji/dingbat ("Video ➡️ A boy…" -> "Video A boy…")
     t = re.sub(r"\s{2,}", " ", t).strip()
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
@@ -3056,7 +3083,7 @@ class Api:
                 # A DUPLICATE — don't drop it, CREDIT its outlet on the dot it duplicates, so every source
                 # that ran the story (antiwar.com, a wire, a channel) is cited instead of the copies vanishing.
                 _cite_source(events[_dup_ei], {
-                    "source": (a.get("_src") or _domain_name(a.get("domain") or "")),
+                    "source": _clean_source_name(a.get("_src"), a.get("domain") or ""),
                     "domain": ("t.me" if _is_tg else (a.get("domain") or "")), "url": url,
                     "hrs": round(hrs, 1), "title": title, "image": img if _good_img(img) else "",
                 })
@@ -3079,7 +3106,7 @@ class Api:
                 "lat": round(lat, 4), "lng": round(lng, 4),
                 "place": place, "country": country, "geo_confidence": _geo_confidence(loc),
                 "hrs": round(hrs, 1),
-                "source": (a.get("_src") or _domain_name(a.get("domain") or "")),
+                "source": _clean_source_name(a.get("_src"), a.get("domain") or ""),
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
                 "image": img if _good_img(img) else "",   # filter Telegram link-preview logos too (TASS/RT cards)
@@ -5763,6 +5790,7 @@ def _tidy_spacing(t):
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links (incl. bit.ly), "Follow @x", @handles
+    t = _strip_emoji(t)                                          # no inline "🔥"/"➡️"/"✅" in a headline
     t = _MEDIA_TAIL.sub("", t).strip()                          # "… deportations says video" (link already gone) -> drop the callout
     t = _tidy_spacing(t)                                         # spaces, commas, parentheses
     # strip a trailing " - Outlet" BYLINE (Google-News aggregation furniture) whenever a REAL headline
@@ -5898,6 +5926,28 @@ def _domain_name(domain):
     return (core[:1].upper() + core[1:]) if core else (domain or "Source")
 
 
+# A PHOTO / WIRE-AGENCY CREDIT is not the reporting outlet. A Google-News/RSS <source> tag sometimes carries
+# the hero image's credit line instead of the publisher — "© Siddiqullah Alizai, AP", "Kent Nishimura/AFP",
+# "File photo" — and that string then became the dot's SOURCE, so "Read the original at © Siddiqullah Alizai,
+# AP" linked to france24.com (a name/link mismatch the user hit twice, both France24 wire-photo stories).
+_PHOTO_CREDIT_RE = re.compile(
+    r"^\s*(?:©|\(c\)|copyright\b)"                                              # "© Name, AP"
+    r"|[/,]\s*(?:ap|afp|reuters|getty(?:\s+images)?|epa(?:-efe)?|aap|anadolu|dpa|pa\s?media|"
+    r"shutterstock|zuma\w*|sipa|eyevine|alamy|newscom|abaca|imago|picture\s?alliance)\s*$"   # "Name, AP" / "Name/Reuters"
+    r"|^\s*(?:photo|photograph|screen\s?grab|screenshot|file\s+photo|handout|pool\s+photo|stringer)\b",
+    re.I)
+
+
+def _clean_source_name(name, domain=""):
+    """The SOURCE label is the reporting OUTLET, never a photographer's credit line. When the supplied name
+    looks like a photo/agency CREDIT (a '©' line, a 'Name, AP' / 'Name/Reuters' byline, a 'File photo' tag),
+    fall back to the real outlet derived from the DOMAIN — so the byline matches the link the reader opens."""
+    n = (name or "").strip()
+    if not n or _PHOTO_CREDIT_RE.search(n):
+        return _domain_name(domain)
+    return n
+
+
 # WHO IS REPORTING — a short, FACTUAL note on the outlet's ownership so a reader can weigh its likely slant.
 # It states OWNERSHIP/funding, never a verdict ("propaganda"): state-owned wires ARE state media, a fact that
 # is true whoever the state is. Deliberately EVEN-HANDED — Russian, Chinese, Iranian, Gulf, US-funded and
@@ -5928,12 +5978,30 @@ _SOURCE_ORIGIN = [
     (("npr", "pbs"), "US public broadcaster"),
 ]
 
+# EDITORIAL LEAN of the OSINT / war Telegram channels we follow — a factual note on a channel's KNOWN
+# orientation so a reader can weigh its telling, exactly like the state-media notes above and by the SAME
+# even-handed standard: a pro-Ukraine and a pro-Russia channel are both labelled "Pro-X coverage", never
+# praised or condemned. Matched against the channel's display NAME. DELIBERATELY CONSERVATIVE — only channels
+# with a well-documented lean are here; an aggregator with no clear orientation gets NO note (better silent
+# than a guessed political label). The user asked for these (NOELREPORTS = pro-Ukraine); extend as needed.
+_TG_LEAN = [
+    (("noel_reports", "noelreports", "noel reports", "ukraine weapons tracker", "ukraineweapons",
+      "front_ukrainian", "ukraine now", "ukrainenow", "kyiv post"), "Pro-Ukraine coverage"),
+    (("rybar", "intelslava", "intel slava", "slava z", "readovka", "wargonzo", "war gonzo",
+      "solovievlive", "soloviev", "grey zone", "greyzone", "sladkov", "rvvoenkor", "milchronicles",
+      "sremski", "zvezda", "vysokygovorit"), "Pro-Russia coverage"),
+]
+
 
 def _source_note(source, domain=""):
-    """A short factual ownership note for an outlet ('Russian state media', 'UK public broadcaster') or "" if
-    it's an ordinary/unknown outlet. Lets a reader gauge likely slant without the app taking a side."""
+    """A short factual note on who is reporting — an outlet's state/public OWNERSHIP ('Russian state media',
+    'UK public broadcaster') or a followed Telegram channel's KNOWN editorial LEAN ('Pro-Ukraine coverage') —
+    or "" for an ordinary/unknown source. Lets a reader gauge likely slant without the app taking a side."""
     hay = " " + (source or "").lower().strip() + " " + (domain or "").lower().strip() + " "
     for subs, note in _SOURCE_ORIGIN:
+        if any(s in hay for s in subs):
+            return note
+    for subs, note in _TG_LEAN:              # a Telegram channel's documented lean (state media already won above)
         if any(s in hay for s in subs):
             return note
     return ""
@@ -9888,6 +9956,38 @@ def _maritime_water(text):
     return best
 
 
+# US FINANCIAL MARKETS -> NEW YORK (Wall Street). A stocks/bonds/futures/crypto story tied to the US belongs
+# on the NYSE, not on a country merely named as a market driver. SHIPPED BUG: "Stocks stagger and oil rises as
+# traders eye Iran threat, Nvidia results" dotted IRAN (the "threat" it cited) — it is a Wall Street wrap. The
+# user's rule: anything on stocks/crypto/bonds/futures to do with the US goes to NYC.
+_MARKETS_TOPIC = re.compile(
+    r"\b(?:stocks?|shares|equit(?:y|ies)|wall\s*street|dow(?:\s+jones)?|nasdaq|s&p\s*\d*|nyse|"
+    r"bond\s+market|treasur(?:y|ies)\s+(?:yield|note|bond)|bond\s+yields?|futures|stock\s+index|"
+    r"indices|bourse|crypto\w*|bitcoin|ethereum|\bipo\b|(?:quarterly\s+)?earnings)\b", re.I)
+_US_MARKET_CUE = re.compile(
+    r"\b(?:wall\s*street|dow(?:\s+jones)?|nasdaq|s&p\s*500|nyse|"
+    r"nvidia|federal\s+reserve|the\s+fed\b|"
+    r"u\.?s\.?\s+(?:stocks?|shares|markets?|equit\w*|treasur\w*)|"
+    r"american\s+(?:stocks?|shares|markets?))\b", re.I)
+_FOREIGN_MARKET = re.compile(
+    r"\b(?:nikkei|topix|ftse|\bdax\b|cac\s*40|hang\s*seng|shanghai\s+composite|shenzhen|sensex|nifty|"
+    r"kospi|\basx\b|bovespa|ibovespa|\bmoex\b|tadawul|tokyo\s+stocks|london\s+stocks|shanghai\s+stocks|"
+    r"european\s+(?:stocks|shares|markets)|asian\s+(?:stocks|shares|markets))\b", re.I)
+_US_VENUE = re.compile(r"\b(?:wall\s*street|dow|nasdaq|nyse|s&p)\b", re.I)
+
+
+def _us_markets(text):
+    """True when the story is a US financial-markets report (Wall Street / a US index or mega-cap / the Fed),
+    and not dominated by a FOREIGN exchange — so it dots New York, not a country cited only as a market mover.
+    A foreign-market wrap (Nikkei, FTSE, Shanghai) with no hard US venue is left to normal geolocation."""
+    t = text or ""
+    if not _MARKETS_TOPIC.search(t) or not _US_MARKET_CUE.search(t):
+        return False
+    if _FOREIGN_MARKET.search(t) and not _US_VENUE.search(t):
+        return False
+    return True
+
+
 def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     """The location for a dot. RULES first (free, deterministic, tested); only when they can't pin a
     specific place does the FREE AI read the whole story and name it — grounded back through the SAME
@@ -9914,6 +10014,10 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
         if _wr and _is_water_place(_wr[2]):
             _mco = [c for (c, _t) in ment_list if c in COUNTRY_COORDS]   # fly the story's own flag over the water
             return (_wr[0], _wr[1], _wr[2], _mco[0] if _mco else _wr[3])
+    # US MARKETS -> NEW YORK (Wall Street). A US stocks/bonds/futures/crypto wrap dots the NYSE, overriding a
+    # country cited only as a market driver (an "Iran threat" the traders are eyeing).
+    if _us_markets((title or "") + ". " + (desc or "")):
+        return (40.706, -74.009, "New York, United States", "United States of America")
     # LEADER / OFFICIAL STATEMENT -> the CAPITAL. A quote, threat or ruling with no specific scene resolves to
     # a bare country centroid, but officials SPEAK from the capital — so pin it there (Putin -> Moscow,
     # Zelensky -> Kyiv): a specific dot the reader can place, and its OWN dot (statements are 'politics', which

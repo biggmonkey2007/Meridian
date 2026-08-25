@@ -3290,6 +3290,32 @@ function positionCountryHighlight(){
     ["g-pulse","g-events"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.moveLayer(id); });   // dots always above the highlight
   }catch(e){}
 }
+// Our OWN sea/gulf/ocean and strait labels (g-seas-lbl, g-straits-lbl) are separate layers, so
+// tuneCartoForSatellite (which only touches CARTO layers) never restyled them — on the dark satellite photo
+// their soft blue-grey / teal text was unreadable (the user: "the body-of-water and strait names look
+// unreadable on satellite"). Restyle per base: LIGHT text + a DARK cushion over the imagery; the soft italic
+// blue-grey with a white cushion on the pale clean/topo bases. One map, so this fixes flat AND globe.
+function tuneWaterLabels(k){
+  if(!mlMap) return;
+  const sat = (k==="satellite");
+  const seaColor  = sat ? "#e3eefc" : "#5a7189";
+  const straitCol = sat ? "#c8e7f5" : "#0d6b86";
+  const halo      = sat ? "rgba(3,10,18,0.85)" : "#ffffff";
+  try{
+    if(mlMap.getLayer("g-seas-lbl")){
+      mlMap.setPaintProperty("g-seas-lbl","text-color",seaColor);
+      mlMap.setPaintProperty("g-seas-lbl","text-halo-color",halo);
+      mlMap.setPaintProperty("g-seas-lbl","text-halo-width", sat ? 1.8 : 1.3);
+      mlMap.setPaintProperty("g-seas-lbl","text-halo-blur", sat ? 0.4 : 0.2);
+    }
+    if(mlMap.getLayer("g-straits-lbl")){
+      mlMap.setPaintProperty("g-straits-lbl","text-color",straitCol);
+      mlMap.setPaintProperty("g-straits-lbl","text-halo-color",halo);
+      mlMap.setPaintProperty("g-straits-lbl","text-halo-width", sat ? 2.0 : 1.7);
+      mlMap.setPaintProperty("g-straits-lbl","text-halo-blur", sat ? 0.4 : 0);
+    }
+  }catch(e){}
+}
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
@@ -3430,6 +3456,7 @@ function setGlobeBasemap(k){
     }catch(e){}
   }
   if(mlMap.getLayer("g-events")) mlMap.setPaintProperty("g-events","circle-stroke-color", dotStroke());   // soft-white dot ring on satellite, white elsewhere
+  tuneWaterLabels(k);   // light text + dark cushion for the sea/strait names on satellite; soft blue-grey on clean/topo
   { const _el=document.getElementById("elev-legend"); if(_el){ _el.hidden=(k!=="topo"); _el.setAttribute("aria-hidden", k!=="topo"?"true":"false"); } document.body.classList.toggle("topo-active", k==="topo"); }   // elevation scale bottom-right, zoom buttons lift above it — Topographic only
   try{ mlMap.setMaxZoom(k==="topo" ? 11 : 16); if(mlMap.getZoom() > (k==="topo"?11:16)) mlMap.setZoom(k==="topo"?11:16); }catch(e){}   // cap how far Topographic zooms — the DEM detail (and the lag) doesn't need to go past ~city scale
   // Re-warm for the NEW base: its imagery was never primed by the old (CARTO-only) warm list, which is why
@@ -3524,6 +3551,7 @@ function addGlobeOverlays(){
       "text-size":["interpolate",["linear"],["zoom"],2,8.5,5,10,8,12.5],"text-max-width":8,"text-allow-overlap":false,"text-padding":6},
       paint:{"text-color":"#5a7189","text-halo-color":"#ffffff","text-halo-width":1.3,"text-halo-blur":0.2,"text-opacity":1}}, underDots);
   }
+  tuneWaterLabels(currentBase);   // restyle for the current base right after the labels exist (initial build)
 }
 function updateGlobeOverlayVis(){
   if(!mlMap) return;
@@ -3613,7 +3641,11 @@ async function showMap(proj){          // proj: "globe" | "flat"
       if(overDot){ const ev=EVENTS.find(x=>x.id===fs[0].properties.id); if(ev){ clearTimeout(_hoverWarmT); _hoverWarmT=setTimeout(()=>{ try{ warmPhoto(ev); warmStory(ev); }catch(_){} }, 90); } } });
   } else {
     setTimeout(()=>{ try{ mlMap.resize(); }catch(e){} }, 30);
-    if(mlLoaded){ applyProj(); updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); startGlobePulse(); }
+    // SWITCHING PROJECTION on an existing map. SHIPPED BUG: going flat->globe on Satellite left a dark globe
+    // with only the vector overlay — the imagery rasters, built for the mercator view, didn't repaint under
+    // the globe, so only the dark sphere fill showed. Rebuild the satellite base for the new projection (the
+    // same call a base switch makes) so the imagery is always present; clean/topo repaint fine, so leave them.
+    if(mlLoaded){ applyProj(); if(currentBase==="satellite") setGlobeBasemap(currentBase); updateGlobeData(); if(countriesGeo && mlMap.getSource("g-borders")) mlMap.getSource("g-borders").setData(splitBordersGeo()); tuneWaterLabels(currentBase); startGlobePulse(); }
   }
   return true;
 }
