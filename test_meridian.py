@@ -2729,6 +2729,27 @@ def main():
                       "see _source_note/_TG_LEAN", "even-handed, never a guessed political label"))
     print(f"  {'ok ' if _lean_ok else 'FAIL'} NOELREPORTS=pro-UA, Rybar=pro-RU, unknown silent")
 
+    # A wrongly-matched report's PICTURE must never become a dot's hero. SHIPPED BUG: a Dolly-Parton tribute
+    # image sat atop a SpaceX story. Image transfers on merge/promotion are now subject-gated; a multi-topic
+    # ROUNDUP post's own image is dropped too (its picture may belong to a later item than the headline).
+    print("\n=== HERO IMAGE COHERENCE (a mismatched photo can't become the hero) ===")
+    _p1 = {"title": "SpaceX unveils $100 billion Starbase Louisiana", "image": "", "sum": ""}
+    app._absorb_source(_p1, {"title": "Dolly Parton, country legend, dead at 79",
+                             "image": "https://x/dolly.jpg", "sum": "The singer died Tuesday."})
+    _p2 = {"title": "SpaceX unveils $100 billion Starbase Louisiana", "image": "", "sum": ""}
+    app._absorb_source(_p2, {"title": "SpaceX reveals huge new Starbase site in Louisiana",
+                             "image": "https://x/starbase.jpg", "sum": "Starship flights planned."})
+    _img_ok = (_p1.get("image") == ""                                   # off-topic image blocked
+               and _p2.get("image") == "https://x/starbase.jpg"        # same-event image kept
+               # a multi-topic roundup post's own image is not trusted; a single-topic post's is
+               and not app._post_media_trusted("SpaceX unveils Starbase Louisiana. Meanwhile, Dolly Parton has died at 79.")
+               and app._post_media_trusted("SpaceX unveils Starbase Louisiana with 30+ Starship flights a day."))
+    ran[0] += 1
+    if not _img_ok:
+        fails.append(("hero-image", "coherence", "off-topic image blocked; same-event kept; roundup image dropped",
+                      "see _absorb_source/_post_media_trusted", "a mismatched photo never becomes the hero"))
+    print(f"  {'ok ' if _img_ok else 'FAIL'} off-topic->blocked, same-event->kept, roundup->dropped")
+
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(CLIMATE_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -2759,7 +2780,8 @@ def main():
              + 1    # + roundup media guard (a multi-topic post's own photo is not trusted to match the dot)
              + 1    # + subject coherence (an off-topic report can't fill a dot's paragraph)
              + 1    # + source name (a photo credit is not the outlet; byline matches the link)
-             + 1)   # + channel lean (even-handed Telegram-channel bias note, only when documented)
+             + 1    # + channel lean (even-handed Telegram-channel bias note, only when documented)
+             + 1)   # + hero image coherence (a mismatched photo can't become the hero via merge/roundup)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

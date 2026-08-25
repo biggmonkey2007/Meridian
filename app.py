@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.61"
+APP_VERSION = "1.4.62"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d63"   # d63: resweep so a US stocks/bonds/futures wrap dots New York (Wall Street) not a country it
+_DATA_VER = "d64"   # d64: resweep so a mismatched picture can't become a dot's hero — image transfers on
+                    #      merge/promotion are subject-gated, a promotion swaps in the new story's image, and a
+                    #      multi-topic ROUNDUP post's own image is dropped (a Dolly-Parton tribute image had sat
+                    #      atop a SpaceX story). No re-summarize cost.
+                    # d63: resweep so a US stocks/bonds/futures wrap dots New York (Wall Street) not a country it
                     #      only cites; a source shows the OUTLET not a photo credit ("© …, AP"); a headline keeps a
                     #      meaningful trailing "Video" and loses inline emoji; and followed Telegram channels carry
                     #      an even-handed lean note (NOELREPORTS -> Pro-Ukraine). No re-summarize cost.
@@ -3109,7 +3113,10 @@ class Api:
                 "source": _clean_source_name(a.get("_src"), a.get("domain") or ""),
                 "domain": ("t.me" if _is_tg else (a.get("domain") or "")),
                 "url": url,
-                "image": img if _good_img(img) else "",   # filter Telegram link-preview logos too (TASS/RT cards)
+                # the post's own hero image — but NOT from a multi-topic ROUNDUP, whose picture may belong to a
+                # LATER item than the first-sentence headline we dot (a Dolly-Parton tribute image sat atop a
+                # SpaceX story). Same guard the wire strip uses; a single-topic post keeps its image.
+                "image": (img if (_good_img(img) and (not _is_tg or _post_media_trusted(a.get("geo_text") or a.get("desc") or ""))) else ""),   # filter Telegram link-preview logos too (TASS/RT cards)
                 "sum": _sharpen_desc(a.get("desc") or ""),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
@@ -6328,7 +6335,11 @@ def _absorb_source(primary, dup):
     extra = _strip_promo(dup.get("sum") or "")
     if extra and not (primary.get("sum") or "").strip() and _shares_subject(primary.get("title") or "", extra):
         primary["sum"] = _clip(extra, 900)
-    if not primary.get("image") and dup.get("image"):
+    # Take the dup's picture ONLY when the dup is actually about the primary's headline — a wrongly-clustered
+    # report's image must never become the hero (the "Dolly Parton photo on a SpaceX dot" class). Same
+    # subject gate as the sum-fill above.
+    if (not primary.get("image") and dup.get("image")
+            and _shares_subject(primary.get("title") or "", (dup.get("title") or "") + " " + (dup.get("sum") or ""))):
         primary["image"] = dup["image"]
     # the dot stays FRESH: its timestamp tracks the most recent update, even though the primary keeps the
     # first reporter's headline. (Individual report times live in each entry of `sources`.)
@@ -6368,6 +6379,12 @@ def _cite_source(primary, dup):
         primary["url"] = dup["url"]
         primary["sum"] = dup.get("sum") or ""
         primary["summary"] = dup.get("summary") or ""      # drop any stale brief; it belongs to the old headline
+        # The PICTURE, too, belonged to the old headline — swap in the promoted story's image (empty is fine;
+        # the wire lookup / story_photo fills it) and drop the old post's own media. SHIPPED BUG: a promotion
+        # left a DIFFERENT story's photo sitting above the newly-shown headline.
+        primary["image"] = dup.get("image") or ""
+        primary["photo"] = ""
+        primary["srcmedia"] = dup.get("srcmedia") or []
         primary["involved"] = _involved_countries(dup["title"], primary.get("country") or "") or primary.get("involved")
         for k in ("source", "domain"):
             if dup.get(k):
@@ -6376,7 +6393,9 @@ def _cite_source(primary, dup):
     primary.setdefault("_shown_hrs", _shown)
     if dup.get("hrs") is not None:
         primary["hrs"] = min(primary.get("hrs", dup["hrs"]), dup["hrs"])   # the DOT's timestamp stays freshest
-    if not primary.get("image") and dup.get("image"):
+    # only borrow a picture the dup actually goes with — never a mismatched one
+    if (not primary.get("image") and dup.get("image")
+            and _shares_subject(primary.get("title") or "", (dup.get("title") or "") + " " + (dup.get("sum") or ""))):
         primary["image"] = dup["image"]
 
 
@@ -6521,8 +6540,9 @@ def _collapse_colocated(events, window_h=6):
             if hit is not None:
                 k = kept[hit]
                 if _SEVERITY.get(e["cat"], 9) < _SEVERITY.get(k["cat"], 9):
-                    if not e.get("image") and k.get("image"):
-                        e["image"] = k["image"]           # the survivor should still show a picture
+                    if (not e.get("image") and k.get("image")
+                            and _shares_subject(e.get("title") or "", (k.get("title") or "") + " " + (k.get("sum") or ""))):
+                        e["image"] = k["image"]           # the survivor should still show a picture (if it matches)
                     e.setdefault("sources", [_src_of(e)])
                     _absorb_source(e, k)                  # e becomes the survivor -> inherit k's citations
                     kept[hit] = e
