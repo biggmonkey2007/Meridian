@@ -1082,6 +1082,15 @@ FLUFF_CASES = [
      "GUARD: a presenter in a REAL event (resignation) is NOT filtered"),
     ("20 years of war in Afghanistan leave lasting scars", "", False,
      "GUARD: 'N years' about a real subject (war), not a media career, stays"),
+    # A FIRST-PERSON PERSONAL ESSAY / MEMOIR is a lived-experience column, not a located event.
+    ("I was too young to understand infertility when diagnosed at 16", "", True,
+     "SHIPPED BUG: a first-person personal-health memoir was a dot on the world map"),
+    ("I survived the earthquake but lost my whole family", "", True, "a first-person survival memoir is a feature"),
+    ("How I escaped the war in Syria", "", True, "a 'how I…' personal narrative is the features desk"),
+    ("India was hit by record monsoon flooding", "", False,
+     "GUARD: 'India' starts with 'I' but is not a first-person 'I' — a real disaster stays"),
+    ("\"I was threatened,\" says witness in the murder trial", "", False,
+     "GUARD: a reported quote opens with a quotation mark, so ^I doesn't catch it — real news stays"),
 ]
 
 
@@ -2649,6 +2658,23 @@ def main():
                       "see _post_media_trusted", "a post's own picture is trusted only when it's about one thing"))
     print(f"  {'ok ' if _rm_ok else 'FAIL'} roundup->drop, single-topic->keep")
 
+    # An OFF-TOPIC report's text must never be folded in as a dot's paragraph. SHIPPED BUG: a "Pan-European
+    # Stoxx 600 ends flat" markets line sat under a "US unveils Iran sanctions" headline. _shares_subject gates
+    # the sum-fill in _absorb_source: fold only when the dup is actually about the headline.
+    print("\n=== SUBJECT COHERENCE (an off-topic report can't become a dot's paragraph) ===")
+    _sc_ok = (not app._shares_subject("US unveils expanded sanctions aimed at Iran economic asphyxiation",
+                                      "Pan-European Stoxx 600 ends nearly flat as gains in travel and mining shares offset losses in energy stocks.")
+              # GUARD: a genuine same-event report DOES share the subject -> still folds in
+              and app._shares_subject("US unveils expanded sanctions aimed at Iran economic asphyxiation",
+                                      "The US Treasury imposed fresh sanctions targeting Iran oil exports.")
+              and app._shares_subject("Queensland bail breach laws to carry minimum 12 month jail sentence",
+                                      "Premier David Crisafulli confirmed the bail legislation will apply to youths and adults."))
+    ran[0] += 1
+    if not _sc_ok:
+        fails.append(("coherence", "shares-subject", "off-topic dropped; same-event kept",
+                      "see _shares_subject", "a markets wrap never becomes the body of an Iran-sanctions dot"))
+    print(f"  {'ok ' if _sc_ok else 'FAIL'} off-topic->drop, same-event->keep")
+
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(CLIMATE_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
              + len(NAMEMATCH_CASES) + len(LEADER_PICK_CASES) + len(FB_PARSE_CASES) + len(LEAN_CASES)
@@ -2676,7 +2702,8 @@ def main():
              + 1    # + facility word (airport) is not a place
              + 1    # + heads-of-state list overrides a stale head of government
              + 1    # + name-based dedup (a re-headlined copy is caught by shared names)
-             + 1)   # + roundup media guard (a multi-topic post's own photo is not trusted to match the dot)
+             + 1    # + roundup media guard (a multi-topic post's own photo is not trusted to match the dot)
+             + 1)   # + subject coherence (an off-topic report can't fill a dot's paragraph)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in

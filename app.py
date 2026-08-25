@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.59"
+APP_VERSION = "1.4.60"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d61"   # d61: resweep so a threatened strike dots the THREATENER not the target ("US could strike
+_DATA_VER = "d62"   # d62: resweep so a first-person personal essay ("I was too young to understand infertility…")
+                    #      drops off the map, and an off-topic report can no longer fill a dot's paragraph (no
+                    #      "Stoxx 600 ends flat" body under an Iran-sanctions headline). Pairs with _SUM_PROMPT_VER
+                    #      22, which regenerates every brief to always ground a newcomer with a line of context.
+                    # d61: resweep so a threatened strike dots the THREATENER not the target ("US could strike
                     #      Iran"->US), a pro-/anti-<country> stance sinks (AIPAC->Michigan), a media-career
                     #      retrospective drops off the map, a bare "Armed Forces" isn't glossary-defined, and a
                     #      multi-topic roundup post's own photo is dropped (no Xi photo under an H-1B story).
@@ -272,7 +276,9 @@ _DATA_VER = "d61"   # d61: resweep so a threatened strike dots the THREATENER no
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
                     # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
-_SUM_PROMPT_VER = "21"  # 21: prompt COMPRESSED ~2,200->~750 tokens (same functions) so the free tiers cover far
+_SUM_PROMPT_VER = "22"  # 22: brief must ALWAYS ground a newcomer — at least one plain sentence of background/context
+                        #     (what the wider crisis/dispute/policy is), so no card is a bare one-line quote.
+                        # 21: prompt COMPRESSED ~2,200->~750 tokens (same functions) so the free tiers cover far
                         #     more of the feed. 20: original-work copyright hardening; 17: longer in-depth briefs; 16 added
                         #     neutral source-attribution of contested claims (state/partisan wires, Telegram)
 _AIWHERE_VER = "aw6"    # bump to invalidate the AI location+scope the summary pass emits (keyed by title)
@@ -548,10 +554,16 @@ def _summarize(title, text, source="", depth=False):
               "story rather than a fixed template.")
     prompt = ("Write an ORIGINAL news brief of the story below for a world-news map — YOUR OWN composition built "
               "from the FACTS, never a rewrite or paraphrase. Write for a sharp 8th-grade reader: short plain "
-              "words, short active sentences. It must ADD to the headline; if there is nothing to add, write ONE "
-              "sentence or none — never pad. Explain in a few plain words any group/party/agency/official/place a "
+              "words, short active sentences. It must ADD to the headline, not restate it: give the reader the "
+              "BACKGROUND to understand the situation — in your own words, what is going on, why now, and what it "
+              "means for the people or country involved. ALWAYS ground a reader who knows nothing: even a short "
+              "statement or single-quote story gets at least one plain sentence of that context (what the wider "
+              "crisis, dispute or policy actually is — 'The Rohingya are a Muslim minority who fled a 2017 military "
+              "crackdown in Myanmar'). Never pad with empty filler or repeat the headline, but never leave the "
+              "reader without the basics. Explain in a few plain words any group/party/agency/official/place a "
               "newcomer wouldn't know ('UNIFIL, the UN peacekeeping force in Lebanon').\n"
-              "SHAPE: a 1-3 sentence prose lede that says what happened; then, ONLY if the story is rich enough, "
+              "SHAPE: a 1-3 sentence prose lede that says what happened AND the one piece of context needed to "
+              "make sense of it; then, ONLY if the story is rich enough, "
               "1-2 more short paragraphs of the next most important detail; then optionally 1-2 bullets ('- ...') "
               "for a hard specific the prose did NOT already give (a bullet may open with a 1-2 word bold label "
               "like '**Scale:**'). Add a final '- Why it matters: ...' bullet ONLY if the stakes aren't obvious. "
@@ -4669,6 +4681,12 @@ _FLUFF_PAT = re.compile(
     r"^from\s+[a-z'.\-]+\s+to\s+[a-z'.\-]+\s*:|"
     r"\b(one (?:man|woman|family|refugee|migrant|boy|girl)'?s?\s+(?:story|journey|struggle|escape|ordeal|"
     r"fight|life)|a day in the life|meet the |portrait of|my journey|how i (?:escaped|fled|survived|left|made))\b|"
+    # A FIRST-PERSON PERSONAL ESSAY / MEMOIR is a lived-experience column, not a located event. SHIPPED BUG:
+    # "I was too young to understand infertility when diagnosed at 16" was a dot. A headline written as the
+    # author's own story (opening "I was/I had/I survived…") is the features desk. A real quote headline opens
+    # with a quotation mark, so `^i` can't catch a reported quote — only a genuine first-person narrative.
+    r"^i\s+(?:was|were|am|'m|have|had|never|didn'?t|couldn'?t|can'?t|grew\s+up|remember|thought|felt|"
+    r"spent|lost|survived|used\s+to|knew|know|left|fled|escaped|beat|battled|nearly|almost|once)\b|"
     r"[:\-]\s*(how|why)\b|"                         # explainer shape: "Greed and loopholes: How ... works"
     r"\bwhy\b.*\bmatters?\b|"
     r"\b(goes viral|feel-good|heartwarming|everything you need)\b|"
@@ -6207,6 +6225,21 @@ def _src_of(e):
             "url": e.get("url") or "", "hrs": e.get("hrs"), "title": e.get("title") or ""}
 
 
+def _shares_subject(a, b):
+    """Do two texts share a DISTINCTIVE subject — the same named entity, or a specific content word — so one
+    can stand in for (or elaborate on) the other? Used to REFUSE folding an off-topic report's text into a dot:
+    a markets wrap ('Pan-European Stoxx 600 ends flat') must never become the paragraph under an unrelated
+    'US unveils Iran sanctions' headline. Generic/weak words (said, new, country, US-vs-them demonyms) don't
+    count — a real link needs a shared proper name or a shared specific noun."""
+    if not _WEAK_MATCH:
+        _init_weak_match()
+    if (_proper_words(a) & _proper_words(b)) - _WEAK_MATCH:
+        return True
+    aw = _sigwords(a) - _GENERIC_WORDS - _WEAK_MATCH
+    bw = _sigwords(b) - _GENERIC_WORDS - _WEAK_MATCH
+    return bool(aw & bw)
+
+
 def _absorb_source(primary, dup):
     """Fold a duplicate report INTO the primary (first-to-report) dot: cite its outlet, fold its text in
     so the AI brief reflects every source, and upgrade the primary's picture/place if it was missing one."""
@@ -6219,8 +6252,13 @@ def _absorb_source(primary, dup):
     # removed from the US dollar system") glued onto it from the other source — a conflation of two separate
     # events into one paragraph. The primary keeps ITS OWN text; the AI brief (which sees every cited source's
     # article) does any real synthesis, cleanly.
+    # Fill an empty primary sum from the dup ONLY when the dup is ACTUALLY about the primary's headline. A
+    # clustering slip (or a photo-wire primary with no text of its own) otherwise pastes an unrelated report's
+    # paragraph under the wrong headline. SHIPPED BUG: a "Pan-European Stoxx 600 ends flat" markets line sat as
+    # the body of a "US unveils Iran sanctions" dot. If nothing on-topic is available, leave it empty — the
+    # baked brief (regenerated from the headline's own url) fills it, and a blank beats a wrong paragraph.
     extra = _strip_promo(dup.get("sum") or "")
-    if extra and not (primary.get("sum") or "").strip():
+    if extra and not (primary.get("sum") or "").strip() and _shares_subject(primary.get("title") or "", extra):
         primary["sum"] = _clip(extra, 900)
     if not primary.get("image") and dup.get("image"):
         primary["image"] = dup["image"]
