@@ -2398,6 +2398,20 @@ def main():
         allow_ai=False)[3]) == "United States of America"))
     _lg_fails.append(("obit-is", app._is_obituary("US country music legend Dolly Parton dies aged 80")))
     _lg_fails.append(("obit-guard-casualties", not app._is_obituary("50 dead in Kabul suicide bombing")))
+    # A NAMED facility wins over the capital: the Amur Gas Chemical Complex (far-east Amur Oblast), not Moscow.
+    _lg_fails.append(("amur-complex", "Amur" in (app._locate(
+        "More than 100 people were injured in an explosion at the Amur Gas Chemical Complex construction site, Russian media report",
+        "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("amur-not-moscow", "Moscow" not in (app._locate(
+        "Explosion at the Amur Gas Chemical Complex construction site injures dozens", "", "", allow_ai=False)[2] or "")))
+    # GEORGIA the US STATE vs the country: a Savannah/GBI story is the US state, not the Caucasus.
+    _lg_fails.append(("georgia-us-state", (app._locate(
+        "4 Police Department Employees Arrested on Charges of Misusing Flock Camera System in Georgia",
+        "", "Four former Savannah Police Department employees were arrested following a Georgia Bureau of Investigation (GBI) probe.",
+        allow_ai=False)[3]) == "United States of America"))
+    _lg_fails.append(("georgia-country-guard", (app._locate(
+        "Mass protests erupt in Georgia over disputed election", "",
+        "Demonstrators gathered in Tbilisi as the Georgian Dream party claimed victory.", allow_ai=False)[3]) == "Georgia"))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2813,7 +2827,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 19   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location
+             + 23   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

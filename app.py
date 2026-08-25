@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.64"
+APP_VERSION = "1.4.65"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d66"   # d66: resweep so a strike on a "<name> OIL refinery" dots the site (Afipsky/Omsk -> Russia)
+_DATA_VER = "d67"   # d67: resweep so a named FAR-EAST facility beats the capital (the Amur Gas Chemical Complex
+                    #      explosion dots Amur Oblast, not Moscow) and "Georgia" resolves to the US STATE when the
+                    #      story is clearly US (a Savannah/GBI/Kemp story), not the Caucasus country.
+                    # d66: resweep so a strike on a "<name> OIL refinery" dots the site (Afipsky/Omsk -> Russia)
                     #      not the attacker, "Mykolaiv" (the common EN spelling) resolves so a named region beats
                     #      the capital, and a ceremonial festival sermon ("Eid: governor urges Muslims to embrace…")
                     #      drops off the map. Pairs with _SUM_PROMPT_VER 23 (briefs explain technical jargon).
@@ -7413,6 +7416,10 @@ _FACILITIES = {
     "omsk oil refinery": (54.985, 73.516, "Russia"), "omsk refinery": (54.985, 73.516, "Russia"),
     "nizhnekamsk refinery": (55.700, 51.851, "Russia"), "taneco refinery": (55.700, 51.851, "Russia"),
     "tvernefteprodukt": (56.861, 35.922, "Russia"), "ust luga": (59.671, 28.303, "Russia"),
+    # Amur Gas Chemical Complex + Amur GPP — Gazprom/Sibur megaprojects near Svobodny, Amur Oblast (far east),
+    # not Moscow. SHIPPED BUG: an explosion at the "Amur Gas Chemical Complex" dotted the capital.
+    "amur gas chemical complex": (51.380, 128.130, "Russia"), "amur gas processing plant": (51.700, 128.320, "Russia"),
+    "amur gpp": (51.700, 128.320, "Russia"), "amur gcc": (51.380, 128.130, "Russia"),
     "primorsk port": (60.362, 28.611, "Russia"), "novorossiysk port": (44.722, 37.789, "Russia"),
     "engels air base": (51.481, 46.211, "Russia"), "engels airbase": (51.481, 46.211, "Russia"),
     "olenya air base": (68.152, 33.464, "Russia"), "belaya air base": (52.915, 103.605, "Russia"),
@@ -7528,6 +7535,7 @@ _WAR_PLACES = {
     "volgograd region": (49.500, 44.000, "Russia"),
     "saratov region": (51.500, 46.500, "Russia"),
     "irkutsk region": (56.000, 105.000, "Russia"),
+    "amur region": (52.000, 128.500, "Russia"), "amur oblast": (52.000, 128.500, "Russia"),
     # Iranian PROVINCES the war names constantly (areas — a named town inside them still wins)
     "lorestan": (33.500, 48.350, "Iran"), "khuzestan": (31.330, 48.690, "Iran"),
     "sistan and baluchestan": (29.500, 60.900, "Iran"), "hormozgan": (27.500, 56.000, "Iran"),
@@ -10065,6 +10073,32 @@ def _is_obituary(text):
     return bool(_OBIT_RE.search(t) and _OBIT_PERSON.search(t))
 
 
+# GEORGIA the US STATE vs the Caucasus country — the recurring same-name miss. High-precision US-Georgia
+# signals: a Georgia-US city (Savannah/Atlanta/…), the GBI, Governor Kemp, or a Georgia-US county. Athens/
+# Columbus/Albany are DELIBERATELY excluded (Greece/Ohio/NY namesakes) so they never falsely flip the country.
+_US_GA_CITIES = ("savannah", "atlanta", "augusta", "macon", "marietta", "valdosta", "roswell", "alpharetta",
+                 "sandy springs", "smyrna", "warner robins", "johns creek", "kennesaw", "peachtree city",
+                 "dalton", "rome, georgia", "gainesville, georgia")
+_US_GA_CTX = re.compile(r"\b(georgia bureau of investigation|\bGBI\b|governor kemp|brian kemp|"
+                        r"georgia state patrol|georgia general assembly|"
+                        r"(?:fulton|chatham|cobb|gwinnett|dekalb|clayton|forsyth|cherokee)\s+county)\b", re.I)
+
+
+def _us_georgia_where(text):
+    """A story about the US STATE of Georgia (not the country): it names a Georgia-US city, the GBI, Governor
+    Kemp, or a Georgia-US county. Returns the best US location — the named city if the gazetteer has it, else
+    the state centroid — or None when the context isn't clearly the US state (so the country reading stands)."""
+    low = " " + (text or "").lower() + " "
+    if not (_US_GA_CTX.search(text or "") or any((" " + c + " ") in low for c in _US_GA_CITIES)):
+        return None
+    for c in _US_GA_CITIES:
+        if (" " + c + " ") in low:
+            g = _geolocate(c.split(",")[0], "", "")
+            if g and g[3] == "United States of America":
+                return g
+    return (32.16, -82.9, "Georgia, United States", "United States of America")
+
+
 def _us_markets(text):
     """True when the story is a US financial-markets report (Wall Street / a US index or mega-cap / the Fed),
     and not dominated by a FOREIGN exchange — so it dots New York, not a country cited only as a market mover.
@@ -10113,6 +10147,12 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     # falls through to the AI WHERE, which is where the deceased actually was.
     if r and _is_obituary(title or ""):
         return (COUNTRY_COORDS[r[3]][0], COUNTRY_COORDS[r[3]][1], _co_short(r[3]), r[3]) if r[3] in COUNTRY_COORDS else r
+    # GEORGIA the US STATE vs the Caucasus country: the rules land on the COUNTRY off a bare "Georgia", but a
+    # Savannah/GBI/Kemp story is the US state. Re-place it in the US (the named city, else the state centroid).
+    if r and r[3] == "Georgia":
+        _gaus = _us_georgia_where((title or "") + " . " + (desc or ""))
+        if _gaus:
+            return _gaus
     # LEADER / OFFICIAL STATEMENT -> the CAPITAL. A quote, threat or ruling with no specific scene resolves to
     # a bare country centroid, but officials SPEAK from the capital — so pin it there (Putin -> Moscow,
     # Zelensky -> Kyiv): a specific dot the reader can place, and its OWN dot (statements are 'politics', which
