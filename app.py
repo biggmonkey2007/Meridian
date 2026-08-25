@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.58"
+APP_VERSION = "1.4.59"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d60"   # d60: resweep so a length-truncated headline never ends on a dangling connector (the
+_DATA_VER = "d61"   # d61: resweep so a threatened strike dots the THREATENER not the target ("US could strike
+                    #      Iran"->US), a pro-/anti-<country> stance sinks (AIPAC->Michigan), a media-career
+                    #      retrospective drops off the map, a bare "Armed Forces" isn't glossary-defined, and a
+                    #      multi-topic roundup post's own photo is dropped (no Xi photo under an H-1B story).
+                    # d60: resweep so a length-truncated headline never ends on a dangling connector (the
                     #      "…kites and." bug), routine weather (a rained-off race) and art/photo exhibitions
                     #      drop off the map, and state-media dots carry their ownership tag. No re-summarize cost.
                     # d59: resweep so headlines lose bare short-links (bit.ly) + a "says video" callout and get
@@ -1834,6 +1838,23 @@ _COMMON_ACRONYMS = {
     "TODAY", "WEEKLY", "REVIEW", "DIGEST", "RECORD", "LEDGER", "DISPATCH", "EXAMINER", "SENTINEL",
 }
 
+# GENERIC force/guard/body phrases every reader already understands — plain English, not a named organisation.
+# The org-phrase regex captures a bare "Armed Forces" tail out of "French Ministry of Armed Forces" (it can't
+# anchor on "Ministry", not a suffix word), and would send it off to be defined. SHIPPED BUG: "Armed Forces"
+# bolded as some org/leader. A SPECIFIC named body ("Israel Defense Forces", "Libyan National Army") is 3+
+# words and never matches these two-word generics, so it is still defined.
+_ORG_GENERIC = {
+    "armed forces", "armed force", "air force", "air forces", "ground forces", "ground force",
+    "naval forces", "naval force", "land forces", "land force", "sea forces",
+    "security forces", "security force", "special forces", "special force",
+    "defense forces", "defence forces", "defense force", "defence force",
+    "military forces", "military force", "government forces", "government force",
+    "rebel forces", "allied forces", "joint forces", "coalition forces", "foreign forces",
+    "peacekeeping forces", "peacekeeping force", "police force", "police forces",
+    "national guard", "coast guard", "coastguard", "border guard", "border guards",
+    "armed group", "armed groups", "the movement",
+}
+
 
 def _detect_org_phrases(text, covered, limit=4):
     """Names a general reader won't know — CANDIDATES for an on-the-fly AI definition: a capitalised
@@ -1846,6 +1867,8 @@ def _detect_org_phrases(text, covered, limit=4):
         phrase = re.sub(r"^(?:The|A|An)\s+", "", phrase)     # a sentence-initial "The" got swept in — drop it
         low = phrase.lower()
         if len(phrase.split()) < 2 or low in seen:
+            continue
+        if low in _ORG_GENERIC:      # a bare "Armed Forces"/"Security Forces" — plain English, never define it
             continue
         if any(low == c or low in c or c in low for c in covered):
             continue
@@ -3051,7 +3074,9 @@ class Api:
                 "sum": _sharpen_desc(a.get("desc") or ""),
                 "involved": (_involved_countries(title, country) or [country]),
                 "channel": (a.get("_src") or "") if _is_tg else "",
-                "srcmedia": (a.get("_media") or []) if _is_tg else [],   # source post's own media, always available
+                # source post's own media — but NOT for a multi-topic roundup, whose photo may belong to a
+                # later item than the first-sentence headline we dot (a Xi photo under an H-1B story).
+                "srcmedia": ((a.get("_media") or []) if (_is_tg and _post_media_trusted(a.get("geo_text") or a.get("desc") or "")) else []),
                 "tg": _is_tg,
                 "_hard": _hard,     # transient: keeps hard news ahead of the final cap; stripped before return
             })
@@ -4664,6 +4689,16 @@ _FLUFF_PAT = re.compile(
     r"smash hit|streaming (?:hit|sensation|giant)|hit (?:show|series|podcast|album|single|movie|film)|"
     r"binge-?watch|fan-?favou?rite|goes? viral|viral (?:video|clip|moment|sensation)|"
     r"dating app|horoscope|zodiac|makeover|recipe)\b|"
+    # MEDIA-PERSONALITY CAREER RETROSPECTIVE — a presenter/host/anchor/broadcaster reflecting on a long career
+    # is entertainment/human-interest, not a located event. SHIPPED BUG: "Two ABC presenters share stories of
+    # 35 years in media" was a dot. Branch A: any "<N> years in <media field>" milestone. Branch B: a
+    # broadcasting role sharing/recalling career stories. A presenter in a REAL event ("BBC presenter charged")
+    # trips neither cue.
+    r"\b\d+\s+years?\s+(?:in|of|behind|on)\s+(?:media|broadcasting|broadcast|journalism|"
+    r"television|radio|the airwaves|the newsroom|showbiz|show business)\b|"
+    r"\b(?:presenters?|anchors?|hosts?|broadcasters?|newsreaders?|djs?)\b[^.\n]{0,40}?"
+    r"\b(?:share|shares|swap|swaps|tell|tells|recall|recalls|reminisce\w*|look back|looks back)\b"
+    r"[^.\n]{0,25}?\b(?:stories|memories|career|careers|years)\b|"
     # ART / EXHIBITION listings are the culture desk, not a world-news dot. SHIPPED BUG: "Denis Rouvre in
     # Salvador: 43 Free Photographs on Climate" (a photo show at a cultural centre) was a dot.
     r"\b(?:art\s+(?:exhibition|exhibit|show|fair|installation|festival|biennale)|photo(?:graph)?\s+exhibition|"
@@ -4719,6 +4754,23 @@ def _is_thinkpiece(title):
 # digest — the reported "ballroom wire post -> Iran-warfare dot"). Needs a period + a capitalised digest word
 # + comma, so a normal headline with 'and' isn't caught.
 _DIGEST_RE = re.compile(r"[.!?]\s+(?:And|Plus|Also|Meanwhile|Elsewhere)\s*,\s+\w")
+
+# A wire post that MOVES ON to a second story after the first sentence is a ROUNDUP: its OWN attached photo
+# may illustrate the LATER topic, not the first-sentence headline we turn into the dot. So the post's media
+# can't be trusted to match our article. SHIPPED BUG: a Xi Jinping photo sat under an H-1B visa story — the
+# post led with the visa item and its picture belonged to a "Meanwhile, in China…" second item. Broader than
+# _DIGEST_RE (comma optional, more roundup markers) because here we're judging the PICTURE, not the headline.
+_ROUNDUP_MEDIA_RE = re.compile(
+    r"(?i)[.!?)…]\s+(?:and,|plus,|also,|meanwhile|separately|elsewhere|additionally|"
+    r"in other news|in unrelated news|on another (?:front|note|matter)|"
+    r"(?:in|on) a (?:separate|different|second) (?:development|matter|story|note|incident))\b")
+
+
+def _post_media_trusted(text):
+    """A source post's OWN photo is trusted to match our dot only when the post is about ONE thing. A
+    multi-topic roundup yields a first-sentence headline but a picture that may belong to a later, unrelated
+    item — so we drop the source media rather than show a photo that doesn't match the article."""
+    return not _ROUNDUP_MEDIA_RE.search(text or "")
 
 
 def _is_fluff(title, url=""):
@@ -8885,6 +8937,11 @@ def _is_attrib_water(h, words):
 # a strike word that is a VERB here, not a noun
 _STRIKE_VERBS = ("strike", "strikes", "attack", "attacks", "hit", "hits", "raid", "raids",
                  "targets", "shells", "bombs", "launches", "fires", "pounds")
+# Words that turn a strike into a POTENTIAL/THREATENED one — the target hasn't been hit, so it isn't a scene.
+_THREAT_MODAL = {"could", "would", "may", "might", "should", "will", "threatens", "threaten", "threatened",
+                 "threatening", "plans", "planning", "planned", "vows", "vow", "vowed", "prepared", "preparing",
+                 "ready", "considering", "consider", "weighs", "weighing", "mulls", "mulling", "set", "poised",
+                 "if", "warns", "warned", "warning", "may", "might", "prepares", "readies"}
 # what follows a strike NOUN ("Gaza strikes WILL continue") rather than a strike VERB
 _AFTER_STRIKE_NOUN = ("will", "would", "could", "may", "might", "are", "were", "have", "had",
                       "continue", "resume", "resumed", "killed", "kill", "hit", "left", "caused",
@@ -9008,6 +9065,18 @@ def _context_places(hits, words):
     for h in hits:
         i = h[0]
         if i >= 1 and words[i - 1] in _CONTEXT_PREP:
+            ctx.add(i)
+        # A "pro-/anti-<country>" STANCE names an alignment, not the scene: "a PRO-ISRAEL Republican asks the
+        # lobby to stay out of the MICHIGAN race" happens in Michigan; Israel is only the lobby's cause.
+        elif i >= 1 and words[i - 1] in ("pro", "anti", "pro-", "anti-", "pro–", "anti–"):
+            ctx.add(i)
+        # A THREATENED / POTENTIAL strike has NOT happened, so its target is not a scene: "US COULD carry out
+        # strikes ON Iran", "Israel THREATENS to hit Iran" -> the actor (who is speaking) wins, not Iran.
+        elif (h[1] in ("country", "demonym") and i >= 1
+              and (words[i - 1] in _STRIKE_VERBS                                     # "…to STRIKE Iran"
+                   or (words[i - 1] in ("on", "against", "at", "over", "toward", "towards", "inside")
+                       and any(words[k] in _STRIKE_VERBS for k in range(max(0, i - 4), i))))   # "…strikes ON Iran"
+              and any(words[k] in _THREAT_MODAL for k in range(0, i))):
             ctx.add(i)
         elif h[1] in ("country", "demonym") and i >= 1 and words[i - 1] == "against":
             if any(words[k] in _CONFLICT_NOUN for k in range(max(0, i - 4), i - 1)):

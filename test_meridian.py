@@ -637,6 +637,27 @@ GEO_CASES = [
     ("Russian Forces Capture Malaya Tokmachka", "",
      "Ukraine", "SHIPPED BUG: dotted MALAYA, PHILIPPINES — the wire's RU spelling 'Malaya Tokmachka' matched a "
      "Philippine town. The Zaporizhzhia-front village (RU Malaya / UA Mala) is now aliased to Ukraine"),
+    # A pro-/anti-<COUNTRY> STANCE is a modifier on a person/actor, not the scene. SHIPPED BUG: "AIPAC brand
+    # turns toxic as pro-Israel Republican asks lobby to stay out of Michigan race" dotted ISRAEL; the story is
+    # a Michigan primary. "pro-Israel" sinks like an adjective so the real scene (Michigan) wins.
+    ("AIPAC brand turns toxic as pro-Israel Republican asks lobby to stay out of Michigan race",
+     "A Republican Senate candidate asked the American Israel Public Affairs Committee not to run ads in the Michigan race",
+     "Michigan", "SHIPPED BUG: 'pro-Israel' (a stance) dotted Israel; the event is the Michigan primary"),
+    ("AIPAC brand turns toxic as pro-Israel Republican asks lobby to stay out of Michigan race", "",
+     "!Israel", "...and it must NOT land on Israel"),
+    # A THREATENED / POTENTIAL strike is an intention voiced BY the threatener — dot the speaker's country, not
+    # the target. SHIPPED BUG: "US could carry out further strikes on Iran if needed: Hegseth" dotted TEHRAN.
+    # A threat modal (could/would/threatens/vows…) sinks the named target so the actor's country wins.
+    ("US could carry out further strikes on Iran if needed: Hegseth", "",
+     "United States", "SHIPPED BUG: a THREATENED strike ('could... on Iran') dotted Tehran; the speaker is the US"),
+    ("US could carry out further strikes on Iran if needed: Hegseth", "",
+     "!Iran", "...and it must NOT land on Iran/Tehran"),
+    ("US threatens to strike Iran if talks fail", "",
+     "United States", "a threatened strike (direct object 'strike Iran') still dots the threatener, the US"),
+    ("US strikes Iran nuclear sites", "",
+     "Iran", "GUARD: an ACTUAL strike (no threat modal) still lands IN Iran — the threat sink must not misfire"),
+    ("Russia strikes Kyiv overnight", "",
+     "Kyiv", "GUARD: an actual overnight strike still dots the scene (Kyiv), not the actor"),
 ]
 
 # geolocation cases that also need the article URL (the section is a country hint)
@@ -1052,6 +1073,15 @@ FLUFF_CASES = [
     ("D-topia review – cosy sci-fi mystery takes aim at AI",
      "https://www.theguardian.com/games/2026/jul/14/d-topia-review-sci-fi-ai-puzzle-game", True,
      "SHIPPED BUG: a VIDEO GAME REVIEW was a dot on the map — /games/ was not a fluff path"),
+    # A MEDIA-PERSONALITY CAREER RETROSPECTIVE is entertainment/human-interest, not a located event.
+    ("Two ABC presenters share stories of 35 years in media", "", True,
+     "SHIPPED BUG: a low-level media-personality career feature was a dot"),
+    ("Veteran anchor marks 40 years in broadcasting", "", True, "a career-milestone feature, not an event"),
+    ("Radio hosts swap memories of their careers on air", "", True, "presenters reminiscing is not news"),
+    ("CNN anchor resigns amid plagiarism scandal", "", False,
+     "GUARD: a presenter in a REAL event (resignation) is NOT filtered"),
+    ("20 years of war in Afghanistan leave lasting scars", "", False,
+     "GUARD: 'N years' about a real subject (war), not a media career, stays"),
 ]
 
 
@@ -2588,6 +2618,13 @@ def main():
                  and "TIMES" not in app._detect_org_phrases("PREMIUM TIMES reported the commission uncovered a fake agency", set())   # SHIPPED: an OUTLET name is not an org to define
                  and "POST" not in app._detect_org_phrases("THE POST said officials confirmed the arrest", set())
                  and "IRGC" in app._detect_org_phrases("The IRGC held a parade in Tehran", set())   # GUARD: a real acronym is still defined
+                 # SHIPPED BUG: a bare capitalised "Armed Forces" (from "French Ministry of Armed Forces") was
+                 # bolded as some org/leader. Generic force/guard bodies are plain English -> never defined...
+                 and "Armed Forces" not in app._detect_org_phrases("The French Ministry of Armed Forces confirmed the deployment continues", set())
+                 and "Security Forces" not in app._detect_org_phrases("Security Forces detained several people overnight", set())
+                 # ...but a SPECIFIC named body (3+ words) is still defined
+                 and "Israel Defense Forces" in app._detect_org_phrases("The Israel Defense Forces struck targets in Gaza", set())
+                 and "Libyan National Army" in app._detect_org_phrases("The Libyan National Army advanced on Tripoli", set())
                  and not any("government forces" in p.lower() for p in _det))  # lowercase 'forces' isn't a proper name
     ran[0] += 1
     if not _gloss_ok:
@@ -2595,6 +2632,22 @@ def main():
                       f"g1={_terms1} g2={_g2}",
                       "the story's groups are defined; ordinary words never trip a definition"))
     print(f"  {'ok ' if _gloss_ok else 'FAIL'} {_terms1}")
+
+    # A ROUNDUP post's OWN photo can't be trusted to match the first-sentence headline we dot. SHIPPED BUG: a
+    # Xi Jinping photo sat under an H-1B visa story (the post led with the visa item, its picture belonged to a
+    # "Meanwhile, in China…" second item). Multi-topic -> drop source media; single-topic keeps it.
+    print("\n=== ROUNDUP MEDIA GUARD (a multi-topic post's photo may not match our dot) ===")
+    _rm_ok = (not app._post_media_trusted("Trump adds a $100k fee to H-1B visas. Meanwhile, Xi Jinping addressed the summit in Tianjin.")
+              and not app._post_media_trusted("US restricts skilled-worker visas. In other news, China unveiled a new fighter jet.")
+              and not app._post_media_trusted("Explosion rocks the port. Separately, the president signed a budget bill.")
+              # GUARD: a single-topic post — even multi-sentence with a follow-up quote — keeps its own photo
+              and app._post_media_trusted("Russia struck Kyiv overnight, killing three. Rescuers pulled survivors from the rubble.")
+              and app._post_media_trusted("Lavrov said the talks collapsed. He added that Europe bears responsibility."))
+    ran[0] += 1
+    if not _rm_ok:
+        fails.append(("srcmedia", "roundup-guard", "multi-topic drops photo; single-topic keeps it",
+                      "see _post_media_trusted", "a post's own picture is trusted only when it's about one thing"))
+    print(f"  {'ok ' if _rm_ok else 'FAIL'} roundup->drop, single-topic->keep")
 
     total = (4 + len(CATEGORY_CASES) + len(GEO_CASES) + len(GEO_URL_CASES) + len(FLUFF_CASES) + len(SPORTS_WORTHY_CASES) + len(CLIMATE_WORTHY_CASES) + len(QUOTE_IMPORTANT_CASES)
              + len(DEDUP_CASES) + len(SIM_CASES) + len(FIPS_CASES) + len(CMATCH_CASES) + len(VER_CASES)
@@ -2622,7 +2675,8 @@ def main():
              + 1    # + port infobox facts parser
              + 1    # + facility word (airport) is not a place
              + 1    # + heads-of-state list overrides a stale head of government
-             + 1)   # + name-based dedup (a re-headlined copy is caught by shared names)
+             + 1    # + name-based dedup (a re-headlined copy is caught by shared names)
+             + 1)   # + roundup media guard (a multi-topic post's own photo is not trusted to match the dot)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
