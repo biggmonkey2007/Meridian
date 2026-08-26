@@ -1288,7 +1288,7 @@ const CAT = {
   society: {label:"Society",             color:"var(--c-society)",  hex:"#E0658E"},
   sports:  {label:"Sports",              color:"var(--c-sports)",   hex:"#6FB03A"},
 };
-const CAT_ORDER = ["security","politics","economy","climate","tech","health","society","sports"];
+const CAT_ORDER = ["security","politics","economy","climate","tech","health","society"];   // sports removed — the map never reports sport
 
 // News outlets per country (real outlets — the live app would link to the article, not the homepage)
 const OUTLETS = {
@@ -1679,8 +1679,14 @@ function involvedOf(e){ return (e.involved && e.involved.length) ? e.involved : 
 /* ---- tiles ---- */
 const HILLSHADE  = "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
 const DEM_TILES  = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";   // free AWS terrarium elevation DEM (no key) — feeds a GPU-computed hillshade that stays crisp at any zoom / device pixel ratio
-const CARTO_BASE = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png";
-const CARTO_LBL  = "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png";
+// CARTO retired their FREE RASTER basemaps — the no-key light_nolabels/light_all .png tiles now come back
+// stamped "API KEY REQUIRED" (the diagonal watermark the user hit at world scale). The clean map's real base
+// is CARTO's VECTOR positron style (geometry, no watermark, still free); this raster is ONLY the coarse
+// world-scale overview under it. Serve that from Esri's no-key Light Gray Canvas (already our satellite host)
+// so the world view is clean. NB Esri tiles are {z}/{y}/{x} (y before x) and 256px (no @2x).
+const CLEAN_RASTER = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+const CARTO_BASE = CLEAN_RASTER;
+const CARTO_LBL  = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}";
 /* ─── ENGLISH LABELS, WITHOUT LOSING CARTO'S LOOK ────────────────────────────────────────────────
    The multilingual labels ("North Sea / Noordzee / Nordsee / Nordsjøen / Mer du Nord") were never
    five overlapping labels — OpenStreetMap stores that entire string as the sea's `name`, and CARTO's
@@ -2032,7 +2038,7 @@ async function startMap(){
 let _baseMaxZ = 19;
 function warmTemplates(){
   const out = [];
-  if(currentBase === "clean"){ out.push("https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"); out.push(_HILLSHADE_TPL); }
+  if(currentBase === "clean"){ out.push(CLEAN_RASTER); out.push(_HILLSHADE_TPL); }
   else if(currentBase === "topo"){ out.push(DEM_TILES); }                          // topo RENDERS the elevation DEM (color-relief) — warm THOSE tiles, not a base raster
   else { try{ const b = mlBaseSpec(currentBase); if(b && b.tiles && b.tiles[0]) out.push(b.tiles[0]); }catch(e){} }   // satellite / osm imagery
   return out;
@@ -3052,7 +3058,7 @@ function mlBaseSpec(k){
   // Single CDN subdomain (not a/b/c/d): HTTP/2 multiplexes fine over one host, and it means the tile
   // pre-warmer (which hits "a.basemaps") actually pre-caches the SAME URLs MapLibre requests — so warmed
   // tiles are true cache hits and land before you reach them, instead of the 4-subdomain cache-miss before.
-  return { tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], max:19 };
+  return { tiles:[CLEAN_RASTER], max:16 };
 }
 // Angular (great-circle) distance in degrees between two lng/lat.
 function _angDist(aLng, aLat, bLng, bLat){
@@ -3354,7 +3360,7 @@ function setGlobeBasemap(k){
       // tile where the vector should already be. So hand back at z3.) @2x (512px) tiles so the z<3 base is crisp.
       // Clean relief only — TOPO skips this pale CARTO overview so its green land + blue sea show at world scale.
       if(!isTopo && !mlMap.getSource("g-overview")){
-        mlMap.addSource("g-overview",{type:"raster",tiles:["https://a.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png"],tileSize:512,maxzoom:6});
+        mlMap.addSource("g-overview",{type:"raster",tiles:[CLEAN_RASTER],tileSize:256,maxzoom:6});
         // Insert the world-scale raster BELOW the water fill (not just below labels): the selected-country
         // tint sits just under water too, so keeping the raster beneath it means the highlight still shows when
         // zoomed all the way out. Labels + the vector water still render on top, so nothing else changes.

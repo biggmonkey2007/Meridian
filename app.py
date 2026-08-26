@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.69"
+APP_VERSION = "1.4.70"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,10 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d71"   # d71: resweep so a place NAMED in the headline/body wins over the actor/source — a passive
+_DATA_VER = "d72"   # d72: resweep so SPORTS never make the map, a research-aspiration ("researchers hope to")
+                    #      / procedural local story drops, a named STATE is refined to the town the body gives
+                    #      (Yucatan coast -> Chuburna), and MOEX/RTS + any 3+-cap acronym get a definition.
+                    # d71: resweep so a place NAMED in the headline/body wins over the actor/source — a passive
                     #      agent sinks ("targeted BY Ukraine near St. Petersburg" -> St. Petersburg), Tibet /
                     #      Vaca Muerta / the Rincon del Mangrullo field + Chinese regions are on the map, and "X's
                     #      envoy TO Iran" dots Iran. Also: an ambiguous COMPANY hero shows the FIRM not the fruit
@@ -1747,6 +1750,12 @@ _GLOSSARY = [
     ("Islamic Revolutionary Guard Corps", ("irgc", "revolutionary guard", "revolutionary guards", "quds force"),
      "A branch of Iran's armed forces answering directly to the Supreme Leader, with wide military, economic "
      "and intelligence reach. Its Quds Force runs operations and arms allied groups abroad."),
+    ("MOEX (Moscow Exchange)", ("moex", "moex index"),
+     "Russia's main stock exchange, in Moscow, and its benchmark index of leading Russian shares, priced in "
+     "rubles."),
+    ("RTS Index", ("rts", "rts index"),
+     "A benchmark index of leading Russian shares traded on the Moscow Exchange, priced in US dollars (so it "
+     "also reflects the ruble's exchange rate)."),
     ("Taliban", ("taliban",),
      "The Islamist movement that has ruled Afghanistan since 2021, enforcing a strict reading of Islamic law "
      "and sharply curtailing women's rights."),
@@ -3110,8 +3119,9 @@ class Api:
             # as sport the existing filter drops everything that is not a real result.
             if "/football/" in url or "/sport/" in url or "/sports/" in url:
                 cat = "sports"
-            if cat == "sports" and not _sports_worthy(title):
-                continue
+            if cat == "sports":
+                continue                                    # the user wants NO sports on the map, ever
+
             if cat == "climate" and not _climate_worthy(title, a.get("desc") or ""):
                 continue                                    # weather is a dot only when it's EXTREME (not a rained-off race)
             # IMPORTANCE GATE. The world map is for news that is COUNTRY-, REGION- or WORLD-changing — a war
@@ -3308,6 +3318,8 @@ class Api:
                 if any(_same_story(_toks, t2) for t2 in added_toks):   # same story from two outlets
                     continue
                 cat = _classify(title, a.get("desc") or "")            # every category kept — even "bland"
+                if cat == "sports" or "/sport/" in url or "/sports/" in url or "/football/" in url:
+                    continue                                            # no sports, in the starred feed either
                 img = a.get("socialimage") or ""
                 events.append({
                     "title": title, "cat": cat, "sid": _share_id(url, title),
@@ -4833,6 +4845,20 @@ _FLUFF_PAT = re.compile(
     r"\b(?:hears?|heard)\s+(?:evidence|testimony|from\s+witnesses)\b|"
     r"\bat\s+[^.\n]{0,30}?\b(?:trial|hearing|inquiry|tribunal|inquest)\b\s*,?\s*"
     r"[^.\n]{0,28}?\b(?:says?|said|tells?|told|testif\w*|claims?|admits?|denies?|reveals?|recalls?|insists?)\b|"
+    # RESEARCH ASPIRATION — a study that WILL look into something, with no result yet, is not an event. SHIPPED
+    # BUG: "Most people don't survive brain cancer. Researchers hope to change" (a project that will research).
+    # A real FINDING ("study finds/shows", a breakthrough) is news and trips none of these.
+    r"\b(?:hop(?:e|es|ing)\s+to\s+(?:change|find|develop|treat|cure|help|improve|understand)|"
+    r"investigat\w*\s+ways\s+to|aim(?:s|ing)?\s+to\s+(?:develop|find|treat|cure|understand|improve|change)|"
+    r"could\s+(?:pave\s+the\s+way|one\s+day)|may\s+one\s+day|hope\s+to\s+change|"
+    r"researchers?\s+(?:hope|are\s+(?:exploring|investigating|working)|want\s+to)|"
+    r"scientists?\s+(?:hope|are\s+(?:exploring|working))|"
+    r"(?:study|project|trial)\s+(?:explores|is\s+(?:looking|exploring|investigating)|hopes|aims))\b|"
+    # a LOCAL PROFESSIONAL's registration suspended/struck off by a watchdog is local regulatory news, not
+    # country-changing. SHIPPED BUG: "'Bohemian' Melbourne schoolteacher Faye Berryman suspended".
+    r"\bteaching\s+registration\s+(?:suspended|cancelled|revoked)\b|"
+    r"\b(?:schoolteacher|childcare\s+worker|kindergarten\s+teacher)\b[^.\n]{0,45}?"
+    r"\b(?:suspended|deregistered|struck\s+off|barred|banned)\b|"
     r"\b(goes viral|feel-good|heartwarming|everything you need)\b|"
     # a READER CALLOUT is not news: "We'd like to speak to maritime workers…" was a dot on the map
     r"^(we|we'?d|we'?re)\b.*\b(like to (speak|hear)|want to hear|would like to)\b|"
@@ -7650,6 +7676,15 @@ _WAR_PLACES = {
     "gansu": (36.06, 103.83, "China"), "qinghai": (36.62, 101.78, "China"), "yunnan": (25.04, 102.71, "China"),
     # Argentina's Vaca Muerta shale basin + its fields — a recurring dateline the gazetteer missed
     "vaca muerta": (38.50, -69.00, "Argentina"), "neuquen": (38.95, -68.06, "Argentina"),
+    # Mexican STATES -> their capital/main city (coastal tourism + cartel news is high-volume). "Yucatan's
+    # coast" dotted the CAPITAL before; a town named in the body still refines these centroids.
+    "yucatan": (20.97, -89.62, "Mexico"), "quintana roo": (19.18, -88.48, "Mexico"),
+    "jalisco": (20.67, -103.35, "Mexico"), "baja california": (30.83, -115.28, "Mexico"),
+    "baja california sur": (24.14, -110.31, "Mexico"), "nuevo leon": (25.67, -100.31, "Mexico"),
+    "sinaloa": (24.81, -107.39, "Mexico"), "sonora": (29.07, -110.96, "Mexico"),
+    "guerrero": (17.55, -99.50, "Mexico"), "oaxaca": (17.06, -96.72, "Mexico"),
+    "chiapas": (16.75, -92.63, "Mexico"), "michoacan": (19.70, -101.19, "Mexico"),
+    "veracruz": (19.19, -96.15, "Mexico"), "tamaulipas": (23.73, -99.14, "Mexico"),
 }
 
 # Places GeoNames ranks WRONG — the world-famous one loses to a bigger namesake, or is missing.
@@ -7760,6 +7795,17 @@ _WATERS = {
 }
 _WATER_NAMES = set()          # international water -> the label carries no country suffix
 _AREA_NAMES = set()           # broad areas (states, oblasts, Crimea) that a named town can refine
+# State/province names — a BROAD area that a specific town named in the body should refine (like a country).
+# Includes the states registered in _WAR_PLACES (Indian/Chinese/Mexican/etc.), which are broad areas even
+# though they sit in that dict; NOT the specific war TOWNS there (a town is the scene, never "refined away").
+_REGION_NAMES = {k.lower() for k in _REGIONS} | {
+    "bihar", "uttar pradesh", "maharashtra", "west bengal", "tamil nadu", "karnataka", "kerala", "gujarat",
+    "rajasthan", "madhya pradesh", "telangana", "andhra pradesh", "odisha", "assam", "jharkhand",
+    "chhattisgarh", "uttarakhand", "himachal pradesh", "tibet", "xizang", "xinjiang", "inner mongolia",
+    "sichuan", "gansu", "qinghai", "yunnan", "yucatan", "quintana roo", "jalisco", "baja california",
+    "baja california sur", "nuevo leon", "sinaloa", "sonora", "guerrero", "oaxaca", "chiapas", "michoacan",
+    "veracruz", "tamaulipas", "new york state", "victoria", "east azerbaijan", "west azerbaijan",
+}
 _REGION_PRIOR = 5_000_000        # a state/province outranks a town, but a COUNTRY outranks it
 _FACILITY_PRIOR = 9_000_000      # a named facility is the most specific thing there is
 _COUNTRY_PRIOR = 10 ** 9
@@ -9687,12 +9733,18 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     # hands us a specific place INSIDE it ("… in Bihar's capital" / "… in Patna"). Dot the city/region, never
     # the country centroid — the reader's own article names the spot. Guarded to the SAME country, so a place
     # named abroad in the body can never hijack the story. SHIPPED BUG: "Bihar's capital" ignored -> New Delhi.
+    # (a REGION/state is broad too: "on Yucatan's coast" + a body naming "Chuburna Puerto" -> the town.)
     if hits and desc:
         _gs = _genuine_scenes(hits, words)
-        _ccos = {h[5] for h in _gs if h[1] in ("country", "demonym")}
-        if _ccos and all(h[1] in ("country", "demonym") for h in _gs):     # title scene(s) are ONLY countries
+        _broad = lambda h: h[1] in ("country", "demonym") or str(h[7]).lower() in _REGION_NAMES
+        _ccos = {h[5] for h in _gs if _broad(h)}
+        _title_has_country = any(h[1] in ("country", "demonym") for h in _gs)
+        if _ccos and all(_broad(h) for h in _gs):     # title scene(s) are ONLY broad (a country or a state)
             dh, dw = _scan_places(desc[:400], _person_spans(desc[:400]), mentions)
-            inside = [h for h in _genuine_scenes(dh, dw) if h[5] in _ccos and h[1] not in ("country", "demonym")]
+            # a body place is "more specific" than the title: any city; and a REGION only refines a COUNTRY
+            # title (India->Bihar), never a state title (Yucatan should refine to a TOWN, not another state).
+            inside = [h for h in _genuine_scenes(dh, dw) if h[5] in _ccos and h[1] not in ("country", "demonym")
+                      and (_title_has_country or str(h[7]).lower() not in _REGION_NAMES)]
             if inside:
                 b = _pick_place(inside, dw)
                 if b is not None:

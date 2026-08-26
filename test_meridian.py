@@ -1121,6 +1121,15 @@ FLUFF_CASES = [
     ("Ukraine wins EU membership bid", "", False, "GUARD: a real 'wins <thing>' political event stays"),
     ("Brain tech push gains pace as China draws up standards and firms challenge Neuralink", "", False,
      "GUARD: a real tech-policy story is not a listicle/PR"),
+    # RESEARCH ASPIRATION (a study that WILL look into something) and a local professional's suspension.
+    ("Most people don't survive brain cancer. Researchers hope to change", "", True,
+     "SHIPPED BUG: a 'researchers hope to' project (no result yet) made the map"),
+    ("Adelaide project investigating ways to treat cancer", "", True, "a study that WILL research is not an event"),
+    ("'Bohemian' Melbourne schoolteacher Faye Berryman suspended", "", True,
+     "SHIPPED BUG: a local teacher's registration suspension is local regulatory news"),
+    ("Study finds new drug halts brain cancer", "", False, "GUARD: a real FINDING is news"),
+    ("Scientists discover cancer breakthrough", "", False, "GUARD: a discovery is news"),
+    ("Minister suspended over corruption scandal", "", False, "GUARD: a minister (not a schoolteacher) stays"),
     ("UN urges immediate ceasefire in Gaza", "", False, "GUARD: a concrete political demand is real news"),
     ("Zelensky urges allies to send more air defense", "", False, "GUARD: 'urges allies to send' is not ceremonial"),
     ("Christmas market attack kills 5 in Germany", "", False, "GUARD: a holiday word in a real attack stays"),
@@ -2487,6 +2496,11 @@ def main():
         "Japan's Envoy to Iran on Conflict and Diplomacy", "", "", allow_ai=False)[3]) == "Iran"))
     # An ambiguous COMPANY name maps to its disambiguated Wikipedia title (the firm, not the fruit/river).
     _lg_fails.append(("company-wiki", app._ORG_WIKI.get("apple") == "Apple Campus" and app._ORG_WIKI.get("amazon") == "Amazon.com"))
+    # A named Mexican state resolves (a coastal-tourism story dotted the capital before); the body still refines.
+    _lg_fails.append(("yucatan-state", (app._geolocate("Yucatan", "", "") or ["", "", "", ""])[3] == "Mexico"))
+    _lg_fails.append(("yucatan-body-scene", "Chuburna" in (app._locate(   # the body's town wins over the country
+        "Construction on tourist project on Yucatan coast halted", "",
+        "at the site near Chuburna Puerto, 15 km from the beach town of Progreso.", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2787,6 +2801,9 @@ def main():
                  and "TIMES" not in app._detect_org_phrases("PREMIUM TIMES reported the commission uncovered a fake agency", set())   # SHIPPED: an OUTLET name is not an org to define
                  and "POST" not in app._detect_org_phrases("THE POST said officials confirmed the arrest", set())
                  and "IRGC" in app._detect_org_phrases("The IRGC held a parade in Tehran", set())   # GUARD: a real acronym is still defined
+                 and "MOEX" in app._detect_org_phrases("The MOEX Index lost to 2071 points, the RTS Index fell", set())   # a 3+-cap acronym is detected...
+                 and any("Moscow Exchange" in t["term"] for t in app._glossary_terms("The MOEX Index fell today"))   # ...and MOEX has a curated definition
+                 and any("dollars" in t["def"] for t in app._glossary_terms("The RTS Index fell today"))   # RTS too (dollar-priced)
                  # SHIPPED BUG: a bare capitalised "Armed Forces" (from "French Ministry of Armed Forces") was
                  # bolded as some org/leader. Generic force/guard bodies are plain English -> never defined...
                  and "Armed Forces" not in app._detect_org_phrases("The French Ministry of Armed Forces confirmed the deployment continues", set())
@@ -2908,7 +2925,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 37   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki
+             + 39   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
