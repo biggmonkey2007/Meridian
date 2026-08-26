@@ -1111,6 +1111,16 @@ FLUFF_CASES = [
     ("Trump found guilty on all 34 counts", "", False, "GUARD: a conviction is real news"),
     ("Supreme Court hears arguments on abortion rights", "", False,
      "GUARD: a major court 'hears arguments' is not the procedural-hearing fluff we drop"),
+    # A listicle-DIGEST roundup + subscribe plug, and corporate-PR/certification puffery, are not news.
+    ("'Smart' diabetes probiotic; Chinese missile AI with 90% accuracy: 7 science highlights", "", True,
+     "SHIPPED BUG: a '7 science highlights' subscribe-to-read roundup (many stories in one) made the map"),
+    ("NagaWorld Earns Great Place To Work Certification in 2026 with an Outstanding 97% Trust Index Score", "", True,
+     "SHIPPED BUG: a corporate certification press release (advertising) made the map"),
+    ("Company named a Top Employer for 2026", "", True, "an employer-ranking PR is advertising, not news"),
+    ("Subscribe to read our full coverage of the war", "", True, "a paywall/subscribe plug is not a story"),
+    ("Ukraine wins EU membership bid", "", False, "GUARD: a real 'wins <thing>' political event stays"),
+    ("Brain tech push gains pace as China draws up standards and firms challenge Neuralink", "", False,
+     "GUARD: a real tech-policy story is not a listicle/PR"),
     ("UN urges immediate ceasefire in Gaza", "", False, "GUARD: a concrete political demand is real news"),
     ("Zelensky urges allies to send more air defense", "", False, "GUARD: 'urges allies to send' is not ceremonial"),
     ("Christmas market attack kills 5 in Germany", "", False, "GUARD: a holiday word in a real attack stays"),
@@ -1409,6 +1419,14 @@ CLEAN_HEADLINE_CASES = [
      "a leading fire emoji is stripped from the headline"),
     ("Protesters clash with police ➡️ dozens detained", "Protesters clash with police dozens detained",
      "an inline arrow emoji is stripped from the headline"),
+    # WIRE ABBREVIATIONS -> plain words (our house style), and trademark/replacement-char junk stripped.
+    ("Novatek to pay dividends for 1H amounting to 35.5 rubles per share", "first half",
+     "'1H' spelled out to 'first half'"),
+    ("Payout could total 107.79 bln rubles", "billion", "'bln' spelled out to 'billion'"),
+    ("NagaWorld Earns Great Place To Work� Certification™ in 2026", "!™",
+     "trademark glyph stripped from the headline"),
+    ("NagaWorld Earns Great Place To Work� Certification™ in 2026", "!�",
+     "the U+FFFD replacement char (broken encoding) stripped"),
 ]
 
 
@@ -2720,6 +2738,12 @@ def main():
     _srcnote_ok = _srcnote_ok and (app._clean_headline("UAE says Iran launched two missiles at it - Reuters") == "UAE says Iran launched two missiles at it"
                                    and app._clean_headline("Suspect detained in anti-corruption sweep") == "Suspect detained in anti-corruption sweep")
     _sharp_ok = _sharp_ok and _srcnote_ok
+    # A wire teaser truncated mid-sentence on a connector ("…in Kiryat Gat, following") must not become
+    # "…following." — drop the dangling connector. And wire abbreviations spell out ("bln"->"billion").
+    _memo = app._sharpen_desc("Israeli FM Saar ordered the expulsion of Dutch representatives from the centre in Kiryat Gat, following")
+    _sharp_ok = _sharp_ok and _memo.endswith("Kiryat Gat.") and "following" not in _memo
+    _sharp_ok = _sharp_ok and app._sharpen_desc("The payout could total 107.79 bln rubles.") == "The payout could total 107.79 billion rubles."
+    _sharp_ok = _sharp_ok and app._sharpen_desc("Rescuers pulled survivors from the rubble after the blast.").endswith("after the blast.")  # GUARD: a complete sentence is untouched
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",

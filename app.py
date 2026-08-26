@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.67"
+APP_VERSION = "1.4.68"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d69"   # d69: resweep so procedural court/inquiry steps + witness-testimony details drop off the map
+_DATA_VER = "d70"   # d70: resweep for HOUSE STYLE — wire shorthand spelled out ("1H"->"first half", "bln"->
+                    #      "billion", "y/y"->"year-on-year"), trademark/replacement-char junk stripped from
+                    #      headlines ("Certification™"/"Work�"), a truncated teaser no longer ends on a dangling
+                    #      connector ("…following."), and listicle-digests + subscribe plugs + corporate-PR/
+                    #      certification puffery drop off the map.
+                    # d69: resweep so procedural court/inquiry steps + witness-testimony details drop off the map
                     #      (a "final hearing day", an "at trial, says …" quote), an asylum story dots where the
                     #      person ENDED UP (fled Iran + granted asylum -> Canada, not Iran), and compound/accented
                     #      country names resolve (Guinea-Bissau != Guinea; Cote d'Ivoire, Sao Tome). Clean-house:
@@ -766,16 +771,51 @@ _LEAD_CC    = re.compile(r"^[A-Z]{2,3}(?:[ /][A-Z]{2,3}){0,3}\s*[-–—:|•·]
 # into the body copy we show. SHIPPED BUG: "Video ➡️ A 15-year-old boy…" carried the arrow straight onto the
 # card. Same code-point ranges as _LEAD_EMOJI, unanchored. Smart quotes (U+2018/2019) and dashes sit BELOW
 # U+2190, so they're untouched. Callers collapse the double space a removed mid-sentence emoji leaves.
-_EMOJI_ANY  = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣]")
+# Trademark/registered/service-mark glyphs and the U+FFFD replacement char (broken encoding) are decorative
+# JUNK in a headline — "Great Place To Work® Certification™" / "…Work� Certification™". Stripped with emoji.
+_EMOJI_ANY  = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿←-⇿︀-️‍⃣®™℠℗�]")
 
 
 def _strip_emoji(t):
-    """Remove every emoji/flag/dingbat from a string and tidy the spacing it leaves behind."""
+    """Remove every emoji/flag/dingbat/trademark glyph from a string and tidy the spacing it leaves behind."""
     if not t:
         return t
     t = _EMOJI_ANY.sub("", t)
     t = re.sub(r"\s{2,}", " ", t).strip(" \t​")
     return re.sub(r"\s+([,.;:!?])", r"\1", t)   # no space before punctuation the emoji had preceded
+
+
+# WIRE ABBREVIATIONS -> plain words, so the feed reads in ONE house style. Reuters/TASS write "35.5 bln", "1H",
+# "y/y"; a reader shouldn't have to decode them. SHIPPED: "dividends for 1H amounting to 107.79 bln rubles".
+# Money units first (attached OR spaced), then the standalone abbreviations. Case-sensitive where it matters
+# ("1H"/"H1" is a half-year; "1h" is an hour, left alone).
+_ABBREV_SUBS = (
+    (re.compile(r"\b(\d[\d.,]*)\s*bln\b", re.I), r"\1 billion"),
+    (re.compile(r"\b(\d[\d.,]*)\s*mln\b", re.I), r"\1 million"),
+    (re.compile(r"\b(\d[\d.,]*)\s*trln\b", re.I), r"\1 trillion"),
+    (re.compile(r"\b(\d[\d.,]*)\s*bn\b"), r"\1 billion"),          # "$35bn" (kept case-sensitive: 'BN' the initials are rare)
+    (re.compile(r"\bbln\b", re.I), "billion"),
+    (re.compile(r"\bmln\b", re.I), "million"),
+    (re.compile(r"\btrln\b", re.I), "trillion"),
+    (re.compile(r"\b1H\b"), "first half"),
+    (re.compile(r"\b2H\b"), "second half"),
+    (re.compile(r"\bH1\b"), "first half"),
+    (re.compile(r"\bH2\b"), "second half"),
+    (re.compile(r"\bFY(\d{2,4})\b"), r"fiscal year \1"),
+    (re.compile(r"\bFY\b"), "fiscal year"),
+    (re.compile(r"\by[-/]o[-/]y\b|\by/y\b", re.I), "year-on-year"),
+    (re.compile(r"\bq[-/]o[-/]q\b|\bq/q\b", re.I), "quarter-on-quarter"),
+    (re.compile(r"\bm[-/]o[-/]m\b|\bm/m\b", re.I), "month-on-month"),   # NOT bare "mom" (that's a mother)
+)
+
+
+def _expand_abbrevs(t):
+    """Rewrite wire shorthand ('bln'->'billion', '1H'->'first half', 'y/y'->'year-on-year') into plain words."""
+    if not t:
+        return t
+    for pat, rep in _ABBREV_SUBS:
+        t = pat.sub(rep, t)
+    return t
 # A reposter's attribution STAMP on the front of a quoted statement — "President Trump via Truth Social:",
 # "Donald Trump on Truth Social —", "Netanyahu via Telegram:". The header already names the source and the
 # speaker, so this preface is just clutter in the body. Strip a leading "<name/title> via|on <platform>:".
@@ -1291,6 +1331,15 @@ def _to_last_sentence(t):
     return t
 
 
+# A trailing dangling connector/participle a truncated RSS teaser ends on — dropped before the end-stop so the
+# teaser never reads "…following." / "…amid." Broader than the headline dangle (adds participle connectors).
+_DESC_DANGLE_RE = re.compile(
+    r"(?:[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|of|to|in|on|at|for|with|from|by|"
+    r"into|onto|upon|over|under|toward|towards|against|about|as|per|via|amid|amidst|between|among|including|"
+    r"during|following|followed|after|before|since|while|whilst|when|where|because|although|though|unless|"
+    r"until|citing|according|alleging|claiming|saying|adding|noting|despite)\b)+\s*[.…]*\s*$", re.I)
+
+
 def _sharpen_desc(text, n=460):
     """The summary shown under an article, made professional: promo/handles gone, inline image/agency
     credits stripped ('… [Abu Adem Muhammed – Anadolu Agency]'), and a terminal full stop when it ends
@@ -1308,7 +1357,8 @@ def _sharpen_desc(text, n=460):
     while prev != t:
         prev = t
         t = _PROMO_LEAD.sub("", _LEAD_DATELINE.sub("", _strip_lead_flag(t)))
-    t = _strip_emoji(t)                     # drop any inline emoji/dingbat ("Video ➡️ A boy…" -> "Video A boy…")
+    t = _strip_emoji(t)                     # drop any inline emoji/dingbat/™ ("Video ➡️ A boy…" -> "Video A boy…")
+    t = _expand_abbrevs(t)                  # "35.5 bln"->"35.5 billion", "1H"->"first half" (house style)
     t = re.sub(r"\s{2,}", " ", t).strip()
     t = _fix_speaker_colon(t)               # "Former Israeli PM Bennett: Qatar…" -> "…Bennett says Qatar…"
     t = _strip_trunc(t)                     # "…last month. Hegseth [...]" -> "…last month." (no dangling stamp)
@@ -1320,7 +1370,12 @@ def _sharpen_desc(text, n=460):
     t = re.sub(r"\s*(\.\.\.+|…)\s*$", "", t).rstrip()   # drop a teaser's trailing "..." (ZeroHedge etc.)
     t = _tidy_spacing(t)                             # even spacing: after a glued comma/period, around parentheses
     t = _to_last_sentence(t)                         # a mid-sentence truncation -> cut back to the last WHOLE sentence
-    return _end_stop(_clip_sentence(t, n))           # then length-clip; end on a COMPLETE sentence, never mid-thought
+    t = _clip_sentence(t, n)                          # then length-clip; end on a COMPLETE sentence, never mid-thought
+    # A wire RSS description often truncates mid-sentence on a connector/participle ("…in Kiryat Gat, following")
+    # and _end_stop would tack a period onto it. Drop a trailing dangling connector first so the teaser ends on
+    # a real word. SHIPPED BUG: Middle East Monitor's feed cut "…following a recommendation…" -> "…following."
+    t = _DESC_DANGLE_RE.sub("", t).rstrip(" ,;:–—-")
+    return _end_stop(t)
 
 
 # Prepositions / articles / coordinating conjunctions that essentially NEVER validly end a sentence (each
@@ -4734,6 +4789,18 @@ _FLUFF_PAT = re.compile(
     r"\b(what to know|things to know|here'?s what|a look at|in pictures|photo essay|photo story|round-?up|recap|our picks|best of)\b|"
     r"\b(three|four|five|six|seven|eight|nine|ten|\d+)\s+"
     r"(tests?|things?|ways?|reasons?|lessons?|takeaways?|stories|moments|charts|maps|questions|facts|myths)\b|"
+    # a "N [topic] highlights/takeaways/picks/reads" listicle-DIGEST bundles many stories into one dot (a word
+    # may sit between the number and the noun: "7 SCIENCE highlights"). SHIPPED BUG: SCMP's "…: 7 science
+    # highlights" (a subscribe-to-read roundup) made the map.
+    r"\b\d+\s+(?:\w+\s+){0,2}(?:highlights?|takeaways?|picks|must[-\s]?reads?|standout\w*|key\s+stories)\b|"
+    r"\b(?:please\s+)?(?:consider\s+)?subscrib\w*\b|\bsign up to (?:read|continue)\b|"   # a paywall/subscribe plug is not news
+    # CORPORATE PR / AWARD puffery — a company's certification/ranking press release ("NagaWorld Earns Great
+    # Place To Work Certification", "named a Top Employer", "Trust Index score") is advertising, not news.
+    r"\b(?:great\s+place\s+to\s+work|best\s+(?:places?|companies?)\s+to\s+work|top\s+employer|"
+    r"employer\s+of\s+(?:choice|the\s+year)|trust\s+index|most\s+admired\s+compan)\b|"
+    r"\b(?:earns?|wins?|named|awarded|receives?|achieves?|clinch\w*|bags?|secures?)\b[^.\n]{0,45}?"
+    r"\b(?:certification|certified|accreditation|accredited|award\b|accolade|top\s+workplace|quality\s+seal|"
+    r"iso\s?\d{3,}|employer\s+of\s+the\s+year|best\s+employer)\b|"
     r"\bat\s+[1-9]\d{2}\s*:|"                       # "United States at 250:" (3-digit anniversary, NOT an age like "dies at 71:")
     r"^the (rise|fall|making|story|life|legacy|meaning|architect) (and|of)\b|"
     # HUMAN-INTEREST FEATURE, not a located event: a personal journey/profile ("From Sudan to Spain:
@@ -5842,7 +5909,8 @@ def _tidy_spacing(t):
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links (incl. bit.ly), "Follow @x", @handles
-    t = _strip_emoji(t)                                          # no inline "🔥"/"➡️"/"✅" in a headline
+    t = _strip_emoji(t)                                          # no inline "🔥"/"➡️"/"✅"/"™"/"�" in a headline
+    t = _expand_abbrevs(t)                                       # "1H"->"first half", "bln"->"billion" (house style)
     t = _MEDIA_TAIL.sub("", t).strip()                          # "… deportations says video" (link already gone) -> drop the callout
     t = _tidy_spacing(t)                                         # spaces, commas, parentheses
     # strip a trailing " - Outlet" BYLINE (Google-News aggregation furniture) whenever a REAL headline
