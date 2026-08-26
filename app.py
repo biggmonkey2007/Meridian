@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.66"
+APP_VERSION = "1.4.67"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d68"   # d68: resweep so the SCENE named in the body wins — the title's country is refined to the
+_DATA_VER = "d69"   # d69: resweep so procedural court/inquiry steps + witness-testimony details drop off the map
+                    #      (a "final hearing day", an "at trial, says …" quote), an asylum story dots where the
+                    #      person ENDED UP (fled Iran + granted asylum -> Canada, not Iran), and compound/accented
+                    #      country names resolve (Guinea-Bissau != Guinea; Cote d'Ivoire, Sao Tome). Clean-house:
+                    #      dead code removed, hyphen/accent country aliases folded.
+                    # d68: resweep so the SCENE named in the body wins — the title's country is refined to the
                     #      specific place inside it ("India … in Bihar's capital" -> Patna/Bihar, not New Delhi;
                     #      "X's capital" reads as a place, not a sunk possessive) — a VESSEL strike dots the water
                     #      (a Houthi tanker strike -> Red Sea, never Riyadh), and a physical strike is never
@@ -4745,6 +4750,17 @@ _FLUFF_PAT = re.compile(
     r"spent|lost|survived|used\s+to|knew|know|left|fled|escaped|beat|battled|nearly|almost|once)\b|"
     r"[:\-]\s*(how|why)\b|"                         # explainer shape: "Greed and loopholes: How ... works"
     r"\bwhy\b.*\bmatters?\b|"
+    # A PROCEDURAL COURT / INQUIRY step, or a WITNESS-TESTIMONY quote — nothing has been DECIDED, so it is not a
+    # country/region-changing event (a VERDICT, ruling, sentence or conviction IS, and trips none of these).
+    # SHIPPED BUG: "Final hearing day of antisemitism royal commission" and "Instagram head, at trial, says
+    # teens knew of a safety feature" made the map. Keyed on the hearing/testimony FRAME, not the topic.
+    r"\b(?:final\s+)?hearings?\s+(?:day|days)\b|"
+    r"\bhearings?\s+(?:begin|begins|open|opens|resume|resumes|continue|continues|conclude|concludes|wrap|wraps)\b|"
+    r"\b(?:royal\s+commission|commission\s+of\s+inquiry|public\s+inquiry)\b[^.\n]{0,45}?"
+    r"\b(?:hearing|hearings|hears|heard|day|opens?|begins?|resumes?|concludes?|wraps?|witness\w*)\b|"
+    r"\b(?:hears?|heard)\s+(?:evidence|testimony|from\s+witnesses)\b|"
+    r"\bat\s+[^.\n]{0,30}?\b(?:trial|hearing|inquiry|tribunal|inquest)\b\s*,?\s*"
+    r"[^.\n]{0,28}?\b(?:says?|said|tells?|told|testif\w*|claims?|admits?|denies?|reveals?|recalls?|insists?)\b|"
     r"\b(goes viral|feel-good|heartwarming|everything you need)\b|"
     # a READER CALLOUT is not news: "We'd like to speak to maritime workers…" was a dot on the map
     r"^(we|we'?d|we'?re)\b.*\b(like to (speak|hear)|want to hear|would like to)\b|"
@@ -5246,14 +5262,6 @@ def _is_dead(name):
     if not name:
         return False
     return any(_same_person(name, None, d, None) for d in _dead_leaders())
-
-
-def _days_since(datestr):
-    try:
-        d = datetime.datetime.strptime((datestr or "")[:10], "%Y-%m-%d")
-        return (datetime.datetime.utcnow() - d).days
-    except Exception:
-        return 99999
 
 
 def _clean_office_title(lbl, fallback):
@@ -7150,7 +7158,9 @@ DEMONYMS = {
 # searchable country names/aliases -> canonical name in COUNTRY_COORDS
 COUNTRY_ALIASES = {}
 for _k in COUNTRY_COORDS:
-    COUNTRY_ALIASES[re.sub(r"[^a-z ]", " ", _k.lower()).strip()] = _k
+    # FOLD accents to ASCII first ("Côte d'Ivoire" -> "cote d ivoire"), not to SPACES — else the alias became
+    # "c te d ivoire" and neither "Cote d Ivoire" nor the accented form matched. Then drop non-letters.
+    COUNTRY_ALIASES[re.sub(r"[^a-z ]", " ", _fold(_k.lower())).strip()] = _k
 COUNTRY_ALIASES.update({
     "united states": "United States of America", "us": "United States of America",
     "u s": "United States of America", "usa": "United States of America",
@@ -7704,6 +7714,12 @@ def _load_city_gazetteer():
             if co not in COUNTRY_COORDS:
                 COUNTRY_COORDS[co] = (lat, lng)
             COUNTRY_ALIASES.setdefault(co.lower(), co)
+            # accent- and hyphen-folded forms so "Cote d Ivoire" / "Guinea-Bissau" (tokenised on space) match
+            _cf = re.sub(r"[^a-z ]", " ", _fold(co.lower())).strip()
+            if _cf:
+                COUNTRY_ALIASES.setdefault(_cf, co)
+            if "-" in co:      # "Guinea-Bissau" tokenises to guinea+bissau; add the space form so the 2-gram
+                COUNTRY_ALIASES.setdefault(co.lower().replace("-", " "), co)   # matches (else bare "guinea" wins)
         for name, v in _MANUAL_PLACES.items():
             _add_cand(name, v[0], v[1], v[2], _REGION_PRIOR, exclusive=True)
             CITY_COORDS.setdefault(name, v)
@@ -9280,7 +9296,18 @@ def _context_places(hits, words):
         elif i >= 1 and words[i - 1] == "in" and any(
                 words[k] in _ORIGIN_WORDS for k in range(max(0, i - 4), i - 1)):
             ctx.add(i)                     # "had BEEN/was/stayed IN <place>" -> a past/origin location
+        elif (h[1] in ("country", "demonym") and i >= 1
+              and (words[i - 1] in _FLIGHT_VERBS
+                   or (words[i - 1] == "from" and i >= 2 and words[i - 2] in _FLIGHT_VERBS))):
+            ctx.add(i)                     # "FLED Iran" / "deported FROM Syria" -> the origin left behind, not the scene
     return ctx
+
+
+# A country someone FLED / was DEPORTED or EXILED from is the ORIGIN they left, not where the story is now set.
+# SHIPPED BUG: "Christian convert who FLED IRAN … finds new home [in Canada]" dotted IRAN — the country she
+# escaped — instead of where she ended up. The destination (in the body) then wins.
+_FLIGHT_VERBS = {"fled", "flee", "flees", "fleeing", "escaped", "escapes", "escaping", "deported",
+                 "exiled", "expelled", "evacuated", "displaced", "banished"}
 
 
 # A leader RETURNING home from abroad is news in their OWN country, not where they were. "Cameroon's President
@@ -10188,6 +10215,29 @@ def _us_georgia_where(text):
     return (32.16, -82.9, "Georgia, United States", "United States of America")
 
 
+# An ASYLUM / RESETTLEMENT story is set where the person ENDED UP — the country that GRANTED them asylum or a
+# new home — not the one they fled or were deported through. SHIPPED BUG: "Christian convert who fled Iran …
+# Canada has given her asylum" dotted Iran; it should be Canada. The user's rule: dot where she ended up.
+_ASYLUM_DEST_RE = re.compile(
+    r"\b([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)?)\s+(?:has\s+|have\s+|had\s+)?(?:given|granted|offered|gave|grants|"
+    r"grant)\s+(?:her|him|them|the\s+family|the\s+refugees?|asylum\s+to\s+)?\s*(?:asylum|refuge|a\s+new\s+home|"
+    r"refugee\s+status)\b"
+    r"|\b(?:asylum|refuge|resettled|resettlement|a\s+new\s+home|safe\s+haven|granted\s+asylum)\s+(?:in|to)\s+"
+    r"([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)?)\b")
+
+
+def _asylum_where(title, desc):
+    """For an asylum/resettlement story, the country that GRANTED asylum (or where the person resettled) — the
+    scene is where they ended up. Returns its geolocation, or None when no such destination is named."""
+    for m in _ASYLUM_DEST_RE.finditer((title or "") + " . " + (desc or "")):
+        name = (m.group(1) or m.group(2) or "").strip()
+        if name:
+            g = _geolocate(name, "", "")
+            if g and g[3] in COUNTRY_COORDS:
+                return g
+    return None
+
+
 def _us_markets(text):
     """True when the story is a US financial-markets report (Wall Street / a US index or mega-cap / the Fed),
     and not dominated by a FOREIGN exchange — so it dots New York, not a country cited only as a market mover.
@@ -10237,6 +10287,10 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     # falls through to the AI WHERE, which is where the deceased actually was.
     if r and _is_obituary(title or ""):
         return (COUNTRY_COORDS[r[3]][0], COUNTRY_COORDS[r[3]][1], _co_short(r[3]), r[3]) if r[3] in COUNTRY_COORDS else r
+    # ASYLUM / RESETTLEMENT -> where the person ended up (the country that granted asylum), not the one fled.
+    _asy = _asylum_where(title or "", desc or "")
+    if _asy:
+        return _asy
     # GEORGIA the US STATE vs the Caucasus country: the rules land on the COUNTRY off a bare "Georgia", but a
     # Savannah/GBI/Kemp story is the US state. Re-place it in the US (the named city, else the state centroid).
     if r and r[3] == "Georgia":

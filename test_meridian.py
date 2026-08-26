@@ -413,6 +413,11 @@ GEO_CASES = [
     # common EN spelling "Mykolaiv" was missing from the gazetteer (only "Mykolayiv"/"Nikolaev" were listed).
     ("A Russian drone struck a suburban passenger train in Ukraine's Mykolaiv region, damaging several carriages",
      "According to Ukrzaliznytsia. No one was injured.", "Mykolaiv", "the named region, not the capital Kyiv"),
+    # COMPOUND / ACCENTED country names: a hyphen or a stripped accent must not collapse them to a namesake.
+    ("Coup leaders detain president in Guinea-Bissau", "", "Guinea-Bissau",
+     "SHIPPED BUG: 'Guinea-Bissau' tokenised to guinea+bissau and dotted GUINEA (a different country)"),
+    ("Cote d Ivoire holds a presidential election", "", "Ivoire",
+     "SHIPPED BUG: the accent in 'Cote d'Ivoire' had become a SPACE in the alias, so it matched nothing"),
     ("Iran strikes tanker in the Strait of Hormuz", "", "Strait of Hormuz", "a dot in the strait itself"),
     # A curated strategic water must resolve even NAKED (no locating preposition to force it): spaCy NER
     # tags "Hormuz"/"Bosphorus" as a PERSON, and while a 5M-prior region entry got vetoed and deleted, a
@@ -1096,6 +1101,16 @@ FLUFF_CASES = [
      "SHIPPED BUG: a governor's Eid greeting/sermon made the map"),
     ("Governor felicitates with Christians on Christmas", "", True, "a festival greeting is not news"),
     ("Cleric urges worshippers to shun violence and embrace peace", "", True, "a sermon platitude, not an event"),
+    # A PROCEDURAL court/inquiry step or a witness-TESTIMONY quote — nothing decided, not country-changing.
+    ("Instagram head Mosseri, at children's addiction trial, says few teenagers knew of safety feature", "", True,
+     "SHIPPED BUG: a witness-testimony detail at a trial made the map"),
+    ("'The people have spoken': Final hearing day of antisemitism royal commission", "", True,
+     "SHIPPED BUG: a procedural 'final hearing day' made the map"),
+    ("Public inquiry hearings begin into building collapse", "", True, "a hearing schedule is not an outcome"),
+    ("Court sentences drug lord to life in prison", "", False, "GUARD: a VERDICT/sentence is real news"),
+    ("Trump found guilty on all 34 counts", "", False, "GUARD: a conviction is real news"),
+    ("Supreme Court hears arguments on abortion rights", "", False,
+     "GUARD: a major court 'hears arguments' is not the procedural-hearing fluff we drop"),
     ("UN urges immediate ceasefire in Gaza", "", False, "GUARD: a concrete political demand is real news"),
     ("Zelensky urges allies to send more air defense", "", False, "GUARD: 'urges allies to send' is not ceremonial"),
     ("Christmas market attack kills 5 in Germany", "", False, "GUARD: a holiday word in a real attack stays"),
@@ -2430,6 +2445,16 @@ def main():
     # GUARD: a pure THREAT ("warns of strikes") still resolves to the speaker's capital.
     _lg_fails.append(("threat-still-capital", "Moscow" in (app._locate(
         "Putin warns of strikes on Ukraine if talks fail", "", "", allow_ai=False)[2] or "")))
+    # ASYLUM / RESETTLEMENT dots where the person ENDED UP (the country that granted asylum), not the one fled.
+    _lg_fails.append(("asylum-destination", (app._locate(
+        "Christian Convert Who Fled Iran and Was Deported By Trump Finds New Home", "",
+        "She was deported to Panama under Trump's crackdown. Now, Canada has given her asylum.",
+        allow_ai=False)[3]) == "Canada"))
+    _lg_fails.append(("fled-origin-sunk", (app._locate(     # a country FLED is the origin, not the scene
+        "Refugees flee Sudan war", "", "Tens of thousands crossed into Chad.", allow_ai=False)[3]) == "Chad"))
+    _lg_fails.append(("asylum-guard-policy", (app._locate(   # a US asylum-POLICY story stays in the US
+        "Trump tightens US asylum rules at the border", "", "New restrictions take effect Monday.",
+        allow_ai=False)[3]) == "United States of America"))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2845,7 +2870,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 28   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat
+             + 31   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
