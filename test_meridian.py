@@ -2473,6 +2473,20 @@ def main():
     _lg_fails.append(("asylum-guard-policy", (app._locate(   # a US asylum-POLICY story stays in the US
         "Trump tightens US asylum rules at the border", "", "New restrictions take effect Monday.",
         allow_ai=False)[3]) == "United States of America"))
+    # The SCENE named in the headline/body wins over the actor/source. All literally named.
+    _lg_fails.append(("passive-agent-scene", "Petersburg" in (app._locate(   # "targeted BY Ukraine near St. Petersburg"
+        "ICRC delegates visit facilities targeted by Ukraine near St. Petersburg", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("passive-agent-guard", (app._locate(   # GUARD: "hit BY Russia IN Ukraine" -> the scene Ukraine
+        "Power facilities hit by Russia in Ukraine", "", "", allow_ai=False)[3]) == "Ukraine"))
+    _lg_fails.append(("tibet-region", (app._locate(          # a bare "in Tibet" dots China, not the source (Russia)
+        "Three killed, 265 missing after mudslide in Tibet", "Russia", "", allow_ai=False)[3]) == "China"))
+    _lg_fails.append(("vaca-muerta-argentina", (app._locate(  # the Argentine gas field, not a US "Rincon"
+        "Two Workers Killed in YPF Vaca Muerta Accident at Rincon del Mangrullo", "",
+        "at YPF's Rincon del Mangrullo gas plant in Vaca Muerta, Argentina's shale basin.", allow_ai=False)[3]) == "Argentina"))
+    _lg_fails.append(("envoy-posting", (app._locate(          # "X's envoy TO Iran" -> the posting (Iran), not X
+        "Japan's Envoy to Iran on Conflict and Diplomacy", "", "", allow_ai=False)[3]) == "Iran"))
+    # An ambiguous COMPANY name maps to its disambiguated Wikipedia title (the firm, not the fruit/river).
+    _lg_fails.append(("company-wiki", app._ORG_WIKI.get("apple") == "Apple Campus" and app._ORG_WIKI.get("amazon") == "Amazon.com"))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2894,7 +2908,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 31   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee
+             + 37   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

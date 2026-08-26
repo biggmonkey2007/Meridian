@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.68"
+APP_VERSION = "1.4.69"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d70"   # d70: resweep for HOUSE STYLE — wire shorthand spelled out ("1H"->"first half", "bln"->
+_DATA_VER = "d71"   # d71: resweep so a place NAMED in the headline/body wins over the actor/source — a passive
+                    #      agent sinks ("targeted BY Ukraine near St. Petersburg" -> St. Petersburg), Tibet /
+                    #      Vaca Muerta / the Rincon del Mangrullo field + Chinese regions are on the map, and "X's
+                    #      envoy TO Iran" dots Iran. Also: an ambiguous COMPANY hero shows the FIRM not the fruit
+                    #      (Apple -> Apple Campus, Amazon -> the tower).
+                    # d70: resweep for HOUSE STYLE — wire shorthand spelled out ("1H"->"first half", "bln"->
                     #      "billion", "y/y"->"year-on-year"), trademark/replacement-char junk stripped from
                     #      headlines ("Certification™"/"Work�"), a truncated teaser no longer ends on a dangling
                     #      connector ("…following."), and listicle-digests + subscribe plugs + corporate-PR/
@@ -2645,7 +2650,7 @@ class Api:
                 low = " " + re.sub(r"[^a-z ]", " ", _fold(title or "").lower()) + " "
                 for k in _ORG_KEYS:
                     if (" " + k + " ") in low and len(k) > 3:
-                        p = self.place_photo(k.title(), "")
+                        p = self.place_photo(_ORG_WIKI.get(k, k.title()), "")   # "Apple"->"Apple Inc." (firm, not fruit)
                         if p.get("url"):
                             return dict(p, kind="org")
                         break
@@ -7503,6 +7508,9 @@ _FACILITIES = {
     # not Moscow. SHIPPED BUG: an explosion at the "Amur Gas Chemical Complex" dotted the capital.
     "amur gas chemical complex": (51.380, 128.130, "Russia"), "amur gas processing plant": (51.700, 128.320, "Russia"),
     "amur gpp": (51.700, 128.320, "Russia"), "amur gcc": (51.380, 128.130, "Russia"),
+    # YPF's Rincon del Mangrullo gas field in Vaca Muerta, Argentina — NOT "Rincon", a US town (the accent
+    # on "Rincon" folds to the same ASCII, so the 3-word field name must win as the more specific match).
+    "rincon del mangrullo": (38.60, -68.80, "Argentina"),
     "primorsk port": (60.362, 28.611, "Russia"), "novorossiysk port": (44.722, 37.789, "Russia"),
     "engels air base": (51.481, 46.211, "Russia"), "engels airbase": (51.481, 46.211, "Russia"),
     "olenya air base": (68.152, 33.464, "Russia"), "belaya air base": (52.915, 103.605, "Russia"),
@@ -7636,6 +7644,12 @@ _WAR_PLACES = {
     "odisha": (20.30, 85.82, "India"), "assam": (26.14, 91.79, "India"),
     "jharkhand": (23.34, 85.31, "India"), "chhattisgarh": (21.25, 81.63, "India"),
     "uttarakhand": (30.32, 78.03, "India"), "himachal pradesh": (31.10, 77.17, "India"),
+    # Chinese regions the wire names bare ("mudslide in Tibet" dotted the SOURCE country before)
+    "tibet": (29.65, 91.14, "China"), "xizang": (29.65, 91.14, "China"), "xinjiang": (41.10, 85.00, "China"),
+    "inner mongolia": (44.00, 113.00, "China"), "sichuan": (30.65, 104.07, "China"),
+    "gansu": (36.06, 103.83, "China"), "qinghai": (36.62, 101.78, "China"), "yunnan": (25.04, 102.71, "China"),
+    # Argentina's Vaca Muerta shale basin + its fields — a recurring dateline the gazetteer missed
+    "vaca muerta": (38.50, -69.00, "Argentina"), "neuquen": (38.95, -68.06, "Argentina"),
 }
 
 # Places GeoNames ranks WRONG — the world-famous one loses to a bigger namesake, or is missing.
@@ -8283,6 +8297,16 @@ _ORG_COUNTRY = {
     "wagner": "Russia", "irgc": "Iran", "taliban": "Afghanistan", "isis-k": "Afghanistan",
 }
 _ORG_KEYS = sorted(_ORG_COUNTRY, key=len, reverse=True)
+
+# COMPANY names that are ALSO an everyday word/thing — a bare Wikipedia lookup returns the wrong image (the
+# FRUIT for "Apple", the RIVER for "Amazon"). Map them to the company's exact Wikipedia title so the hero shows
+# the FIRM, not the object. SHIPPED BUG: an "Apple sets iPhone launch date" story showed three apples.
+_ORG_WIKI = {
+    "apple": "Apple Campus", "amazon": "Amazon.com", "meta": "Meta Platforms", "alphabet": "Googleplex",
+    "orange": "Orange S.A.", "gateway": "Gateway, Inc.", "oracle": "Oracle Corporation",
+    "the fed": "Marriner S. Eccles Federal Reserve Board Building", "warner": "Warner Bros.",
+    "paramount": "Paramount Pictures", "disney": "The Walt Disney Company", "santos": "Santos Limited",
+}
 
 # The US Federal Reserve. "Federal Reserve"/"the Fed" are plain _ORG_COUNTRY keys, but the bare
 # clipped form "Fed" (as wires headline it: "Fed officials signal rate hike", Anadolu-sourced ->
@@ -9368,6 +9392,10 @@ def _context_places(hits, words):
               and (words[i - 1] in _FLIGHT_VERBS
                    or (words[i - 1] == "from" and i >= 2 and words[i - 2] in _FLIGHT_VERBS))):
             ctx.add(i)                     # "FLED Iran" / "deported FROM Syria" -> the origin left behind, not the scene
+        elif (h[1] in ("country", "demonym") and i >= 2 and words[i - 1] == "by"
+              and any(words[k] in _HIT_TARGET_VERBS for k in range(max(0, i - 4), i - 1))):
+            ctx.add(i)                     # "facilities TARGETED BY Ukraine near St. Petersburg" -> Ukraine is the
+                                           # passive AGENT (who did it), so the scene (St. Petersburg) wins
     return ctx
 
 
@@ -9384,6 +9412,11 @@ _FLIGHT_VERBS = {"fled", "flee", "flees", "fleeing", "escaped", "escapes", "esca
 _RETURN_WORDS = {"returns", "returned", "return", "returning", "back", "comes", "came", "arrives",
                  "arrived", "home", "abroad", "overseas"}
 _ORIGIN_WORDS = {"been", "was", "were", "stayed", "staying", "remained", "spent", "spending", "holed"}
+
+
+# A diplomat's ROLE — "<home>'s AMBASSADOR/ENVOY to <post>" means the person serves IN the post country.
+_DIPLO_ROLES = {"envoy", "ambassador", "ambassadors", "diplomat", "diplomats", "consul", "emissary",
+                "mission", "delegation", "representative", "attache", "charge", "consulate", "embassy"}
 
 
 def _pick_place(hits, words):
@@ -9444,7 +9477,12 @@ def _pick_place(hits, words):
         if _is_attrib_water(h, words):
             return False            # "Black Sea ports" is a coastline, not the sea
         p2 = words[max(0, h[0] - 2):h[0]]
-        return any(w in _GEO_PREP or w in _GEO_ACTION for w in p2) or h[1] == "city"
+        if any(w in _GEO_PREP or w in _GEO_ACTION for w in p2) or h[1] == "city":
+            return True
+        # "<home>'s ENVOY / AMBASSADOR TO <country>" -> the diplomat SERVES in that country, so it is the
+        # scene (and the home country sinks as the actor). "Japan's envoy to Iran" -> Iran, not Japan.
+        return (h[0] >= 1 and words[h[0] - 1] == "to"
+                and any(words[k] in _DIPLO_ROLES for k in range(max(0, h[0] - 3), h[0] - 1)))
 
     scene_exists = any(_is_scene(h) for h in hits
                        if not _is_actor(h) and not _is_policy_target(h, words))
