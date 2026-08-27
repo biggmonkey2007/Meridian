@@ -2511,6 +2511,26 @@ def main():
         "Japan's Envoy to Iran on Conflict and Diplomacy", "", "", allow_ai=False)[3]) == "Iran"))
     # An ambiguous COMPANY name maps to its disambiguated Wikipedia title (the firm, not the fruit/river).
     _lg_fails.append(("company-wiki", app._ORG_WIKI.get("apple") == "Apple Campus" and app._ORG_WIKI.get("amazon") == "Amazon.com"))
+    # COMPANY-INTERNAL news (a hire / exec move / earnings) dots the company's HEADQUARTERS, not the country
+    # centroid or capital. SHIPPED BUG: "Barret Zoph joins Google" dotted Washington D.C.; belongs at Google HQ.
+    _lg_fails.append(("hq-google-hire", "Mountain View" in (app._locate(
+        "Barret Zoph joins Google", "", "The Thinking Machines Lab co-founder is moving to Google.",
+        allow_ai=False)[2] or "")))
+    _lg_fails.append(("hq-apple-exec", "Cupertino" in (app._locate(
+        "Apple names new head of hardware engineering", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("hq-samsung-korea", (app._locate(
+        "Samsung appoints new co-CEO", "", "", allow_ai=False)[3]) == "South Korea"))
+    # GUARD: a company story that NAMES a country stays there — "Google launches service in Nigeria" is Nigeria,
+    # not Mountain View (the HQ rule fills only a story whose sole geographic signal IS the company).
+    _lg_fails.append(("hq-guard-named-country", (app._locate(
+        "Google launches new payment service in Nigeria", "", "", allow_ai=False)[3]) == "Nigeria"))
+    # GUARD: a fine/lawsuit is NOT company-internal — an EU antitrust penalty must never land on the HQ.
+    _lg_fails.append(("hq-guard-not-internal", "Mountain View" not in (app._locate(
+        "Google fined 2 billion euros by EU antitrust regulators", "",
+        "The European Commission announced the penalty.", allow_ai=False)[2] or "")))
+    # GUARD: a specific scene the story names (a store opening in Mumbai) wins over the HQ.
+    _lg_fails.append(("hq-guard-scene", "Mumbai" in (app._locate(
+        "Apple opens new store in Mumbai", "", "", allow_ai=False)[2] or "")))
     # A named Mexican state resolves (a coastal-tourism story dotted the capital before); the body still refines.
     _lg_fails.append(("yucatan-state", (app._geolocate("Yucatan", "", "") or ["", "", "", ""])[3] == "Mexico"))
     _lg_fails.append(("yucatan-body-scene", "Chuburna" in (app._locate(   # the body's town wins over the country
@@ -2947,7 +2967,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 39   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan
+             + 45   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ (3 hire/exec/earnings->HQ + 3 guards: named-country, not-internal fine, named-scene)
              + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

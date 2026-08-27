@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.72"
+APP_VERSION = "1.4.73"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d74"   # d74: resweep so OPINION/op-ed pieces drop off the map — a "lesson in"/"the case for"
+_DATA_VER = "d75"   # d75: resweep so COMPANY-INTERNAL news (a hire/exec move/reshuffle/earnings for a known
+                    #      firm) dots the company HEADQUARTERS not the country centroid ("Barret Zoph joins
+                    #      Google" -> Mountain View), and a leaked prompt-scaffolding label ("SOURCE OUTLET: X")
+                    #      is stripped from every brief. No re-summarize cost.
+                    # d74: resweep so OPINION/op-ed pieces drop off the map — a "lesson in"/"the case for"
                     #      headline OR a first-person essay body ("When I look back…"). No re-summarize cost.
                     # d73: resweep so a DRC dot flies ONE Congo flag (the duplicate "Democratic Republic of the
                     #      Congo"/"Dem. Rep. Congo" keys + the ambiguous bare "Congo" collapse), and a truncated
@@ -659,6 +663,11 @@ def _summarize(title, text, source="", depth=False):
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
     s = _PROMO_URL.sub(" ", s)          # a URL never belongs in the brief (belt-and-braces; the source text is cleaned too)
     s = re.sub(r"(?im)^\s*(?:source|link|via|read)\s*:?\s*$", "", s).strip()   # a dangling "Source:" left after the url was cut
+    # The model sometimes ECHOES the prompt's own scaffolding labels ("SOURCE OUTLET: Reuters SOURCE", "HEADLINE:
+    # …", "SOURCE TEXT:") into the brief. Those are never article prose — strip any line that leads with one
+    # (after optional markdown/spacing). Belt-and-braces: the frontend also strips it so already-baked feeds heal.
+    s = re.sub(r"(?im)^[\s>*_#-]*(?:source\s+outlet|source\s+text|headline)\b[^\n]*$", "", s).strip()
+    s = re.sub(r"\n{3,}", "\n\n", s).strip()
     s = _LEAD_DATELINE.sub("", s)       # belt-and-braces: drop a wire dateline if the model opened with one anyway
     # Pull the WHERE + SCOPE lines back OUT of the brief and cache them (keyed by title) — one AI call gave us
     # the brief, the location (for _locate) AND the importance (for the world-map gate), no extra request.
@@ -8281,12 +8290,16 @@ def _wikidata_public_figure(qid):
     return human and office
 
 
+_PERSON_VER = "p2"   # bump to invalidate cached person cards when the GATE changes (now any real human, not
+                     # only public-office holders) — the version in the key is what makes a code fix self-heal
+
+
 def _person_card(name, curated=False):
     """One validated face, or None. Cached hard — these answers do not change hour to hour."""
     name = (name or "").strip()
     if not name:
         return None
-    cache = os.path.join(CACHE_DIR, "person_" + _slug(name) + ".json")
+    cache = os.path.join(CACHE_DIR, "person_" + _PERSON_VER + "_" + _slug(name) + ".json")
     if _fresh(cache, 30 * 86400):
         try:
             hit = json.load(open(cache, encoding="utf-8"))
@@ -8303,7 +8316,10 @@ def _person_card(name, curated=False):
         # Gate 2: the page must BE this person. A redirect to a different name means we guessed.
         same = _fold(title).lower() == _fold(name).lower()
         if thumb and qid and (curated or same):
-            if curated or _wikidata_public_figure(qid):
+            # A real, correctly-identified HUMAN is enough for a little face — not just public-office holders.
+            # The user wants EVERYONE named shown (a tech exec, a co-founder), like the hero already does; the
+            # exact-name match + a photo + "is human" keeps out false matches. (was: _wikidata_public_figure.)
+            if curated or _wikidata_person(qid)[0]:
                 out = {"name": title, "img": thumb,
                        "role": (j.get("description") or "").strip()[:60]}
     try:
@@ -8420,6 +8436,65 @@ def _org_country(title):
             return _ORG_COUNTRY[k]
     if _is_fed_org(low):
         return "United States of America"
+    return None
+
+
+# A company's HEADQUARTERS. A story ABOUT the company itself — a hire, an exec move, a reshuffle, earnings, a
+# product it unveils — happens at the company, so dot the HQ, not the country centroid/capital. SHIPPED BUG:
+# "Barret Zoph joins Google" dotted Washington D.C.; it belongs at Google HQ in Silicon Valley. (lat, lng,
+# city label, canonical country.)
+_US = "United States of America"
+_ORG_HQ = {
+    "google": (37.422, -122.084, "Mountain View", _US), "alphabet": (37.422, -122.084, "Mountain View", _US),
+    "youtube": (37.422, -122.084, "Mountain View", _US), "apple": (37.335, -122.009, "Cupertino", _US),
+    "microsoft": (47.640, -122.130, "Redmond", _US), "amazon": (47.622, -122.337, "Seattle", _US),
+    "meta": (37.485, -122.148, "Menlo Park", _US), "facebook": (37.485, -122.148, "Menlo Park", _US),
+    "tesla": (30.223, -97.618, "Austin", _US), "nvidia": (37.371, -121.965, "Santa Clara", _US),
+    "openai": (37.767, -122.416, "San Francisco", _US), "anthropic": (37.767, -122.416, "San Francisco", _US),
+    "ibm": (41.108, -73.720, "Armonk", _US), "boeing": (38.881, -77.113, "Arlington", _US),
+    "spacex": (33.921, -118.328, "Hawthorne", _US), "netflix": (37.243, -121.962, "Los Gatos", _US),
+    "uber": (37.775, -122.418, "San Francisco", _US), "disney": (34.156, -118.325, "Burbank", _US),
+    "paramount": (40.769, -73.982, "New York", _US), "warner": (34.148, -118.338, "Burbank", _US),
+    "goldman sachs": (40.715, -74.014, "New York", _US), "jpmorgan": (40.755, -73.976, "New York", _US),
+    "samsung": (37.259, 127.052, "Suwon", "South Korea"), "hyundai": (37.522, 127.021, "Seoul", "South Korea"),
+    "tsmc": (24.774, 121.005, "Hsinchu", "Taiwan"), "toyota": (35.083, 137.156, "Toyota", "Japan"),
+    "sony": (35.630, 139.734, "Tokyo", "Japan"), "nintendo": (34.973, 135.756, "Kyoto", "Japan"),
+    "alibaba": (30.267, 120.161, "Hangzhou", "China"), "huawei": (22.660, 114.049, "Shenzhen", "China"),
+    "tencent": (22.540, 114.058, "Shenzhen", "China"), "bytedance": (39.988, 116.474, "Beijing", "China"),
+    "aramco": (26.288, 50.150, "Dhahran", "Saudi Arabia"), "gazprom": (59.943, 30.309, "Saint Petersburg", "Russia"),
+    "rosneft": (55.750, 37.618, "Moscow", "Russia"), "lukoil": (55.759, 37.641, "Moscow", "Russia"),
+    "siemens": (48.137, 11.578, "Munich", "Germany"), "volkswagen": (52.428, 10.780, "Wolfsburg", "Germany"),
+    "bmw": (48.177, 11.556, "Munich", "Germany"), "rheinmetall": (51.221, 6.793, "Dusseldorf", "Germany"),
+    "airbus": (43.702, 1.362, "Toulouse", "France"), "totalenergies": (48.910, 2.238, "Courbevoie", "France"),
+    "nestle": (46.457, 6.844, "Vevey", "Switzerland"), "novartis": (47.564, 7.601, "Basel", "Switzerland"),
+    "hsbc": (51.505, -0.019, "London", "United Kingdom"), "barclays": (51.505, -0.017, "London", "United Kingdom"),
+    "woodside": (-31.955, 115.858, "Perth", "Australia"), "bhp": (-37.821, 144.958, "Melbourne", "Australia"),
+    "qantas": (-33.934, 151.179, "Sydney", "Australia"),
+}
+_ORG_HQ_KEYS = sorted(_ORG_HQ, key=len, reverse=True)
+# A story is ABOUT the company (internal) when it carries one of these cues — deliberately limited to PERSONNEL,
+# CORPORATE STRUCTURE and FINANCIALS, the things that unambiguously happen AT the company. Not "announces /
+# launches / unveils" (a product a company launches can be anywhere; a regulator can "announce" a fine AGAINST
+# it) — those leaked (an EU fine dotted the HQ). The HQ rule ALSO requires WEAK geo AND no country named.
+_COMPANY_ACT = re.compile(
+    r"\b(?:hire[sd]?|hiring|joins?|joined|appoints?|appointed|names?|promot\w*|reshuffl\w*|restructur\w*|"
+    r"layoffs?|lays?\s+off|cut(?:s|ting)?\s+jobs|fires?|fired|resign\w*|steps?\s+down|stepping\s+down|"
+    r"\bceo\b|\bcfo\b|\bcto\b|\bcoo\b|chief\s+\w+\s+officer|executive|leadership|co-?founder|founder|"
+    r"earnings|revenue|profit|quarterly|\bipo\b|goes?\s+public|acqui\w*|buys?|merger|board\s+(?:member|of)|"
+    r"valuation|market\s+cap)\b", re.I)
+
+
+def _company_hq(text):
+    """The HQ tuple (lat, lng, 'City, Country', country) for a company-INTERNAL story, or None. Only fires when
+    a company from _ORG_HQ is the subject AND a company-activity cue is present."""
+    t = text or ""
+    if not _COMPANY_ACT.search(t):
+        return None
+    low = " " + re.sub(r"[^a-z ]", " ", _fold(t).lower()) + " "
+    for k in _ORG_HQ_KEYS:
+        if (" " + k + " ") in low:
+            la, ln, city, co = _ORG_HQ[k]
+            return (la, ln, city + ", " + _co_short(co), co)
     return None
 
 
@@ -10492,6 +10567,15 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
     _asy = _asylum_where(title or "", desc or "")
     if _asy:
         return _asy
+    # COMPANY-INTERNAL story -> the company's HEADQUARTERS. A hire, an exec move, a reshuffle or earnings IS the
+    # company, so it belongs at HQ, not the country centroid/capital. SHIPPED BUG: "Barret Zoph joins Google"
+    # dotted Washington D.C.; it belongs at Google HQ in Silicon Valley. Fires only when the rules stayed WEAK
+    # (no specific scene) AND the text names NO country of its own — so "Google launches service in Nigeria"
+    # (Nigeria named) stays Nigeria, and the HQ only fills a story whose sole geographic signal is the company.
+    if _geo_is_weak(r) and not ment:
+        _hq = _company_hq((title or "") + " . " + (desc or ""))
+        if _hq:
+            return _hq
     # GEORGIA the US STATE vs the Caucasus country: the rules land on the COUNTRY off a bare "Georgia", but a
     # Savannah/GBI/Kemp story is the US state. Re-place it in the US (the named city, else the state centroid).
     if r and r[3] == "Georgia":
