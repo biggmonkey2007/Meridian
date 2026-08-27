@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.74"
+APP_VERSION = "1.4.75"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -332,7 +332,12 @@ _DATA_VER = "d76"   # d76: resweep so a cultural ART-TOUR / festival feature dro
                     #      Fed rate stories on the US (an Anadolu-sourced one had dotted Turkey), not the source country.
                     # d35: resweep so the broadened AI dedup folds reworded same-event dots, and its LEARNED verdicts
                     #      apply on COLD START (cache-only) so duplicates don't reappear until the background pass runs.
-_SUM_PROMPT_VER = "23"  # 23: brief must also explain any TECHNICAL / financial / specialist term the headline leans
+_SUM_PROMPT_VER = "24"  # 24: EVEN-HANDED framing extended from war to every contested social topic (migration, asylum,
+                        #     crime, protest): our OWN voice uses plain neutral nouns ("migrants", "the dead"), never
+                        #     sympathy-loaded ("victims fleeing", "forced to flee") NOR hostility-loaded ("illegal aliens",
+                        #     "invaders") wording, and attributes any cause/blame/victimhood to the source. Symmetric, not
+                        #     partisan — removes tilt from BOTH sides. (A "37 migrants die at sea" brief read pro-migration.)
+                        # 23: brief must also explain any TECHNICAL / financial / specialist term the headline leans
                         #     on (what it measures + why it matters) — a "max ruble-deposit rate" story left the
                         #     reader lost. A bit more context almost never hurts.
                         # 22: brief must ALWAYS ground a newcomer — at least one plain sentence of background/context
@@ -656,7 +661,16 @@ def _summarize(title, text, source="", depth=False):
               "a CLAIM — attribute it to WHO said it and name the outlet when the story is one side's telling "
               "('Moscow claims', 'according to Russia's TASS', 'Ukraine's army says'). Keep loaded epithets "
               "('regime', 'terrorist', 'martyr', 'liberated') out of your OWN voice; apply this to EVERY source "
-              "equally. When the story IS a person's statement, write it as attributed reported speech naming the "
+              "equally. This covers EMOTIVE / ADVOCACY framing on a contested social topic (migration, asylum, "
+              "crime, protest, abortion, guns) just as much as war: in your OWN voice use plain neutral nouns — "
+              "'migrants', 'those aboard', 'the dead', 'the 37 who died' — and NEVER sympathy-loaded wording "
+              "('victims fleeing', 'desperate refugees', 'forced to flee', 'trapped') NOR hostility-loaded wording "
+              "('illegal aliens', 'invaders', 'a flood/wave of migrants', 'swarm'). Attribute any characterization "
+              "of cause, blame or victimhood to the source that made it ('the relief group said they were fleeing "
+              "the civil war'), and don't editorialize with adjectives ('dangerous', 'brutal', 'heroic') in your "
+              "own voice. State the verifiable facts — who, how many, from where to where, the cause — plainly and "
+              "let the reader judge; this even-handedness is identical for every side of every issue. "
+              "When the story IS a person's statement, write it as attributed reported speech naming the "
               "speaker, their distinctive words in quotation marks.\n"
               "Then output TWO metadata lines, each on its own line, NOT part of the brief:\n"
               "WHERE: the ONE place the event PHYSICALLY happened — 'City, Country', else 'Country', else NONE. "
