@@ -845,6 +845,15 @@ CLIP_CASES = [
     ("Chinese shipping giants COSCO and CMES stop sending tankers through the Strait of Hormuz over security fears",
      "Footage: a COSCO tanker reroutes around the Cape as CMES halts Strait of Hormuz transits.", True,
      "the SAME story (COSCO/CMES pulling out) shares the distinctive company names beyond the place and must attach"),
+    # A SHARED PLACE + a GENERIC diplomatic verb ("visit"/"arrive") is not the same event. SHIPPED BUG: a
+    # "Lukashenko arrived in Moscow for a visit" photo was filed under a "CIA director visited Russia to warn
+    # NATO" dot — they share only Moscow + "visit", two totally different subjects (Lukashenko vs Ratcliffe).
+    ("reports CIA Director John Ratcliffe visited Russia to warn them not to attack NATO countries",
+     "Lukashenko arrived in Moscow for an unexpected visit", False,
+     "SHIPPED BUG: a Lukashenko-in-Moscow photo attached to a Ratcliffe-visits-Russia dot on {Moscow, visit} — a shared place + generic 'visit' is not a shared subject"),
+    ("Lukashenko arrives in Moscow for talks with Putin",
+     "Lukashenko arrived in Moscow for an unexpected visit", True,
+     "...but a lone DISTINCTIVE name (Lukashenko) at the SAME place IS the same event, even though 'visit'/'arrive' are now generic"),
 ]
 
 # Two DIFFERENT events must not be merged. (headline_a, headline_b, same_event?, why)
@@ -1848,6 +1857,12 @@ def main():
                      and app._soft_news("Free Beer Festival Hits Belo Horizonte Saturday With 30 Local Brews", "")
                      and app._soft_news("Rio jazz festival returns this weekend", "")
                      and not app._soft_news("Stampede at a festival kills 10", "")
+                     # a CULTURAL ART TOUR / street-art / exhibition event is a lifestyle feature, off the world map.
+                     and app._soft_news("Florianopolis Paints Itself Lusophone for the Third Street Art Tour",
+                                        "The third Festival Street Art Tour runs September 1-7 with 100+ artists.")
+                     and app._soft_news("Venice Biennale art exhibition opens to crowds", "")
+                     and not app._soft_news("Thieves steal Van Gogh painting from museum in overnight art heist", "")
+                     and not app._soft_news("Defense expo showcases new fighter jets in Ankara", "")
                      # a LONE ACCIDENTAL death is local; a mass toll or a violent death stays on the map.
                      and app._soft_news("Electricity worker dies in electrocution incident", "")
                      and app._soft_news("Driver killed in road accident", "")
@@ -2274,7 +2289,8 @@ def main():
         ("Floods hit the valley. Thousands fled as the river",  "Floods hit the valley."),   # trim dangling tail
         ("A dam broke overnight, forcing evacuations.",         "A dam broke overnight, forcing evacuations."),  # already whole
         ('The minister said the deal was "done."',              'The minister said the deal was "done."'),  # closes on quote
-        ("Talks collapsed and the",                              "Talks collapsed and the"),   # nothing full yet -> leave as-is
+        ("Talks collapsed and the",                              "Talks collapsed."),   # dangling connector -> trim + close cleanly
+        ("has approved Destry Damayanti as the new governor of.", "has approved Destry Damayanti as the new governor."),  # dangling PREPOSITION before a period (the Antara BI-governor cutoff)
         ("Aid arrived Monday.\n- Scale: 3,000 homes lost\n- Cost: still being",
          "Aid arrived Monday.\n- Scale: 3,000 homes lost"),     # drop the incomplete final bullet
         # THE RECURRING CUTOFF: a brief ending in a truncation marker "…" + a dangling attribution reads as
@@ -2779,6 +2795,10 @@ def main():
                  # lightning bolt, a double-dash and a promo word hiding BEHIND them all get peeled off.
                  and app._sharpen_desc("\U0001F1EE\U0001F1F7\U0001F1F4\U0001F1F2 ⚡ — NEW: UKMTO reports a vessel was struck near Hormuz.") == "UKMTO reports a vessel was struck near Hormuz."
                  and app._sharpen_desc("\U0001F1FA\U0001F1E6 UPDATE — Ukrainian forces repelled an assault near Pokrovsk.") == "Ukrainian forces repelled an assault near Pokrovsk."
+                 # INLINE emoji separators a channel uses mid-text ("People ➡️ … ➡️ … 📝 …") are stripped too, not
+                 # just leading ones. SHIPPED BUG: the Nepal flash-flood brief rendered "People ➡️ Horrific footage…".
+                 and "➡" not in app._sharpen_desc("People ➡️ Horrific footage shows a flood. ➡️ Villages were submerged. \U0001f4dd At least 150 dead.")
+                 and "\U0001f4dd" not in app._sharpen_desc("Rescue teams search the valley. \U0001f4dd Hundreds remain missing.")
                  # Google-News aggregator boilerplate is not a story -> treated as EMPTY, never shown as a brief.
                  and app._sharpen_desc("Comprehensive up-to-date news coverage, aggregated from sources all over the world by Google News.") == "")
     # WHO IS REPORTING — factual, even-handed ownership notes; ordinary/independent outlets get none.
@@ -2968,7 +2988,7 @@ def main():
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
              + 45   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ (3 hire/exec/earnings->HQ + 3 guards: named-country, not-internal fine, named-scene)
-             + 7    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff: 7 cases)
+             + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
              + 1    # + facility word (airport) is not a place

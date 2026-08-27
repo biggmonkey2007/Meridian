@@ -1452,8 +1452,17 @@ function titleClip(s){ s=String(s||"Untitled"); if(s.length<=340) return s; cons
 // must never leak sloppiness onto a card. So EVERY body/teaser also passes through this at render time: a
 // promo lead ("JUST IN -", "BREAKING:"), a raw URL, a dangling "Source:/Via:/Link:" pointer, and doubled
 // spaces/space-before-punctuation are all removed here too. Idempotent on already-clean text.
+// DISPLAY-TIME EMOJI/DINGBAT SCRUB — mirrors the backend _EMOJI_ANY. A stale feed baked before the emoji strip
+// existed (or a brief where the model echoed a channel post's ➡️/📝 separators) must never render decoration.
+// EVERYWHERE in a body, not just the lead — so "People ➡️ Horrific footage… ➡️ More than 300…" cleans up.
+const _BODY_DECO=/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{00AE}\u{2122}\u{2120}\u{2117}\u{FFFD}]/gu;
+function stripDeco(s){ return String(s||"").replace(_BODY_DECO,"").replace(/[ \t]{2,}/g," ").replace(/\s+([,.;:!?])/g,"$1").replace(/^\s+/,"").replace(/[ \t]+$/,""); }
+// A dangling CONNECTOR/PREPOSITION a truncated brief/teaser ends on, even when a period follows ("… as the new
+// governor of."). Mirrors the backend _DESC_DANGLE_RE; strip it so a line ends on real content, then re-close.
+const _BODY_DANGLE=/[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|of|to|in|on|at|for|with|from|by|into|onto|upon|over|under|toward|towards|against|about|as|per|via|amid|amidst|between|among|including|during|following|after|before|since|while|when|where|because|although|though|unless|until|citing|according|alleging|claiming|saying|adding|noting|despite)\s*[.…]*\s*$/i;
 function tidyLead(s){
   s=String(s||"").trim(); if(!s) return s;
+  s=stripDeco(s);   // strip any emoji/dingbat/arrow ANYWHERE first (the leading-only strip below misses inline ones)
   // LEADING TELEGRAM DECORATION — a flag/emoji/symbol and/or a short country code, plus an optional dash or
   // colon. The card already flies the country's flag, so this is pure clutter. SHIPPED BUG (again): the body
   // showed a lightning bolt + em-dash ("<zap> - Treasury Secretary Scott Bessent...").
@@ -1503,20 +1512,24 @@ function leadText(s){
 // sentence so it reads finished, not cut mid-word — AND capitalize a lower-case continuation ("soon his
 // delusion…" -> "Soon his delusion…") so a headline/body split never leaves a mid-sentence body. Mirrors the
 // backend _finish_brief + _cap_first.
-// A dangling word a truncated fragment can end on — a conjunction, preposition or article. Ending a card on
-// "…missiles and." or "…detention or." reads as broken; we drop it so the clause finishes cleanly.
-const _DANGLE=/[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|including|during|amid|plus|versus|vs)\s*[.…]*\s*$/i;
+// The trailing-dangle strip a truncated fragment needs ("…missiles and.", "…governor of.") uses the shared
+// _BODY_DANGLE (defined above, includes prepositions) so the teaser path and the brief path stay in lockstep.
 function finishText(s){
   s=tidyLead(s); if(!s) return s;
   s=s.replace(/\s*(?:\.{2,}|…)+\s*$/,"").replace(_ATTR_TAIL,"").trim();   // strip the truncation marker AND a dangling ", X reports/has…" tail
-  s=s.replace(_DANGLE,"").trim();                                        // …and a trailing conjunction/preposition ("missiles and")
+  // Strip a trailing dangling connector/PREPOSITION ("… missiles and", "… governor of") whether or not a period
+  // already follows, so "… governor of." can never reach a card. Remember we did, so we re-close on the now-
+  // complete word instead of dropping it as if it were a mid-word chop.
+  const dangled=_BODY_DANGLE.test(s);
+  if(dangled) s=s.replace(_BODY_DANGLE,"").replace(/[\s,;:\-–—]+$/,"").trim();
   if(/[a-z]/.test(s[0])) s=s[0].toUpperCase()+s.slice(1);
   if(/[.!?"'’”)\]]$/.test(s)) return s;
   const m=s.match(/^[\s\S]*[.!?]["'’”)\]]*(?=\s|$)/);
   if(m && m[0].trim().length>=15) return m[0].trim();
-  // no whole sentence: drop the chopped last word, drop any dangling connector, and END WITH A PERIOD so the
-  // card never shows "…" or an abrupt cut (the user's rule).
-  let tail=s.replace(/\s+\S+$/,"").replace(_DANGLE,"").replace(/[,;:\-–—\s]+$/,"").trim();
+  // no whole sentence to fall back to. If we just removed a connector, the tail is a COMPLETE word ("governor")
+  // -> just end-stop it; otherwise the source chopped mid-word ("…operati"), so drop that fragment first.
+  if(dangled && s.length>=20) return s+".";
+  let tail=s.replace(/\s+\S+$/,"").replace(_BODY_DANGLE,"").replace(/[,;:\-–—\s]+$/,"").trim();
   return tail ? tail+"." : "";
 }
 // Does the fallback teaser ADD real information beyond the headline, or just reword it? Reduce both to
@@ -1554,6 +1567,7 @@ function leadFallbackHTML(text, headline){
 // still renders sensibly, so nothing breaks while cached summaries roll over to the new format.
 function renderBrief(sum){
   sum=String(sum||"").trim(); if(!sum) return "";
+  sum=stripDeco(sum);   // SELF-HEAL a baked brief that carries emoji/dingbats ("People ➡️ …", "📝 …") — strip them everywhere
   // Bold ONLY a short label (a word or two) — never a whole clause. A model that bolds a long phrase
   // ("**Drones are hitting targets near Moscow's airports**") gets un-bolded to plain text.
   const inl = t => flagifyText(t).replace(/\*\*([^*]+)\*\*/g,(m,g)=>g.length<=22?"<b>"+g+"</b>":g).replace(/\*([^*]+)\*/g,"$1");
@@ -1564,6 +1578,9 @@ function renderBrief(sum){
   // clean AI sentence and short bullets ("3 killed") are left exactly as written.
   const _cut = t => {
     t=String(t||"").trim();
+    // A dangling connector/preposition before the final stop ("… as the new governor of.") reads as a cutoff
+    // even with a period — trim it and re-close so the line ends on real content ("… as the new governor.").
+    if(_BODY_DANGLE.test(t)){ const td=t.replace(_BODY_DANGLE,"").replace(/[\s,;:–—-]+$/,""); if(td) t = /[.!?"'’”)\]]$/.test(td)?td:td+"."; }
     const t2=t.replace(/\s*(?:\.{2,}|…)+\s*$/,"").replace(_ATTR_TAIL,"").trim();
     if(t2===t || !t2) return t;                                   // nothing was truncated -> leave it
     if(/[.!?"'’”)\]]$/.test(t2)) return t2;                        // ends clean after the strip

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.73"
+APP_VERSION = "1.4.74"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d75"   # d75: resweep so COMPANY-INTERNAL news (a hire/exec move/reshuffle/earnings for a known
+_DATA_VER = "d76"   # d76: resweep so a cultural ART-TOUR / festival feature drops off the WORLD map (soft-news),
+                    #      a diplomatic-generic clip ("Lukashenko arrives in Moscow for a visit") stops attaching
+                    #      to an unrelated same-city dot, an emoji a channel used as a separator ("People ➡️ …")
+                    #      is stripped from briefs, and a dangling preposition ("… governor of.") is mended.
+                    # d75: resweep so COMPANY-INTERNAL news (a hire/exec move/reshuffle/earnings for a known
                     #      firm) dots the company HEADQUARTERS not the country centroid ("Barret Zoph joins
                     #      Google" -> Mountain View), and a leaked prompt-scaffolding label ("SOURCE OUTLET: X")
                     #      is stripped from every brief. No re-summarize cost.
@@ -558,6 +562,19 @@ def _finish_brief(s):
     _s2 = _ATTR_TAIL_RE.sub("", re.sub(r"\s*(?:\.{2,}|…)+\s*$", "", s)).rstrip()   # drop a trailing "…" + attribution
     if _s2 and _s2 != s:
         s = _s2
+    # A dangling CONNECTOR/PREPOSITION right before the final stop reads as a mid-sentence cutoff even though a
+    # period follows: a source teaser truncated to "… as the new governor of" then end-stopped to "… of.". Trim
+    # the connector off the LAST line (only that line can be cut) and re-close, so it ends on real content
+    # ("… as the new governor."). SHIPPED BUG: Antara's "House approves Destry Damayanti as BI new governor"
+    # brief ended "… as the new governor of.". Runs BEFORE the ends-in-period early-return below, which missed it.
+    if s:
+        _li = s.rfind("\n")
+        _head, _tail = (s[:_li + 1], s[_li + 1:]) if _li >= 0 else ("", s)
+        _mend = _DESC_DANGLE_RE.sub("", _tail).rstrip(" ,;:–—-")
+        if _mend and _mend != _tail.rstrip():
+            s = (_head + _mend).rstrip()
+            if s and s[-1] not in _END_PUNCT:
+                s += "."
     if not s or s[-1] in _END_PUNCT:
         return s
     lines = s.split("\n")
@@ -658,6 +675,8 @@ def _summarize(title, text, source="", depth=False):
     # Keep the line/bullet STRUCTURE (Axios format) — collapse only intra-line runs of spaces/tabs, trim
     # each line, and cap blank runs at one. (A blanket \s+->' ' would flatten the bullets.)
     s = s.replace("\r", "")
+    s = _EMOJI_ANY.sub("", s)           # drop any emoji/dingbat/arrow the model echoed from a channel post ("People
+                                        # ➡️ …", "📝 …") — char-only so the bullet/paragraph line structure survives
     s = re.sub(r"[ \t]+", " ", s)
     s = "\n".join(ln.strip() for ln in s.split("\n"))
     s = re.sub(r"\n{3,}", "\n\n", s).strip()
@@ -4488,6 +4507,12 @@ _TOPIC_GENERIC = set(_stem(w) for w in (
     "send sending sent buy buying bought sell selling sold stop stops stopped stopping allow allows allowed "
     "make makes making made move moves moving moved ease easing eased bring brings brought raise raises raising "
     "plan plans planned seek seeks progress talks talk meeting meet "
+    # DIPLOMATIC / MOTION generics — a "visit", "arrival", "trip", "summit", "warning" is shared by countless
+    # statecraft stories, so it can't prove two posts are the SAME event. SHIPPED BUG: a "Lukashenko ARRIVED in
+    # MOSCOW for a VISIT" clip was filed under a "CIA director VISITED Russia to WARN NATO" dot — they shared
+    # only the place (Moscow) + "visit", two different subjects (Lukashenko vs Ratcliffe).
+    "visit visits visited visiting arrive arrives arrived arriving arrival trip trips tour tours summit summits "
+    "warn warns warned warning warnings met gathering "
     # coincidental polysemous words that tie unrelated stories: "midterm RACES" vs "RACE to finalize a deal"
     "race races deadline deadlines push pushes drive drives bid bids "
     # conflict/infrastructure filler — a leader's STATEMENT about 'disrupting logistics' / hitting
@@ -4556,9 +4581,16 @@ def _clip_matches(event_title, clip_text):
     # — one coincidental word ("race") + Trump. When the ONLY shared name is a UBIQUITOUS figure (Trump, Biden,
     # Putin… — in a huge share of the wire), one weak shared word is coincidence: demand TWO distinctive words.
     if same_place or same_country:
-        _only_ubiq = bool(shared_names) and not (shared_names - _UBIQUITOUS_NAMES)   # the ONLY shared name(s) are ubiquitous
+        _distinct_names = shared_names - _UBIQUITOUS_NAMES          # shared name(s) that aren't in-a-huge-share-of-the-wire
+        _only_ubiq = bool(shared_names) and not _distinct_names     # the ONLY shared name(s) are ubiquitous
         _need_words = 2 if _only_ubiq else 1
-        return len(shared_names) >= 2 or len(shared_words) >= _need_words
+        if len(shared_names) >= 2 or len(shared_words) >= _need_words:
+            return True
+        # A lone DISTINCTIVE name at the SAME SPECIFIC PLACE is the same event (the same person in the same
+        # city) — the name-side analogue of the single distinctive WORD above. This is what keeps a genuine
+        # "Lukashenko arrives in Moscow" pair together now that the generic "visit"/"arrive" no longer counts,
+        # WITHOUT reopening the Ratcliffe mismatch (which shares NO name — only the place + a generic word).
+        return bool(_distinct_names) and same_place
     return len(shared_names) >= 2
 
 
@@ -6389,8 +6421,15 @@ _SOFT_NEWS = re.compile(
     # LOCAL LIFESTYLE / EVENTS — a beer festival, a concert, a fair. Zero geopolitical consequence, so never
     # a world dot (the STARRED-country feed still carries them). Gated after _hard_news, so a deadly stampede
     # or an attack AT a festival — which carries casualties — is never caught here.
-    r"|(?:beer|wine|food|music|jazz|art|arts|cultural|street|craft|folk|film|comedy|book|seafood|coffee)\s+(?:festival|fair|fest)"
-    r"|festival\s+(?:hits|opens|returns|kicks\s+off|features|celebrates|draws|brings)"
+    r"|(?:beer|wine|food|music|jazz|art|arts|cultural|street|craft|folk|film|comedy|book|seafood|coffee|"
+    r"dance|theatre|theater|literary|poetry|photography|design|fringe|sculpture)\s+"
+    r"(?:festival|fair|fest|tour|walk|week|biennial|biennale|expo|showcase|exhibition|exhibit|trail|carnival)"
+    # a STREET-ART / mural / gallery event ("Third Street Art Tour", "art walk", "mural festival"): a cultural
+    # feature, zero geopolitical consequence. SHIPPED BUG: "Florianópolis Paints Itself Lusophone for the Third
+    # Street Art Tour" made the world map. Vandalism/theft OF art carries a crime verb and trips _hard_news first.
+    r"|street\s+art\b|\bart\s+(?:tour|walk|fair|show|exhibition|exhibit|installation|biennial|biennale|mural|trail|prize)\b"
+    r"|festival\s+(?:hits|opens|returns|kicks\s+off|features|celebrates|draws|brings|runs|takes\s+place|"
+    r"will\s+run|to\s+run|begins?|is\s+(?:set|back|under\s?way)|line-?up|programme|program)"
     r"|free\s+(?:beer|drinks?|food|entry|concerts?)|local\s+brews?|craft\s+(?:beer|brews?)"
     r"|(?:concert|gig|carnival|parade|pageant|gala|marathon|fun\s+run|fashion\s+week|comic\s+con|"
     r"food\s+fair|street\s+fair|county\s+fair|state\s+fair|talent\s+show|beauty\s+pageant)\b"
