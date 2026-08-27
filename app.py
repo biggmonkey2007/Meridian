@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.79"
+APP_VERSION = "1.4.80"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d76"   # d76: resweep so a cultural ART-TOUR / festival feature drops off the WORLD map (soft-news),
+_DATA_VER = "d77"   # d77: resweep so a strike on a named SAUDI oil facility dots the SITE not the attacker — the
+                    #      Gulf energy hubs (Jazan/Jizan, Jubail, Yanbu, Ras Tanura, Abqaiq, Khurais, Ras Laffan,
+                    #      Ruwais) moved to _FACILITIES at FACILITY prior (NER-proof), so "Saudi Arabia's Jazan Oil
+                    #      Refinery … in Houthi attacks" dots Jazan, not Yemen.
+                    # d76: resweep so a cultural ART-TOUR / festival feature drops off the WORLD map (soft-news),
                     #      a diplomatic-generic clip ("Lukashenko arrives in Moscow for a visit") stops attaching
                     #      to an unrelated same-city dot, an emoji a channel used as a separator ("People ➡️ …")
                     #      is stripped from briefs, and a dangling preposition ("… governor of.") is mended.
@@ -7575,14 +7579,8 @@ _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     # Jackson Hole, Wyoming — home of the Fed's annual economic symposium, so it recurs in markets news. The
     # gazetteer matched bare "Jackson" to the bigger Jackson, MISSISSIPPI (~1,800 km off). Pin the real valley.
     "jackson hole": (43.48, -110.76, "United States of America"),
-    # Gulf ENERGY hubs the gazetteer misses but that recur constantly in oil/gas strike news — without these
-    # a "fire at Jubail" story drops on the country centroid (Riyadh), miles from the actual coast.
-    "jubail": (27.00, 49.66, "Saudi Arabia"), "al jubail": (27.00, 49.66, "Saudi Arabia"),
-    "jubail industrial city": (27.02, 49.62, "Saudi Arabia"),
-    "yanbu": (24.09, 38.06, "Saudi Arabia"), "ras tanura": (26.64, 50.16, "Saudi Arabia"),
-    "abqaiq": (25.93, 49.67, "Saudi Arabia"), "buqayq": (25.93, 49.67, "Saudi Arabia"),
-    "khurais": (25.10, 48.10, "Saudi Arabia"), "jazan": (16.89, 42.55, "Saudi Arabia"),
-    "ras laffan": (25.90, 51.55, "Qatar"), "ruwais": (24.11, 52.73, "United Arab Emirates"),
+    # (the Gulf ENERGY hubs moved to _FACILITIES — at FACILITY prior they're never NER-vetoed, so a strike ON
+    # one dots the SITE, never the attacker. See the "Saudi Arabia's Jazan Oil Refinery -> YEMEN" bug there.)
     "silicon valley": (37.387, -122.058, "United States of America"),
     "wall street": (40.706, -74.009, "United States of America"),
     "hollywood": (34.098, -118.327, "United States of America"),
@@ -7715,6 +7713,18 @@ _REGIONS = {
 # "the Syzran oil refinery", not "Syzran" — there is exactly one, so the dot can sit on the site itself
 # instead of the city centre. Multi-word keys, so the n-gram scan matches them before the bare city.
 _FACILITIES = {
+    # Gulf ENERGY hubs — oil cities / refineries / terminals that recur in strike news. At FACILITY prior they
+    # are NEVER NER-vetoed, so a strike ON one dots the SITE, never the ATTACKER. SHIPPED BUG (twice): "…at
+    # Saudi Arabia's JAZAN Oil Refinery … in recent Houthi (Ansarallah) attacks" dotted YEMEN — 'Jazan' at a
+    # FAMOUS/REGION prior was NER-vetoed (only 'Jizan' resolved), so the sole surviving country was the
+    # attacker's. Jazan == Jizan (one Red-Sea oil city); both spellings here now.
+    "jazan": (16.889, 42.551, "Saudi Arabia"), "jizan": (16.889, 42.551, "Saudi Arabia"),
+    "jubail": (27.00, 49.66, "Saudi Arabia"), "al jubail": (27.00, 49.66, "Saudi Arabia"),
+    "jubail industrial city": (27.02, 49.62, "Saudi Arabia"),
+    "yanbu": (24.09, 38.06, "Saudi Arabia"), "ras tanura": (26.64, 50.16, "Saudi Arabia"),
+    "abqaiq": (25.93, 49.67, "Saudi Arabia"), "buqayq": (25.93, 49.67, "Saudi Arabia"),
+    "khurais": (25.10, 48.10, "Saudi Arabia"),
+    "ras laffan": (25.90, 51.55, "Qatar"), "ruwais": (24.11, 52.73, "United Arab Emirates"),
     # Russian refineries / terminals / depots
     "syzran oil refinery": (53.129, 48.505, "Russia"), "syzran refinery": (53.129, 48.505, "Russia"),
     "novokuibyshevsk refinery": (53.099, 49.943, "Russia"),
@@ -7911,10 +7921,8 @@ _FAMOUS_PLACES = {
     "kandahar": (31.628, 65.738, "Afghanistan"),
     "darfur": (13.000, 25.000, "Sudan"),
     "tigray": (14.000, 38.500, "Ethiopia"),
-    # SHIPPED: "Saudi Aramco refinery in JAZAN" dotted a tiny Iranian village 'Jazan' (pop 1,818) because
-    # the major Saudi city is in GeoNames only under the 'Jizan' spelling. Jazan/Jizan is one place: the
-    # Red-Sea port and Aramco refinery in SW Saudi Arabia.
-    "jazan": (16.889, 42.551, "Saudi Arabia"), "jizan": (16.889, 42.551, "Saudi Arabia"),
+    # (Jazan/Jizan moved to _FACILITIES at FACILITY prior — a 3M FAMOUS-prior entry is NER-vetoed for the
+    # 'Jazan' spelling, which is exactly how a strike on it dotted Yemen. See the Gulf hubs in _FACILITIES.)
     # SHIPPED: a Turkish overflight of the Greek islet FARMAKONISI dotted "The Village, US"; the "Hays"
     # front of the Yemen war dotted Hays, Kansas. Both are absent from the city gazetteer, so a US namesake
     # (or the generic "The Village") won.

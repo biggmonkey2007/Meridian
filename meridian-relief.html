@@ -1048,46 +1048,46 @@ body.topo-active .zoomers{bottom:130px}
 .tv-win.min .tv-resize{display:none}
 .tv-win.dragging{transition:none;user-select:none}
 .tv-win.dragging .tv-player,.tv-win.resizing .tv-player{pointer-events:none}   /* let a drag glide over the iframe */
-/* HEADER — one title size + one muted caption, so it reads clean (was a jumble of four sizes) */
-.tv-head{display:flex;align-items:center;gap:9px;height:42px;flex:0 0 42px;padding:0 6px 0 12px;background:var(--panel-2);
+/* HEADER — deliberately TINY: a live pip + flag + channel name + a muted caption, and three ghost icons. The
+   video is the hero; the chrome is sneaked in. Toggle the channel list with the ☰ button to fill with video. */
+.tv-head{display:flex;align-items:center;gap:8px;height:32px;flex:0 0 32px;padding:0 5px 0 11px;background:var(--panel-2);
   border-bottom:1px solid var(--line);cursor:move;user-select:none}
-.tv-svg{width:17px;height:17px;color:var(--ink-2);flex:0 0 auto}
-.tv-now{display:flex;align-items:baseline;gap:9px;min-width:0;flex:1;overflow:hidden}   /* BASELINE so the name + caption sit on the same line */
-.tv-now .flag{width:20px;height:15px;flex:0 0 auto;border-radius:2px;align-self:center}
-.tv-now .nm{font-size:13px;line-height:1;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tv-now .note{font-size:11px;line-height:1;color:#b98900;font-weight:600;font-style:italic;white-space:nowrap;flex:0 0 auto}
+.tv-now{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1;overflow:hidden}
+.tv-now::before{content:"";width:6px;height:6px;border-radius:50%;background:#e0403a;flex:0 0 auto;align-self:center;box-shadow:0 0 0 2.5px rgba(224,64,58,.16)}   /* subtle LIVE pip */
+.tv-now .flag{width:17px;height:12.5px;flex:0 0 auto;border-radius:2px;align-self:center}
+.tv-now .nm{font-size:12px;line-height:1;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-now .note{font-size:10px;line-height:1;color:#b98900;font-weight:600;font-style:italic;white-space:nowrap;flex:0 0 auto}
 :root:not([data-theme="light"]) .tv-now .note{color:#d8a33a}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tv-now .note{color:#b98900}}
-.tv-livetag{display:flex;align-items:center;gap:5px;flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.09em;color:var(--ink-3)}
-.tv-livetag::before{content:"";width:6px;height:6px;border-radius:50%;background:#e0403a;box-shadow:0 0 0 3px rgba(224,64,58,.16)}
-.tv-actions{display:flex;gap:1px;flex:0 0 auto;margin-left:3px}
-.tv-btn{width:28px;height:28px;border:none;background:transparent;color:var(--ink-3);border-radius:7px;display:grid;place-items:center;cursor:pointer}
-.tv-btn svg{width:15px;height:15px}
+.tv-actions{display:flex;gap:0;flex:0 0 auto;margin-left:4px}
+.tv-btn{width:26px;height:26px;border:none;background:transparent;color:var(--ink-3);border-radius:6px;display:grid;place-items:center;cursor:pointer;transition:background .12s,color .12s}
+.tv-btn svg{width:14px;height:14px}
 .tv-btn:hover{background:var(--chip);color:var(--ink)}
+.tv-btn.on{color:var(--ink-1)}
 .tv-main{display:flex;min-height:0;flex:1;overflow:hidden}
 .tv-stage{flex:1;min-width:0;background:#0a0d12;position:relative;display:flex;align-items:center;justify-content:center}
 .tv-player{width:100%;aspect-ratio:16/9;max-height:100%;position:relative;background:#0a0d12}   /* MATTE-fit 16:9 so no ugly black bar */
 .tv-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 .tv-empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a95a1;font-size:12.5px;padding:16px;text-align:center}
-.tv-rail{width:212px;flex:0 0 212px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel);
+/* CHANNEL RAIL — collapsible (the ☰ button), clean flag + name rows (no busy per-row dots), subtle sections */
+.tv-rail{width:200px;flex:0 0 200px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel);
   scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.tv-win.no-list .tv-rail{display:none}
 .tv-rail::-webkit-scrollbar{width:10px}
 .tv-rail::-webkit-scrollbar-track{background:transparent}
 .tv-rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2.5px solid var(--panel);background-clip:padding-box}
 .tv-rail::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
 .tv-load{padding:15px;color:var(--ink-2);font-size:12px;display:flex;align-items:center;gap:8px}
-.tv-grp{margin-top:6px;padding:9px 13px 4px;border-top:1px solid var(--line);font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
+.tv-grp{padding:10px 13px 4px;margin-top:3px;border-top:1px solid var(--line);font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
 .tv-grp:first-child{margin-top:0;border-top:none}
-.tv-ch{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:7.5px 13px;border:none;background:none;color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;border-left:2.5px solid transparent;transition:background .12s}
+.tv-ch{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:7px 13px;border:none;background:none;color:var(--ink-1);font-size:12.5px;font-weight:600;cursor:pointer;border-left:2px solid transparent;transition:background .12s,color .12s}
 .tv-ch:hover{background:var(--chip)}
-.tv-ch.on{background:var(--chip);border-left-color:var(--signal);font-weight:700}
-.tv-ch .live-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:#e0403a;box-shadow:0 0 0 3px rgba(224,64,58,.15)}
+.tv-ch.on{background:var(--chip);border-left-color:var(--signal);color:var(--ink);font-weight:700}
 .tv-ch .flag{width:19px;height:14px;flex:0 0 auto;border-radius:2px}
 .tv-ch .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tv-ch.off{color:var(--ink-3);cursor:default}
 .tv-ch.off:hover{background:none}
-.tv-ch.off .live-dot{background:var(--ink-3);box-shadow:none}
-.tv-ch.off .flag{filter:grayscale(1);opacity:.55}
+.tv-ch.off .flag{filter:grayscale(1);opacity:.5}
 .tv-ch .off-tag{margin-left:auto;font-size:8px;font-weight:800;color:var(--ink-3);letter-spacing:.05em}
 .tv-resize{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:3}
 .tv-resize::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);opacity:.4}
@@ -1302,10 +1302,9 @@ video{color-scheme:dark}
      Each channel is embedded from its broadcaster's OWN official YouTube live. -->
 <div id="tv-win" class="tv-win" aria-hidden="true" role="dialog" aria-label="Live TV">
   <div class="tv-head" id="tv-drag">
-    <svg class="tv-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="19" height="13" rx="2"/><path d="M8 3.2l4 3.3 4-3.3"/></svg>
     <div class="tv-now" id="tv-now"><span class="nm">Live TV</span></div>
-    <span class="tv-livetag">LIVE</span>
     <div class="tv-actions">
+      <button class="tv-btn" id="tv-list" title="Channels" aria-label="Show or hide the channel list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <button class="tv-btn" id="tv-min" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
       <button class="tv-btn" id="tv-x" title="Close" aria-label="Close live TV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
@@ -6334,7 +6333,7 @@ document.getElementById("btn-globe").onclick=()=>setMode(mode==="globe"?"map":"g
 // full-width bottom sheet; drag it to a screen edge to snap it as a side panel. Web/mobile has no live_tv
 // bridge -> a graceful note.
 let tvChannels=null, tvCurrent=null, tvFloatW=720;
-const TV_HEAD=42, TV_RAIL=212;
+const TV_HEAD=32, TV_RAIL=200;
 function tvIsMobile(){ return innerWidth<=760; }
 function tvGroupOrder(){ return ["World","N. America","Europe","Mideast","Asia-Pacific","Africa"]; }
 function tvRender(list){
@@ -6348,7 +6347,7 @@ function tvRender(list){
     groups[cat].slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(c=>{   // ALPHABETICAL within each section
       const on=c.live, fl=c.cc?flagImg(c.cc):"";
       html+=`<button class="tv-ch ${on?"":"off"} ${tvCurrent===c.id&&on?"on":""}" ${on?`data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-cc="${esc(c.cc||"")}" data-note="${esc(c.note||"")}"`:"disabled"}>`
-          + `<span class="live-dot"></span>${fl}<span class="nm">${esc(c.name)}</span>`
+          + `${fl}<span class="nm">${esc(c.name)}</span>`
           + (on?"":`<span class="off-tag">OFF AIR</span>`)+`</button>`;
     });
   });
@@ -6369,15 +6368,25 @@ function tvPlay(id, name, cc, note){
   if(now) now.innerHTML=(cc?flagImg(cc):"")+`<span class="nm">${esc(name||"")}</span>`+(note?`<span class="note">${esc(note)}</span>`:"");
   document.querySelectorAll(".tv-ch").forEach(b=>b.classList.toggle("on", b.getAttribute("data-id")===id));
 }
-// Size the FLOATING window so the player stays exactly 16:9 (no black letterbox). Height follows width.
+// Size the FLOATING window so the PLAYER stays exactly 16:9 (no black letterbox). Height follows width. Rail-
+// aware: when the channel list is collapsed the stage is full-width.
 function tvSize16(w){
   const win=document.getElementById("tv-win"); if(!win) return;
-  w=Math.max(360, Math.min(w, innerWidth-16));
-  let stageW=Math.max(150, w-TV_RAIL);
+  const railW = win.classList.contains("no-list") ? 0 : TV_RAIL;
+  w=Math.max(300, Math.min(w, innerWidth-16));
+  let stageW=Math.max(150, w-railW);
   let h=TV_HEAD + stageW*9/16;
   const maxH=innerHeight-16;
-  if(h>maxH){ h=maxH; w=Math.round((h-TV_HEAD)*16/9)+TV_RAIL; }   // height-limited -> back-solve width
+  if(h>maxH){ h=maxH; w=Math.round((h-TV_HEAD)*16/9)+railW; }   // height-limited -> back-solve width
   win.style.width=Math.round(w)+"px"; win.style.height=Math.round(h)+"px"; tvFloatW=Math.round(w);
+}
+// Collapse / expand the channel list — the "extendable" bit, so you can just watch the stream.
+function tvToggleList(){
+  const w=document.getElementById("tv-win"); if(!w) return;
+  w.classList.toggle("no-list");
+  const shown=!w.classList.contains("no-list");
+  const b=document.getElementById("tv-list"); if(b) b.classList.toggle("on", shown);
+  if(!tvIsMobile() && w.classList.contains("open")) tvSize16((parseInt(w.style.width,10)||tvFloatW||660));   // re-fit 16:9 to the new stage width
 }
 async function tvLoad(){
   const rail=document.getElementById("tv-rail"); if(!rail) return;
@@ -6397,6 +6406,7 @@ function openLiveTV(){
   const w=document.getElementById("tv-win"); if(!w) return;
   w.classList.remove("min"); w.classList.add("open"); w.setAttribute("aria-hidden","false");
   { const b=document.getElementById("btn-tv"); if(b) b.classList.add("on"); }
+  { const tl=document.getElementById("tv-list"); if(tl) tl.classList.toggle("on", !w.classList.contains("no-list")); }
   if(tvIsMobile()){                                  // phone: a full-width bottom sheet (the CSS media query rules)
     w.style.left=""; w.style.top=""; w.style.width=""; w.style.height="";
   } else if(!w.style.left){                          // first desktop open (or after a reset): a 16:9 window, bottom-right
@@ -6415,6 +6425,7 @@ function closeLiveTV(){
 }
 { const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=()=>{ const w=document.getElementById("tv-win"); (w&&w.classList.contains("open")&&!w.classList.contains("min"))?closeLiveTV():openLiveTV(); };
   const tx=document.getElementById("tv-x"); if(tx) tx.onclick=closeLiveTV;
+  const tl=document.getElementById("tv-list"); if(tl) tl.onclick=tvToggleList;
   const tmn=document.getElementById("tv-min"); if(tmn) tmn.onclick=()=>{ const w=document.getElementById("tv-win"); if(w) w.classList.toggle("min"); }; }
 // DRAG by the header, RESIZE from the corner grip (keeps the player 16:9). Dragging near a screen edge SNAPS the
 // window flush to that edge AT ITS CURRENT SIZE (edge-magnetism — never resizes to fill the side). Mouse + touch.

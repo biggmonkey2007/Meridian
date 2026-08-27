@@ -2503,6 +2503,17 @@ def main():
     # GUARD: a pure THREAT ("warns of strikes") still resolves to the speaker's capital.
     _lg_fails.append(("threat-still-capital", "Moscow" in (app._locate(
         "Putin warns of strikes on Ukraine if talks fail", "", "", allow_ai=False)[2] or "")))
+    # A strike on a named SAUDI oil facility dots the SITE, never the ATTACKER. SHIPPED BUG: "Saudi Arabia's
+    # JAZAN Oil Refinery … in Houthi (Ansarallah) attacks" dotted YEMEN — the 'Jazan' spelling was NER-vetoed at
+    # a low prior (only 'Jizan' resolved), leaving the attacker's country. Now Jazan/Jizan sit in _FACILITIES.
+    _lg_fails.append(("jazan-refinery-saudi", (app._locate(
+        "OVERVIEW: Oil tanks at Saudi Arabia's Jazan Oil Refinery destroyed in recent Houthi (Ansarallah) attacks",
+        "", "The refinery could lose all its storage capacity.", allow_ai=False)[3]) == "Saudi Arabia"))
+    _lg_fails.append(("jazan-not-yemen", "Jazan" in (app._locate(
+        "Saudi Arabia's Jazan Oil Refinery struck by Houthi attacks", "", "", allow_ai=False)[2] or "")))
+    # GUARD: a genuine Houthi launch FROM Yemen (no facility named) still dots Yemen, not Saudi Arabia.
+    _lg_fails.append(("houthi-launch-yemen", (app._locate(
+        "Houthi forces launch missiles from Saada", "", "", allow_ai=False)[3]) == "Yemen"))
     # ASYLUM / RESETTLEMENT dots where the person ENDED UP (the country that granted asylum), not the one fled.
     _lg_fails.append(("asylum-destination", (app._locate(
         "Christian Convert Who Fled Iran and Was Deported By Trump Finds New Home", "",
@@ -3006,7 +3017,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 45   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ (3 hire/exec/earnings->HQ + 3 guards: named-country, not-internal fine, named-scene)
+             + 48   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi (site not attacker, + Yemen-launch guard)
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
