@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.75"
+APP_VERSION = "1.4.76"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2108,11 +2108,86 @@ def _learn_term(name, definition):
             pass
 
 
+# ============================ LIVE TV ============================
+# A "Live TV" panel of 24/7 news-channel livestreams, embedded from each channel's OWN official YouTube live
+# (the app is served from http://127.0.0.1 precisely so YouTube plays IN it). We NEVER hard-code a live video
+# id — a 24/7 stream's id rotates and a hard-coded one dies. Instead we resolve each channel's CURRENT live id
+# from its /live page (which redirects to whatever is live now) and cache it, so a rotated stream SELF-HEALS.
+# Only OFFICIAL channels (each broadcaster's own), so the embed is the outlet distributing its own stream.
+_LIVE_TV_CHANNELS = [
+    {"name": "Al Jazeera English", "handle": "aljazeeraenglish", "cat": "World"},
+    {"name": "DW News",            "handle": "dwnews",           "cat": "World"},
+    {"name": "France 24 English",  "handle": "France24_en",      "cat": "World"},
+    {"name": "Sky News",           "handle": "SkyNews",          "cat": "World"},
+    {"name": "TRT World",          "handle": "trtworld",         "cat": "World"},
+    {"name": "Euronews",           "handle": "euronews",         "cat": "Europe"},
+    {"name": "GB News",            "handle": "GBNewsOnline",     "cat": "Europe"},
+    {"name": "ABC News (US)",      "handle": "ABCNews",          "cat": "US"},
+    {"name": "NBC News NOW",       "handle": "NBCNews",          "cat": "US"},
+    {"name": "LiveNOW from FOX",   "handle": "livenowfox",       "cat": "US"},
+    {"name": "CNA",                "handle": "ChannelNewsAsia",  "cat": "Asia"},
+    {"name": "WION",               "handle": "WION",             "cat": "Asia"},
+    {"name": "Al Jazeera Arabic",  "handle": "aljazeera",        "cat": "Mideast"},
+]
+_LIVE_TV_VID_RE = re.compile(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([0-9A-Za-z_-]{11})"')
+
+
+def _resolve_live_video(handle):
+    """The CURRENT live video id for a YouTube channel handle, scraped from its /live page and cached. The
+    /live URL redirects to whatever is airing now, so its <link rel=canonical> is a watch?v= URL ONLY while the
+    channel is live (offline it canonicals to the channel page, no video) — so a canonical watch id is a
+    reliable "live now" signal AND self-heals a rotated stream id. '' when not live / unreadable, so the UI
+    greys the channel rather than embedding a dead player. Cached 20 min (a live hit) / 4 min (a miss, so a
+    channel that just went live recovers fast)."""
+    cache = os.path.join(CACHE_DIR, "livetv_" + _slug(handle) + ".json")
+    try:
+        if os.path.exists(cache):
+            j = json.load(open(cache, encoding="utf-8"))
+            ttl = 1200 if j.get("id") else 240
+            if (time.time() - os.path.getmtime(cache)) < ttl:
+                return j.get("id", "")
+    except Exception:
+        pass
+    vid = ""
+    try:
+        req = urllib.request.Request(
+            "https://www.youtube.com/@" + handle + "/live",
+            headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"})
+        raw = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+        m = _LIVE_TV_VID_RE.search(raw)
+        # require the LIVE-NOW flag (an offline channel canonicals to the channel page, no watch id; a merely
+        # SCHEDULED stream carries isUpcoming — don't embed a countdown).
+        if m and '"isLive":true' in raw and '"isUpcoming":true' not in raw:
+            vid = m.group(1)
+    except Exception:
+        vid = ""
+    try:
+        json.dump({"id": vid}, open(cache, "w", encoding="utf-8"))
+    except Exception:
+        pass
+    return vid
+
+
 class Api:
     """Exposed to the page as window.pywebview.api.*"""
 
     def has_ai(self):
         return bool(load_gemini_key())
+
+    def live_tv(self):
+        """The Live TV channel list, each with its CURRENT live video id (resolved + cached, in parallel). A
+        channel we can't resolve right now comes back live:false so the UI greys it, never a dead embed."""
+        def _one(ch):
+            try:
+                vid = _resolve_live_video(ch["handle"])
+            except Exception:
+                vid = ""
+            return {"name": ch["name"], "cat": ch.get("cat", ""), "id": vid, "live": bool(vid)}
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                return list(ex.map(_one, _LIVE_TV_CHANNELS))
+        except Exception:
+            return [{"name": c["name"], "cat": c.get("cat", ""), "id": "", "live": False} for c in _LIVE_TV_CHANNELS]
 
     def ping(self):
         return {"ok": True, "ai": bool(load_gemini_key())}

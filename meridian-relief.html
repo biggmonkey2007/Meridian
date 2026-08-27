@@ -1036,6 +1036,40 @@ body.topo-active .zoomers{bottom:130px}
 @media (max-width:520px){.wire{width:100vw;max-width:100vw;min-width:0}}
 .win-static{font-size:11px;font-weight:600;color:var(--ink-2);letter-spacing:.01em;white-space:nowrap;padding-right:2px}
 
+/* LIVE TV — a centered modal: a 16:9 player + a channel rail. Theme-aware via the shared tokens. */
+.tv-modal{position:fixed;inset:0;z-index:1600;display:none;align-items:center;justify-content:center;padding:24px;
+  background:rgba(10,15,22,.62);backdrop-filter:blur(3px)}
+.tv-modal.open{display:flex}
+.tv-box{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--panel);color:var(--ink);
+  border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(10,20,35,.45)}
+.tv-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+.tv-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14.5px;letter-spacing:-.01em}
+.tv-ico{font-size:16px}
+.tv-live{font-size:9.5px;font-weight:800;letter-spacing:.06em;color:#fff;background:#e0403a;padding:2px 6px;border-radius:5px}
+.tv-now{margin-left:6px;font-size:12px;color:var(--ink-2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-x{margin-left:auto;width:30px;height:30px;flex:0 0 auto;border:none;background:var(--chip);border-radius:8px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
+.tv-x:hover{color:var(--ink)}
+.tv-main{display:flex;min-height:0;flex:1}
+.tv-stage{flex:1;min-width:0;background:#000;display:flex;align-items:center;justify-content:center}
+.tv-player{width:100%;aspect-ratio:16/9;position:relative;background:#000}
+.tv-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.tv-empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a95a1;font-size:13px;padding:20px;text-align:center}
+.tv-rail{width:250px;flex:0 0 250px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel)}
+.tv-load{padding:16px;color:var(--ink-2);font-size:12.5px;display:flex;align-items:center;gap:8px}
+.tv-grp{padding:9px 13px 4px;font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.tv-ch{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 13px;border:none;background:none;color:var(--ink);font-size:12.8px;font-weight:600;cursor:pointer;border-left:3px solid transparent}
+.tv-ch:hover{background:var(--chip)}
+.tv-ch.on{background:var(--chip);border-left-color:var(--signal)}
+.tv-ch .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:#e0403a;box-shadow:0 0 0 3px rgba(224,64,58,.18)}
+.tv-ch.off{color:var(--ink-3);cursor:default}
+.tv-ch.off .dot{background:var(--ink-3);box-shadow:none}
+.tv-ch .off-tag{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--ink-3);letter-spacing:.04em}
+@media (max-width:760px){
+  .tv-main{flex-direction:column}
+  .tv-rail{width:100%;flex:1 1 auto;border-left:none;border-top:1px solid var(--line);max-height:38vh}
+  .tv-box{max-height:96vh}
+}
+
 /* collapsible legend */
 .leg-h-right{display:flex;align-items:center;gap:8px}
 .leg-caret{cursor:pointer;color:#8aa0c0;font-size:10px;line-height:1;transition:transform .2s;user-select:none}
@@ -1212,6 +1246,9 @@ video{color-scheme:dark}
     <button class="icon-btn" id="btn-globe" title="Globe view" aria-label="Toggle globe view">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.7 2.7 2.7 15.3 0 18c-2.7-2.7-2.7-15.3 0-18"/></svg>
     </button>
+    <button class="icon-btn" id="btn-tv" title="Live TV — 24/7 news channels" aria-label="Open live TV">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="19" height="13" rx="2"/><path d="M8 3.2l4 3.3 4-3.3"/></svg>
+    </button>
     <button class="icon-btn" id="btn-wire" title="Live wire — breaking news feed" aria-label="Toggle live wire">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg>
       <span class="wire-badge" id="wire-badge" aria-live="polite"></span>
@@ -1228,6 +1265,23 @@ video{color-scheme:dark}
   <div class="wire-body" id="wire-body"><div class="wire-load"><span class="spin"></span> Connecting to the wire…</div></div>
   <div class="wire-body wire-clips" id="wire-clips" style="display:none"><div class="wire-load"><span class="spin"></span> Loading clips…</div></div>
 </aside>
+
+<!-- LIVE TV: 24/7 news-channel livestreams, embedded from each broadcaster's own official YouTube live -->
+<div id="tv-modal" class="tv-modal" aria-hidden="true">
+  <div class="tv-box" role="dialog" aria-modal="true" aria-label="Live TV">
+    <div class="tv-head">
+      <div class="tv-title"><span class="tv-ico">📺</span> Live TV <span class="tv-live">LIVE</span></div>
+      <div class="tv-now" id="tv-now"></div>
+      <button class="tv-x" id="tv-x" aria-label="Close live TV">✕</button>
+    </div>
+    <div class="tv-main">
+      <div class="tv-stage">
+        <div class="tv-player" id="tv-player"><div class="tv-empty">Pick a channel to start watching.</div></div>
+      </div>
+      <div class="tv-rail" id="tv-rail"><div class="tv-load"><span class="spin"></span> Finding live channels…</div></div>
+    </div>
+  </div>
+</div>
 
 <div id="stage">
   <div id="map" aria-label="World news map"><div class="map-loading">Loading the relief map…</div></div>
@@ -6233,6 +6287,69 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ const w=document
 const briefingPanel=document.getElementById("briefing");   // removed — kept null-safe below
 document.getElementById("btn-globe").onclick=()=>setMode(mode==="globe"?"map":"globe");
 { const bw=document.getElementById("btn-wire"); if(bw) bw.onclick=toggleWire; const wx=document.getElementById("wire-x"); if(wx) wx.onclick=toggleWire; }
+
+// ================= LIVE TV — 24/7 news-channel livestreams =================
+// Each channel is embedded from ITS OWN official YouTube live; the backend (Api.live_tv) resolves the CURRENT
+// live video id (self-heals a rotated stream) so we never ship a dead id. Web/mobile mode has no live_tv
+// bridge, so it shows a graceful "desktop app" note. Closing the modal REMOVES the iframe to stop playback.
+let tvChannels=null, tvCurrent=null;
+function tvGroupOrder(){ return ["World","Mideast","Europe","US","Asia"]; }
+function tvRender(list){
+  const rail=document.getElementById("tv-rail"); if(!rail) return;
+  const groups={}; (list||[]).forEach(c=>{ (groups[c.cat||"More"]=groups[c.cat||"More"]||[]).push(c); });
+  const order=tvGroupOrder(); const seen=new Set(order);
+  const cats=order.filter(g=>groups[g]).concat(Object.keys(groups).filter(g=>!seen.has(g)));
+  let html="";
+  cats.forEach(cat=>{
+    html+=`<div class="tv-grp">${esc(cat)}</div>`;
+    groups[cat].forEach(c=>{
+      const on=c.live;
+      html+=`<button class="tv-ch ${on?"":"off"} ${tvCurrent===c.id&&on?"on":""}" ${on?`data-id="${esc(c.id)}" data-name="${esc(c.name)}"`:"disabled"}>`
+          + `<span class="dot"></span><span class="nm">${esc(c.name)}</span>`
+          + (on?"":`<span class="off-tag">OFF AIR</span>`)+`</button>`;
+    });
+  });
+  rail.innerHTML = html || `<div class="tv-load">No channels are live right now.</div>`;
+  rail.querySelectorAll(".tv-ch[data-id]").forEach(b=>{
+    b.onclick=()=>tvPlay(b.getAttribute("data-id"), b.getAttribute("data-name"));
+  });
+}
+function tvPlay(id, name){
+  if(!id || id===tvCurrent) return;
+  tvCurrent=id;
+  const player=document.getElementById("tv-player");
+  if(player){
+    player.innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&modestbranding=1&playsinline=1" `
+      + `frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(name||"Live TV")}"></iframe>`;
+  }
+  const now=document.getElementById("tv-now"); if(now) now.textContent=name||"";
+  document.querySelectorAll(".tv-ch").forEach(b=>b.classList.toggle("on", b.getAttribute("data-id")===id));
+}
+async function tvLoad(){
+  const rail=document.getElementById("tv-rail"); if(!rail) return;
+  const api=aiBridge();
+  if(!api || !api.live_tv){ rail.innerHTML=`<div class="tv-load">Live TV runs in the Meridian desktop app.</div>`; return; }
+  if(tvChannels){ tvRender(tvChannels); }          // instant repaint from cache, then refresh
+  else rail.innerHTML=`<div class="tv-load"><span class="spin"></span> Finding live channels…</div>`;
+  try{
+    const list=await api.live_tv();
+    tvChannels=list||[]; tvRender(tvChannels);
+    // auto-start the first live channel — but ONLY if the modal is still open (the resolve can outlive a quick close)
+    const open=(document.getElementById("tv-modal")||{}).classList && document.getElementById("tv-modal").classList.contains("open");
+    if(open && !tvCurrent){ const first=tvChannels.find(c=>c.live); if(first) tvPlay(first.id, first.name); }
+  }catch(e){ if(!tvChannels) rail.innerHTML=`<div class="tv-load">Couldn't load channels. Check your connection.</div>`; }
+}
+function openLiveTV(){ const m=document.getElementById("tv-modal"); if(!m) return; m.classList.add("open"); m.setAttribute("aria-hidden","false"); tvLoad(); }
+function closeLiveTV(){
+  const m=document.getElementById("tv-modal"); if(!m) return;
+  m.classList.remove("open"); m.setAttribute("aria-hidden","true");
+  const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove the iframe -> stop playback
+  const now=document.getElementById("tv-now"); if(now) now.textContent=""; tvCurrent=null;
+}
+{ const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=openLiveTV;
+  const tx=document.getElementById("tv-x"); if(tx) tx.onclick=closeLiveTV;
+  const tm=document.getElementById("tv-modal"); if(tm) tm.addEventListener("click", e=>{ if(e.target===tm) closeLiveTV(); }); }
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ const m=document.getElementById("tv-modal"); if(m&&m.classList.contains("open")){ e.stopPropagation(); closeLiveTV(); } } });
 // DARK / LIGHT theme — the top-left button toggles it; persisted across sessions.
 function setTheme(t){ document.documentElement.setAttribute("data-theme", t==="dark"?"dark":"light"); try{ localStorage.setItem("meridian-theme", t); }catch(_){} }
 (function(){ let t="light"; try{ t=localStorage.getItem("meridian-theme")||"light"; }catch(_){} setTheme(t);

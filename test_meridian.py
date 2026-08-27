@@ -2841,6 +2841,24 @@ def main():
                       "image/agency credits must be stripped and a fragment given an end stop"))
     print(f"  {'ok ' if _sharp_ok else 'FAIL'} {_c1!r}")
 
+    # LIVE TV — the current-live video id is pulled from a channel's /live <link rel=canonical> (offline: the
+    # regex + channel-list integrity; the live scrape itself is network and not unit-tested).
+    print("\n=== LIVE TV (video-id extraction + channel list) ===")
+    _tv_live = '<link rel="canonical" href="https://www.youtube.com/watch?v=gCNeDWCI0vo">'   # channel IS live -> a watch id
+    _tv_off  = '<link rel="canonical" href="https://www.youtube.com/@dwnews">'                # offline -> channel page, no id
+    _m = app._LIVE_TV_VID_RE.search(_tv_live)
+    _livetv_ok = (bool(_m) and _m.group(1) == "gCNeDWCI0vo"                       # live canonical -> the 11-char id
+                  and not app._LIVE_TV_VID_RE.search(_tv_off)                     # channel-page canonical -> no id (greyed as off-air)
+                  and len(app._LIVE_TV_CHANNELS) >= 8                             # a real roster
+                  and all(c.get("name") and c.get("handle") and c.get("cat") for c in app._LIVE_TV_CHANNELS)
+                  and len({c["handle"] for c in app._LIVE_TV_CHANNELS}) == len(app._LIVE_TV_CHANNELS))  # no dup handle
+    ran[0] += 1
+    if not _livetv_ok:
+        fails.append(("live-tv", "id-extract", "extract id from live canonical; none from a channel page; clean roster",
+                      f"m={_m.group(1) if _m else None} chans={len(app._LIVE_TV_CHANNELS)}",
+                      "Live TV resolves each channel's current live video id, self-healing a rotated stream"))
+    print(f"  {'ok ' if _livetv_ok else 'FAIL'} id-from-live-canonical + {len(app._LIVE_TV_CHANNELS)} channels, no dup handles")
+
     # WHO'S INVOLVED — the glossary detects the groups a story names, in order, without false-firing on
     # ordinary words ('AP', 'map'), and returns a fair (non-labelling) definition.
     print("\n=== WHO'S INVOLVED (glossary term detection) ===")
@@ -2998,7 +3016,8 @@ def main():
              + 1    # + subject coherence (an off-topic report can't fill a dot's paragraph)
              + 1    # + source name (a photo credit is not the outlet; byline matches the link)
              + 1    # + channel lean (even-handed Telegram-channel bias note, only when documented)
-             + 1)   # + hero image coherence (a mismatched photo can't become the hero via merge/roundup)
+             + 1    # + hero image coherence (a mismatched photo can't become the hero via merge/roundup)
+             + 1)   # + Live TV video-id extraction + channel-list integrity (offline)
     print("\n" + "=" * 70)
     # THE GUARD, FINALLY WIRED UP. `ran` was declared to prove every declared case actually executes,
     # and then never checked — so HEADLINE_CASES and DATELINE_CASES sat here for months, counted in
