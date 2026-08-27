@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.78"
+APP_VERSION = "1.4.79"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2117,23 +2117,29 @@ def _learn_term(name, definition):
 # cc = ISO-2 (for the flag image the UI renders); note = FACTUAL, even-handed ownership caption, by the SAME
 # standard for every side (state/public outlets labelled, ordinary commercial ones left blank) — see _SOURCE_ORIGIN.
 _LIVE_TV_CHANNELS = [
-    {"name": "Al Jazeera English", "handle": "aljazeeraenglish", "cat": "World",   "cc": "qa", "note": "Qatari state-funded"},
-    {"name": "DW News",            "handle": "dwnews",           "cat": "World",   "cc": "de", "note": "German public broadcaster"},
-    {"name": "France 24 English",  "handle": "France24_en",      "cat": "World",   "cc": "fr", "note": "French state-funded"},
-    {"name": "Sky News",           "handle": "SkyNews",          "cat": "World",   "cc": "gb", "note": ""},
-    {"name": "TRT World",          "handle": "trtworld",         "cat": "World",   "cc": "tr", "note": "Turkish state media"},
-    {"name": "Al Jazeera Arabic",  "handle": "aljazeera",        "cat": "Mideast", "cc": "qa", "note": "Qatari state-funded"},
-    {"name": "Al Arabiya English", "handle": "AlArabiyaEnglish", "cat": "Mideast", "cc": "sa", "note": "Saudi-owned"},
-    {"name": "Euronews",           "handle": "euronews",         "cat": "Europe",  "cc": "eu", "note": ""},
-    {"name": "GB News",            "handle": "GBNewsOnline",     "cat": "Europe",  "cc": "gb", "note": ""},
-    {"name": "ABC News (US)",      "handle": "ABCNews",          "cat": "US",      "cc": "us", "note": ""},
-    {"name": "NBC News NOW",       "handle": "NBCNews",          "cat": "US",      "cc": "us", "note": ""},
-    {"name": "CBS News",           "handle": "CBSNews",          "cat": "US",      "cc": "us", "note": ""},
-    {"name": "LiveNOW from FOX",   "handle": "livenowfox",       "cat": "US",      "cc": "us", "note": ""},
-    {"name": "CGTN",               "handle": "CGTN",             "cat": "Asia",    "cc": "cn", "note": "Chinese state media"},
-    {"name": "CNA",                "handle": "ChannelNewsAsia",  "cat": "Asia",    "cc": "sg", "note": "Singapore state-linked"},
-    {"name": "WION",               "handle": "WION",             "cat": "Asia",    "cc": "in", "note": ""},
-    {"name": "India Today",        "handle": "IndiaToday",       "cat": "Asia",    "cc": "in", "note": ""},
+    {"name": "Al Jazeera English",  "handle": "aljazeeraenglish",  "cat": "World",        "cc": "qa", "note": "Qatari state-funded"},
+    {"name": "DW News",             "handle": "dwnews",            "cat": "World",        "cc": "de", "note": "German public broadcaster"},
+    {"name": "France 24 English",   "handle": "France24_en",       "cat": "World",        "cc": "fr", "note": "French state-funded"},
+    {"name": "Sky News",            "handle": "SkyNews",           "cat": "World",        "cc": "gb", "note": ""},
+    {"name": "TRT World",           "handle": "trtworld",          "cat": "World",        "cc": "tr", "note": "Turkish state media"},
+    {"name": "ABC News (US)",       "handle": "ABCNews",           "cat": "N. America",   "cc": "us", "note": ""},
+    {"name": "CBS News",            "handle": "CBSNews",           "cat": "N. America",   "cc": "us", "note": ""},
+    {"name": "CBC News",            "handle": "cbcnews",           "cat": "N. America",   "cc": "ca", "note": "Canadian public broadcaster"},
+    {"name": "LiveNOW from FOX",    "handle": "livenowfox",        "cat": "N. America",   "cc": "us", "note": ""},
+    {"name": "NBC News NOW",        "handle": "NBCNews",           "cat": "N. America",   "cc": "us", "note": ""},
+    {"name": "Euronews",            "handle": "euronews",          "cat": "Europe",       "cc": "eu", "note": ""},
+    {"name": "GB News",             "handle": "GBNewsOnline",      "cat": "Europe",       "cc": "gb", "note": ""},
+    {"name": "LRT",                 "handle": "LRT",               "cat": "Europe",       "cc": "lt", "note": "Lithuanian public broadcaster"},
+    {"name": "TVP World",           "handle": "TVPWorld",          "cat": "Europe",       "cc": "pl", "note": "Polish public broadcaster"},
+    {"name": "Al Arabiya English",  "handle": "AlArabiyaEnglish",  "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},
+    {"name": "Al Jazeera Arabic",   "handle": "aljazeera",         "cat": "Mideast",      "cc": "qa", "note": "Qatari state-funded"},
+    {"name": "ABC News (Australia)","handle": "abcnewsaustralia",  "cat": "Asia-Pacific", "cc": "au", "note": "Australian public broadcaster"},
+    {"name": "CGTN",                "handle": "CGTN",              "cat": "Asia-Pacific", "cc": "cn", "note": "Chinese state media"},
+    {"name": "CNA",                 "handle": "ChannelNewsAsia",   "cat": "Asia-Pacific", "cc": "sg", "note": "Singapore state-linked"},
+    {"name": "India Today",         "handle": "IndiaToday",        "cat": "Asia-Pacific", "cc": "in", "note": ""},
+    {"name": "NHK World-Japan",     "handle": "nhkworldjapan",     "cat": "Asia-Pacific", "cc": "jp", "note": "Japanese public broadcaster"},
+    {"name": "WION",                "handle": "WION",              "cat": "Asia-Pacific", "cc": "in", "note": ""},
+    {"name": "Channels Television", "handle": "channelstelevision","cat": "Africa",       "cc": "ng", "note": ""},
 ]
 _LIVE_TV_VID_RE = re.compile(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([0-9A-Za-z_-]{11})"')
 

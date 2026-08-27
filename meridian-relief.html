@@ -1052,10 +1052,10 @@ body.topo-active .zoomers{bottom:130px}
 .tv-head{display:flex;align-items:center;gap:9px;height:42px;flex:0 0 42px;padding:0 6px 0 12px;background:var(--panel-2);
   border-bottom:1px solid var(--line);cursor:move;user-select:none}
 .tv-svg{width:17px;height:17px;color:var(--ink-2);flex:0 0 auto}
-.tv-now{display:flex;align-items:center;gap:9px;min-width:0;flex:1;overflow:hidden}
-.tv-now .flag{width:20px;height:15px;flex:0 0 auto;border-radius:2px}
-.tv-now .nm{font-size:13px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tv-now .note{font-size:11px;color:#b98900;font-weight:600;font-style:italic;white-space:nowrap;flex:0 0 auto;padding-left:9px;border-left:1px solid var(--line)}
+.tv-now{display:flex;align-items:baseline;gap:9px;min-width:0;flex:1;overflow:hidden}   /* BASELINE so the name + caption sit on the same line */
+.tv-now .flag{width:20px;height:15px;flex:0 0 auto;border-radius:2px;align-self:center}
+.tv-now .nm{font-size:13px;line-height:1;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-now .note{font-size:11px;line-height:1;color:#b98900;font-weight:600;font-style:italic;white-space:nowrap;flex:0 0 auto}
 :root:not([data-theme="light"]) .tv-now .note{color:#d8a33a}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tv-now .note{color:#b98900}}
 .tv-livetag{display:flex;align-items:center;gap:5px;flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.09em;color:var(--ink-3)}
@@ -1076,7 +1076,8 @@ body.topo-active .zoomers{bottom:130px}
 .tv-rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2.5px solid var(--panel);background-clip:padding-box}
 .tv-rail::-webkit-scrollbar-thumb:hover{background:var(--ink-3)}
 .tv-load{padding:15px;color:var(--ink-2);font-size:12px;display:flex;align-items:center;gap:8px}
-.tv-grp{padding:11px 13px 4px;font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tv-grp{margin-top:6px;padding:9px 13px 4px;border-top:1px solid var(--line);font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
+.tv-grp:first-child{margin-top:0;border-top:none}
 .tv-ch{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:7.5px 13px;border:none;background:none;color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer;border-left:2.5px solid transparent;transition:background .12s}
 .tv-ch:hover{background:var(--chip)}
 .tv-ch.on{background:var(--chip);border-left-color:var(--signal);font-weight:700}
@@ -1090,17 +1091,8 @@ body.topo-active .zoomers{bottom:130px}
 .tv-ch .off-tag{margin-left:auto;font-size:8px;font-weight:800;color:var(--ink-3);letter-spacing:.05em}
 .tv-resize{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:3}
 .tv-resize::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);opacity:.4}
-/* SNAP DOCK — drag to the left/right screen edge to dock as a full-height side panel (player on top, rail below) */
-.tv-win.dock-left,.tv-win.dock-right{top:0!important;bottom:0!important;height:100vh!important;max-height:100vh;border-radius:0;width:var(--tv-dock-w,436px)}
-.tv-win.dock-left{left:0!important;right:auto!important}
-.tv-win.dock-right{right:0!important;left:auto!important}
-.tv-win.dock-left .tv-main,.tv-win.dock-right .tv-main{flex-direction:column}
-.tv-win.dock-left .tv-stage,.tv-win.dock-right .tv-stage{flex:0 0 auto;width:100%;aspect-ratio:16/9}
-.tv-win.dock-left .tv-rail,.tv-win.dock-right .tv-rail{width:100%;flex:1 1 auto;border-left:none;border-top:1px solid var(--line)}
-.tv-win.dock-left .tv-resize,.tv-win.dock-right .tv-resize{display:none}
-.tv-ghost{position:fixed;z-index:1499;display:none;top:0;bottom:0;width:436px;pointer-events:none;
-  background:rgba(90,150,225,.13);border:2px dashed rgba(120,170,235,.55)}
-.tv-ghost.show{display:block}
+/* SNAP is edge-MAGNETISM (JS): drag near a screen edge and the window sticks flush to it AT ITS CURRENT SIZE —
+   it never resizes to fill the side. No full-height dock. */
 @media (max-width:760px){
   .tv-win.open{width:100vw!important;height:64vh!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;border-radius:14px 14px 0 0;max-width:100vw}
   .tv-head{cursor:default}
@@ -1324,7 +1316,6 @@ video{color-scheme:dark}
   </div>
   <div class="tv-resize" id="tv-resize" title="Drag to resize" aria-hidden="true"></div>
 </div>
-<div class="tv-ghost" id="tv-ghost" aria-hidden="true"></div>
 
 <div id="stage">
   <div id="map" aria-label="World news map"><div class="map-loading">Loading the relief map…</div></div>
@@ -3754,6 +3745,10 @@ async function showMap(proj){          // proj: "globe" | "flat"
     mlMap.on("moveend", scheduleGlobeWarm);
     mlMap.on("moveend", updateGlobeData);               // re-fan the piles for the new view (zoom OR rotation)
     mlMap.on("click", (e)=>{
+      // IGNORE a click in the empty SPACE around the globe: MapLibre still hands back a lngLat out there, which
+      // used to select a RANDOM country. A click truly ON the sphere round-trips (re-projecting its lngLat lands
+      // back at the click point); an off-globe click's lngLat re-projects onto the silhouette, far from the click.
+      try{ const rp=mlMap.project(e.lngLat); if(Math.hypot(rp.x-e.point.x, rp.y-e.point.y) > 6) return; }catch(_){ return; }
       if(mlMap.getLayer("g-events")){ const fs=mlMap.queryRenderedFeatures(e.point,{layers:["g-events"]}); if(fs && fs.length){ const pick=fs.find(f=>+((f.properties||{}).read)===0)||fs[0]; const ev=EVENTS.find(x=>x.id===pick.properties.id); if(ev){ selectEvent(ev); return; } } }
       // A port anchor -> its profile popup. queryRenderedFeatures only returns VISIBLE features, so a hidden
       // ports layer never fires. A small box around the point makes the little anchor easy to hit.
@@ -6341,7 +6336,7 @@ document.getElementById("btn-globe").onclick=()=>setMode(mode==="globe"?"map":"g
 let tvChannels=null, tvCurrent=null, tvFloatW=720;
 const TV_HEAD=42, TV_RAIL=212;
 function tvIsMobile(){ return innerWidth<=760; }
-function tvGroupOrder(){ return ["World","Mideast","Europe","US","Asia"]; }
+function tvGroupOrder(){ return ["World","N. America","Europe","Mideast","Asia-Pacific","Africa"]; }
 function tvRender(list){
   const rail=document.getElementById("tv-rail"); if(!rail) return;
   const groups={}; (list||[]).forEach(c=>{ (groups[c.cat||"More"]=groups[c.cat||"More"]||[]).push(c); });
@@ -6403,9 +6398,9 @@ function openLiveTV(){
   w.classList.remove("min"); w.classList.add("open"); w.setAttribute("aria-hidden","false");
   { const b=document.getElementById("btn-tv"); if(b) b.classList.add("on"); }
   if(tvIsMobile()){                                  // phone: a full-width bottom sheet (the CSS media query rules)
-    w.classList.remove("dock-left","dock-right"); w.style.left=""; w.style.top=""; w.style.width=""; w.style.height="";
-  } else if(!w.classList.contains("dock-left") && !w.classList.contains("dock-right") && !w.style.left){
-    tvSize16(Math.min(720, innerWidth-40));          // first desktop open (or after an un-dock): a 16:9 window, bottom-right
+    w.style.left=""; w.style.top=""; w.style.width=""; w.style.height="";
+  } else if(!w.style.left){                          // first desktop open (or after a reset): a 16:9 window, bottom-right
+    tvSize16(Math.min(720, innerWidth-40));
     const r=w.getBoundingClientRect();
     w.style.left=Math.max(8, innerWidth-r.width-20)+"px"; w.style.top=Math.max(8, innerHeight-r.height-22)+"px"; w.style.right="auto"; w.style.bottom="auto";
   }
@@ -6413,9 +6408,7 @@ function openLiveTV(){
 }
 function closeLiveTV(){
   const w=document.getElementById("tv-win"); if(!w) return;
-  const wasDocked=w.classList.contains("dock-left")||w.classList.contains("dock-right");
-  w.classList.remove("open","min","dock-left","dock-right"); w.setAttribute("aria-hidden","true");
-  if(wasDocked){ w.style.left=""; w.style.top=""; w.style.width=""; w.style.height=""; }   // a docked window re-docks bottom-right next open; a floating one reopens where you left it
+  w.classList.remove("open","min"); w.setAttribute("aria-hidden","true");   // KEEP position/size so it reopens where you left it
   { const b=document.getElementById("btn-tv"); if(b) b.classList.remove("on"); }
   const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove the iframe -> stop playback
   const now=document.getElementById("tv-now"); if(now) now.innerHTML=`<span class="nm">Live TV</span>`; tvCurrent=null;
@@ -6423,20 +6416,16 @@ function closeLiveTV(){
 { const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=()=>{ const w=document.getElementById("tv-win"); (w&&w.classList.contains("open")&&!w.classList.contains("min"))?closeLiveTV():openLiveTV(); };
   const tx=document.getElementById("tv-x"); if(tx) tx.onclick=closeLiveTV;
   const tmn=document.getElementById("tv-min"); if(tmn) tmn.onclick=()=>{ const w=document.getElementById("tv-win"); if(w) w.classList.toggle("min"); }; }
-// DRAG the window by its header (snap it to a screen edge to DOCK as a side panel), RESIZE from the corner grip
-// keeping the player 16:9. Mouse + touch. During a drag/resize the iframe's pointer events are off so it glides.
+// DRAG by the header, RESIZE from the corner grip (keeps the player 16:9). Dragging near a screen edge SNAPS the
+// window flush to that edge AT ITS CURRENT SIZE (edge-magnetism — never resizes to fill the side). Mouse + touch.
 (function(){
-  const win=document.getElementById("tv-win"), head=document.getElementById("tv-drag"),
-        rz=document.getElementById("tv-resize"), ghost=document.getElementById("tv-ghost");
+  const win=document.getElementById("tv-win"), head=document.getElementById("tv-drag"), rz=document.getElementById("tv-resize");
   if(!win||!head) return;
-  const EDGE=26; let mode=null, sx, sy, sl, st, sw, snap=null;
-  function undock(x){ win.classList.remove("dock-left","dock-right"); tvSize16(tvFloatW||660);
-    const r=win.getBoundingClientRect(); win.style.left=Math.max(6, Math.min(x-r.width/2, innerWidth-r.width-6))+"px"; win.style.top="8px"; win.style.right="auto"; win.style.bottom="auto"; }
+  const MAG=20; let mode=null, sx, sy, sl, st, sw, sh;
   function down(x,y,target,e){
     if(tvIsMobile()) return;
     if(target && target.closest && target.closest(".tv-btn")) return;
-    if(win.classList.contains("dock-left")||win.classList.contains("dock-right")) undock(x);
-    const r=win.getBoundingClientRect(); mode="drag"; sx=x; sy=y; sl=r.left; st=r.top;
+    const r=win.getBoundingClientRect(); mode="drag"; sx=x; sy=y; sl=r.left; st=r.top; sw=r.width; sh=r.height;
     win.classList.add("dragging"); win.style.left=sl+"px"; win.style.top=st+"px"; win.style.right="auto"; win.style.bottom="auto";
     if(e&&e.preventDefault&&e.cancelable) e.preventDefault();
   }
@@ -6444,17 +6433,14 @@ function closeLiveTV(){
     if(e){ if(e.preventDefault&&e.cancelable) e.preventDefault(); if(e.stopPropagation) e.stopPropagation(); } }
   function move(x,y,e){
     if(mode==="drag"){
-      win.style.left=Math.max(6, Math.min(sl+(x-sx), innerWidth-90))+"px"; win.style.top=Math.max(6, Math.min(st+(y-sy), innerHeight-42))+"px";
-      const ns = x<=EDGE ? "left" : (x>=innerWidth-EDGE ? "right" : null);
-      if(ns!==snap){ snap=ns; if(ghost){ if(snap){ ghost.style.left=snap==="left"?"0px":"auto"; ghost.style.right=snap==="right"?"0px":"auto"; ghost.classList.add("show"); } else ghost.classList.remove("show"); } }
+      let l=Math.max(0, Math.min(sl+(x-sx), innerWidth-sw)), t=Math.max(0, Math.min(st+(y-sy), innerHeight-sh));
+      if(l<=MAG) l=0; else if(l>=innerWidth-sw-MAG) l=innerWidth-sw;               // magnet to the LEFT / RIGHT edge
+      if(t>=innerHeight-sh-MAG) t=innerHeight-sh;                                  // and the BOTTOM edge (keep the top clear of the app bar)
+      win.style.left=l+"px"; win.style.top=t+"px";
       if(e&&e.preventDefault&&e.cancelable) e.preventDefault();
     } else if(mode==="resize"){ tvSize16(sw+(x-sx)); if(e&&e.preventDefault&&e.cancelable) e.preventDefault(); }
   }
-  function up(){
-    if(!mode) return;
-    if(mode==="drag" && snap){ win.style.left=""; win.style.top=""; win.style.width=""; win.style.height=""; win.classList.add(snap==="left"?"dock-left":"dock-right"); }
-    win.classList.remove("dragging","resizing"); if(ghost) ghost.classList.remove("show"); mode=null; snap=null;
-  }
+  function up(){ if(!mode) return; win.classList.remove("dragging","resizing"); mode=null; }
   head.addEventListener("mousedown", e=>down(e.clientX,e.clientY,e.target,e));
   if(rz) rz.addEventListener("mousedown", e=>rdown(e.clientX,e));
   window.addEventListener("mousemove", e=>move(e.clientX,e.clientY,e));
