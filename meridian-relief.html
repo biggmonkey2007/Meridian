@@ -898,7 +898,7 @@ body.topo-active .zoomers{bottom:130px}
 :root[data-theme="dark"] .mtr-track{background:#2a3542}
 :root[data-theme="dark"] .persp-tab{background:var(--panel-2);color:var(--ink-2)}
 :root[data-theme="dark"] .persp-tab.on{background:#2f6db3;color:#fff}
-:root[data-theme="dark"] #btn-wire.on{background:#26364a;color:#7fb0e6}
+:root[data-theme="dark"] #btn-wire.on,:root[data-theme="dark"] #btn-tv.on{background:#26364a;color:#7fb0e6}
 :root[data-theme="dark"] .cv-mute{background:var(--chip)}
 :root[data-theme="dark"] .xlate{background:#1e2b3a;border-color:#33506e;color:#8fb4dd}
 :root[data-theme="dark"] .st-card{background:var(--panel-2);border-color:var(--line)}
@@ -980,7 +980,7 @@ body.topo-active .zoomers{bottom:130px}
 .persp-src img{width:15px;border-radius:2px}
 
 /* ---- Live Wire (Telegram-style breaking-news drawer) ---- */
-#btn-wire.on{background:#e8edf3;color:#12467f}
+#btn-wire.on,#btn-tv.on{background:#e8edf3;color:#12467f}
 .wire{position:fixed;top:0;right:0;width:var(--wire-w,392px);min-width:320px;max-width:480px;height:100vh;background:var(--panel);color:var(--ink);z-index:1400;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(20,30,45,.13);transform:translateX(102%);transition:transform .28s cubic-bezier(.4,0,.2,1);border-left:1px solid var(--line)}
 .wire.open{transform:translateX(0)}
 /* when the article overlays the OPEN wire, it takes the wire's exact footprint (full height, same width) */
@@ -1036,39 +1036,54 @@ body.topo-active .zoomers{bottom:130px}
 @media (max-width:520px){.wire{width:100vw;max-width:100vw;min-width:0}}
 .win-static{font-size:11px;font-weight:600;color:var(--ink-2);letter-spacing:.01em;white-space:nowrap;padding-right:2px}
 
-/* LIVE TV — a centered modal: a 16:9 player + a channel rail. Theme-aware via the shared tokens. */
-.tv-modal{position:fixed;inset:0;z-index:1600;display:none;align-items:center;justify-content:center;padding:24px;
-  background:rgba(10,15,22,.62);backdrop-filter:blur(3px)}
-.tv-modal.open{display:flex}
-.tv-box{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--panel);color:var(--ink);
-  border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 24px 70px rgba(10,20,35,.45)}
-.tv-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel-2)}
-.tv-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14.5px;letter-spacing:-.01em}
-.tv-ico{font-size:16px}
-.tv-live{font-size:9.5px;font-weight:800;letter-spacing:.06em;color:#fff;background:#e0403a;padding:2px 6px;border-radius:5px}
-.tv-now{margin-left:6px;font-size:12px;color:var(--ink-2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tv-x{margin-left:auto;width:30px;height:30px;flex:0 0 auto;border:none;background:var(--chip);border-radius:8px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
-.tv-x:hover{color:var(--ink)}
-.tv-main{display:flex;min-height:0;flex:1}
-.tv-stage{flex:1;min-width:0;background:#000;display:flex;align-items:center;justify-content:center}
-.tv-player{width:100%;aspect-ratio:16/9;position:relative;background:#000}
-.tv-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-.tv-empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a95a1;font-size:13px;padding:20px;text-align:center}
-.tv-rail{width:250px;flex:0 0 250px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel)}
-.tv-load{padding:16px;color:var(--ink-2);font-size:12.5px;display:flex;align-items:center;gap:8px}
-.tv-grp{padding:9px 13px 4px;font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
-.tv-ch{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 13px;border:none;background:none;color:var(--ink);font-size:12.8px;font-weight:600;cursor:pointer;border-left:3px solid transparent}
+/* LIVE TV — a FLOATING, draggable/resizable window (no blocking backdrop, so the map stays usable beneath it):
+   a 16:9 player + a channel rail with flags and even-handed ownership captions. Theme-aware via shared tokens. */
+.tv-win{position:fixed;z-index:1500;display:none;flex-direction:column;background:var(--panel);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 58px rgba(8,15,28,.48);
+  width:680px;height:424px;min-width:388px;min-height:150px;max-width:97vw;max-height:94vh}
+.tv-win.open{display:flex}
+.tv-win.min{height:auto!important;min-height:0;resize:none}
+.tv-win.min .tv-main{flex:0 0 0;height:0;min-height:0;overflow:hidden;border:none}   /* collapse to the title bar but KEEP the iframe rendered so audio keeps playing */
+.tv-win.min .tv-resize{display:none}
+.tv-win.dragging{transition:none;user-select:none}
+.tv-win.dragging .tv-player,.tv-win.resizing .tv-player{pointer-events:none}   /* let a drag glide over the iframe */
+.tv-head{display:flex;align-items:center;gap:8px;padding:9px 8px 9px 12px;background:var(--panel-2);
+  border-bottom:1px solid var(--line);border-radius:12px 12px 0 0;cursor:move;user-select:none}
+.tv-win.min .tv-head{border-radius:12px;border-bottom:none}
+.tv-svg{width:17px;height:17px;color:var(--ink-2);flex:0 0 auto}
+.tv-brand{font-weight:800;font-size:13.5px;letter-spacing:-.01em}
+.tv-live{font-size:8.5px;font-weight:800;letter-spacing:.07em;color:#fff;background:#e0403a;padding:2px 5px;border-radius:4px}
+.tv-now{display:flex;align-items:center;gap:7px;margin-left:5px;min-width:0;flex:1;overflow:hidden}
+.tv-now .flag{width:19px;height:14px}
+.tv-now .nm{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tv-now .note{font-size:10.5px;color:#b98900;font-weight:600;font-style:italic;white-space:nowrap;flex:0 0 auto}
+:root:not([data-theme="light"]) .tv-now .note{color:#d8a33a}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tv-now .note{color:#b98900}}
+.tv-actions{margin-left:auto;display:flex;gap:2px;flex:0 0 auto}
+.tv-btn{width:27px;height:27px;border:none;background:transparent;color:var(--ink-2);border-radius:7px;font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
+.tv-btn:hover{background:var(--chip);color:var(--ink)}
+.tv-main{display:flex;min-height:0;flex:1;overflow:hidden;border-radius:0 0 12px 12px}
+.tv-stage{flex:1;min-width:0;background:#000;position:relative}
+.tv-player{position:absolute;inset:0;background:#000}
+.tv-player iframe{width:100%;height:100%;border:0;display:block}
+.tv-empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a95a1;font-size:12.5px;padding:16px;text-align:center}
+.tv-rail{width:210px;flex:0 0 210px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel)}
+.tv-load{padding:15px;color:var(--ink-2);font-size:12px;display:flex;align-items:center;gap:8px}
+.tv-grp{padding:9px 12px 3px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tv-ch{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 12px;border:none;background:none;color:var(--ink);font-size:12.4px;font-weight:600;cursor:pointer;border-left:2.5px solid transparent}
 .tv-ch:hover{background:var(--chip)}
 .tv-ch.on{background:var(--chip);border-left-color:var(--signal)}
-.tv-ch .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:#e0403a;box-shadow:0 0 0 3px rgba(224,64,58,.18)}
+.tv-ch .live-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:#e0403a;box-shadow:0 0 0 3px rgba(224,64,58,.16)}
+.tv-ch .flag{width:18px;height:13px;flex:0 0 auto}
+.tv-ch .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tv-ch.off{color:var(--ink-3);cursor:default}
-.tv-ch.off .dot{background:var(--ink-3);box-shadow:none}
-.tv-ch .off-tag{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--ink-3);letter-spacing:.04em}
-@media (max-width:760px){
-  .tv-main{flex-direction:column}
-  .tv-rail{width:100%;flex:1 1 auto;border-left:none;border-top:1px solid var(--line);max-height:38vh}
-  .tv-box{max-height:96vh}
-}
+.tv-ch.off .live-dot{background:var(--ink-3);box-shadow:none}
+.tv-ch.off .flag{filter:grayscale(1);opacity:.6}
+.tv-ch .off-tag{margin-left:auto;font-size:8.5px;font-weight:800;color:var(--ink-3);letter-spacing:.04em}
+.tv-resize{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:3}
+.tv-resize::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);opacity:.45;border-radius:0 0 2px 0}
+@media (max-width:760px){ .tv-win.open{width:96vw!important;height:72vh!important;left:2vw!important;right:auto!important;top:auto!important;bottom:12px!important}
+  .tv-main{flex-direction:column} .tv-rail{width:100%;flex:1 1 auto;border-left:none;border-top:1px solid var(--line)} }
 
 /* collapsible legend */
 .leg-h-right{display:flex;align-items:center;gap:8px}
@@ -1266,21 +1281,24 @@ video{color-scheme:dark}
   <div class="wire-body wire-clips" id="wire-clips" style="display:none"><div class="wire-load"><span class="spin"></span> Loading clips…</div></div>
 </aside>
 
-<!-- LIVE TV: 24/7 news-channel livestreams, embedded from each broadcaster's own official YouTube live -->
-<div id="tv-modal" class="tv-modal" aria-hidden="true">
-  <div class="tv-box" role="dialog" aria-modal="true" aria-label="Live TV">
-    <div class="tv-head">
-      <div class="tv-title"><span class="tv-ico">📺</span> Live TV <span class="tv-live">LIVE</span></div>
-      <div class="tv-now" id="tv-now"></div>
-      <button class="tv-x" id="tv-x" aria-label="Close live TV">✕</button>
-    </div>
-    <div class="tv-main">
-      <div class="tv-stage">
-        <div class="tv-player" id="tv-player"><div class="tv-empty">Pick a channel to start watching.</div></div>
-      </div>
-      <div class="tv-rail" id="tv-rail"><div class="tv-load"><span class="spin"></span> Finding live channels…</div></div>
+<!-- LIVE TV: a FLOATING, draggable/resizable window (not a blocking modal) so it stays open beside the map.
+     Each channel is embedded from its broadcaster's OWN official YouTube live. -->
+<div id="tv-win" class="tv-win" aria-hidden="true" role="dialog" aria-label="Live TV">
+  <div class="tv-head" id="tv-drag">
+    <svg class="tv-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="19" height="13" rx="2"/><path d="M8 3.2l4 3.3 4-3.3"/></svg>
+    <span class="tv-brand">Live TV</span>
+    <span class="tv-live">LIVE</span>
+    <div class="tv-now" id="tv-now"></div>
+    <div class="tv-actions">
+      <button class="tv-btn" id="tv-min" title="Minimize" aria-label="Minimize">–</button>
+      <button class="tv-btn" id="tv-x" title="Close" aria-label="Close live TV">✕</button>
     </div>
   </div>
+  <div class="tv-main">
+    <div class="tv-stage"><div class="tv-player" id="tv-player"><div class="tv-empty">Pick a channel to start watching.</div></div></div>
+    <div class="tv-rail" id="tv-rail"><div class="tv-load"><span class="spin"></span> Finding live channels…</div></div>
+  </div>
+  <div class="tv-resize" id="tv-resize" title="Drag to resize" aria-hidden="true"></div>
 </div>
 
 <div id="stage">
@@ -6289,9 +6307,10 @@ document.getElementById("btn-globe").onclick=()=>setMode(mode==="globe"?"map":"g
 { const bw=document.getElementById("btn-wire"); if(bw) bw.onclick=toggleWire; const wx=document.getElementById("wire-x"); if(wx) wx.onclick=toggleWire; }
 
 // ================= LIVE TV — 24/7 news-channel livestreams =================
-// Each channel is embedded from ITS OWN official YouTube live; the backend (Api.live_tv) resolves the CURRENT
-// live video id (self-heals a rotated stream) so we never ship a dead id. Web/mobile mode has no live_tv
-// bridge, so it shows a graceful "desktop app" note. Closing the modal REMOVES the iframe to stop playback.
+// A FLOATING, draggable/resizable window (not a blocking modal) so it stays open beside the map. Each channel
+// is embedded from ITS OWN official YouTube live; the backend (Api.live_tv) resolves the CURRENT live video id
+// (self-heals a rotated stream, requires it be embeddable) so we never ship a dead player. Each channel shows
+// its country flag + a factual, even-handed ownership caption. Web/mobile has no live_tv bridge -> a graceful note.
 let tvChannels=null, tvCurrent=null;
 function tvGroupOrder(){ return ["World","Mideast","Europe","US","Asia"]; }
 function tvRender(list){
@@ -6303,18 +6322,18 @@ function tvRender(list){
   cats.forEach(cat=>{
     html+=`<div class="tv-grp">${esc(cat)}</div>`;
     groups[cat].forEach(c=>{
-      const on=c.live;
-      html+=`<button class="tv-ch ${on?"":"off"} ${tvCurrent===c.id&&on?"on":""}" ${on?`data-id="${esc(c.id)}" data-name="${esc(c.name)}"`:"disabled"}>`
-          + `<span class="dot"></span><span class="nm">${esc(c.name)}</span>`
+      const on=c.live, fl=c.cc?flagImg(c.cc):"";
+      html+=`<button class="tv-ch ${on?"":"off"} ${tvCurrent===c.id&&on?"on":""}" ${on?`data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-cc="${esc(c.cc||"")}" data-note="${esc(c.note||"")}"`:"disabled"}>`
+          + `<span class="live-dot"></span>${fl}<span class="nm">${esc(c.name)}</span>`
           + (on?"":`<span class="off-tag">OFF AIR</span>`)+`</button>`;
     });
   });
   rail.innerHTML = html || `<div class="tv-load">No channels are live right now.</div>`;
   rail.querySelectorAll(".tv-ch[data-id]").forEach(b=>{
-    b.onclick=()=>tvPlay(b.getAttribute("data-id"), b.getAttribute("data-name"));
+    b.onclick=()=>tvPlay(b.getAttribute("data-id"), b.getAttribute("data-name"), b.getAttribute("data-cc"), b.getAttribute("data-note"));
   });
 }
-function tvPlay(id, name){
+function tvPlay(id, name, cc, note){
   if(!id || id===tvCurrent) return;
   tvCurrent=id;
   const player=document.getElementById("tv-player");
@@ -6322,7 +6341,8 @@ function tvPlay(id, name){
     player.innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&modestbranding=1&playsinline=1" `
       + `frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(name||"Live TV")}"></iframe>`;
   }
-  const now=document.getElementById("tv-now"); if(now) now.textContent=name||"";
+  const now=document.getElementById("tv-now");
+  if(now) now.innerHTML=(cc?flagImg(cc):"")+`<span class="nm">${esc(name||"")}</span>`+(note?`<span class="note">${esc(note)}</span>`:"");
   document.querySelectorAll(".tv-ch").forEach(b=>b.classList.toggle("on", b.getAttribute("data-id")===id));
 }
 async function tvLoad(){
@@ -6334,22 +6354,58 @@ async function tvLoad(){
   try{
     const list=await api.live_tv();
     tvChannels=list||[]; tvRender(tvChannels);
-    // auto-start the first live channel — but ONLY if the modal is still open (the resolve can outlive a quick close)
-    const open=(document.getElementById("tv-modal")||{}).classList && document.getElementById("tv-modal").classList.contains("open");
-    if(open && !tvCurrent){ const first=tvChannels.find(c=>c.live); if(first) tvPlay(first.id, first.name); }
+    // auto-start the first live channel — but ONLY if the window is still open (the resolve can outlive a quick close)
+    const w=document.getElementById("tv-win"); const open=w&&w.classList.contains("open");
+    if(open && !tvCurrent){ const f=tvChannels.find(c=>c.live); if(f) tvPlay(f.id, f.name, f.cc, f.note); }
   }catch(e){ if(!tvChannels) rail.innerHTML=`<div class="tv-load">Couldn't load channels. Check your connection.</div>`; }
 }
-function openLiveTV(){ const m=document.getElementById("tv-modal"); if(!m) return; m.classList.add("open"); m.setAttribute("aria-hidden","false"); tvLoad(); }
-function closeLiveTV(){
-  const m=document.getElementById("tv-modal"); if(!m) return;
-  m.classList.remove("open"); m.setAttribute("aria-hidden","true");
-  const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove the iframe -> stop playback
-  const now=document.getElementById("tv-now"); if(now) now.textContent=""; tvCurrent=null;
+function openLiveTV(){
+  const w=document.getElementById("tv-win"); if(!w) return;
+  w.classList.remove("min"); w.classList.add("open"); w.setAttribute("aria-hidden","false");
+  { const b=document.getElementById("btn-tv"); if(b) b.classList.add("on"); }
+  if(!w.dataset.placed){                            // first open: dock bottom-right; after that keep where it was dragged
+    const r=w.getBoundingClientRect();
+    w.style.left=Math.max(8, innerWidth-r.width-20)+"px"; w.style.top=Math.max(8, innerHeight-r.height-24)+"px";
+    w.style.right="auto"; w.style.bottom="auto"; w.dataset.placed="1";
+  }
+  tvLoad();
 }
-{ const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=openLiveTV;
+function closeLiveTV(){
+  const w=document.getElementById("tv-win"); if(!w) return;
+  w.classList.remove("open","min"); w.setAttribute("aria-hidden","true");
+  { const b=document.getElementById("btn-tv"); if(b) b.classList.remove("on"); }
+  const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove the iframe -> stop playback
+  const now=document.getElementById("tv-now"); if(now) now.innerHTML=""; tvCurrent=null;
+}
+{ const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=()=>{ const w=document.getElementById("tv-win"); (w&&w.classList.contains("open")&&!w.classList.contains("min"))?closeLiveTV():openLiveTV(); };
   const tx=document.getElementById("tv-x"); if(tx) tx.onclick=closeLiveTV;
-  const tm=document.getElementById("tv-modal"); if(tm) tm.addEventListener("click", e=>{ if(e.target===tm) closeLiveTV(); }); }
-document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ const m=document.getElementById("tv-modal"); if(m&&m.classList.contains("open")){ e.stopPropagation(); closeLiveTV(); } } });
+  const tmn=document.getElementById("tv-min"); if(tmn) tmn.onclick=()=>{ const w=document.getElementById("tv-win"); if(w) w.classList.toggle("min"); }; }
+// DRAG the window by its header, RESIZE from the bottom-right grip. During either, disable the iframe's pointer
+// events so the gesture glides over the video instead of being swallowed by it.
+(function(){
+  const win=document.getElementById("tv-win"), head=document.getElementById("tv-drag"), rz=document.getElementById("tv-resize");
+  if(!win||!head) return;
+  let mode=null, sx, sy, sl, st, sw, sh;
+  head.addEventListener("mousedown", e=>{
+    if(e.target.closest(".tv-btn")) return;
+    const r=win.getBoundingClientRect(); mode="drag"; sx=e.clientX; sy=e.clientY; sl=r.left; st=r.top;
+    win.classList.add("dragging"); win.style.left=sl+"px"; win.style.top=st+"px"; win.style.right="auto"; win.style.bottom="auto"; e.preventDefault();
+  });
+  if(rz) rz.addEventListener("mousedown", e=>{
+    const r=win.getBoundingClientRect(); mode="resize"; sx=e.clientX; sy=e.clientY; sw=r.width; sh=r.height; sl=r.left; st=r.top;
+    win.classList.add("resizing"); win.style.left=sl+"px"; win.style.top=st+"px"; win.style.right="auto"; win.style.bottom="auto"; e.preventDefault(); e.stopPropagation();
+  });
+  window.addEventListener("mousemove", e=>{
+    if(mode==="drag"){
+      const l=Math.max(6, Math.min(sl+(e.clientX-sx), innerWidth-90)), t=Math.max(6, Math.min(st+(e.clientY-sy), innerHeight-42));
+      win.style.left=l+"px"; win.style.top=t+"px";
+    } else if(mode==="resize"){
+      win.style.width=Math.max(388, Math.min(sw+(e.clientX-sx), innerWidth-sl-10))+"px";
+      win.style.height=Math.max(190, Math.min(sh+(e.clientY-sy), innerHeight-st-10))+"px";
+    }
+  });
+  window.addEventListener("mouseup", ()=>{ if(mode){ win.classList.remove("dragging","resizing"); mode=null; } });
+})();
 // DARK / LIGHT theme — the top-left button toggles it; persisted across sessions.
 function setTheme(t){ document.documentElement.setAttribute("data-theme", t==="dark"?"dark":"light"); try{ localStorage.setItem("meridian-theme", t); }catch(_){} }
 (function(){ let t="light"; try{ t=localStorage.getItem("meridian-theme")||"light"; }catch(_){} setTheme(t);

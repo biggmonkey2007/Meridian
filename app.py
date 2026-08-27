@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.76"
+APP_VERSION = "1.4.77"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2114,20 +2114,26 @@ def _learn_term(name, definition):
 # id — a 24/7 stream's id rotates and a hard-coded one dies. Instead we resolve each channel's CURRENT live id
 # from its /live page (which redirects to whatever is live now) and cache it, so a rotated stream SELF-HEALS.
 # Only OFFICIAL channels (each broadcaster's own), so the embed is the outlet distributing its own stream.
+# cc = ISO-2 (for the flag image the UI renders); note = FACTUAL, even-handed ownership caption, by the SAME
+# standard for every side (state/public outlets labelled, ordinary commercial ones left blank) — see _SOURCE_ORIGIN.
 _LIVE_TV_CHANNELS = [
-    {"name": "Al Jazeera English", "handle": "aljazeeraenglish", "cat": "World"},
-    {"name": "DW News",            "handle": "dwnews",           "cat": "World"},
-    {"name": "France 24 English",  "handle": "France24_en",      "cat": "World"},
-    {"name": "Sky News",           "handle": "SkyNews",          "cat": "World"},
-    {"name": "TRT World",          "handle": "trtworld",         "cat": "World"},
-    {"name": "Euronews",           "handle": "euronews",         "cat": "Europe"},
-    {"name": "GB News",            "handle": "GBNewsOnline",     "cat": "Europe"},
-    {"name": "ABC News (US)",      "handle": "ABCNews",          "cat": "US"},
-    {"name": "NBC News NOW",       "handle": "NBCNews",          "cat": "US"},
-    {"name": "LiveNOW from FOX",   "handle": "livenowfox",       "cat": "US"},
-    {"name": "CNA",                "handle": "ChannelNewsAsia",  "cat": "Asia"},
-    {"name": "WION",               "handle": "WION",             "cat": "Asia"},
-    {"name": "Al Jazeera Arabic",  "handle": "aljazeera",        "cat": "Mideast"},
+    {"name": "Al Jazeera English", "handle": "aljazeeraenglish", "cat": "World",   "cc": "qa", "note": "Qatari state-funded"},
+    {"name": "DW News",            "handle": "dwnews",           "cat": "World",   "cc": "de", "note": "German public broadcaster"},
+    {"name": "France 24 English",  "handle": "France24_en",      "cat": "World",   "cc": "fr", "note": "French state-funded"},
+    {"name": "Sky News",           "handle": "SkyNews",          "cat": "World",   "cc": "gb", "note": ""},
+    {"name": "TRT World",          "handle": "trtworld",         "cat": "World",   "cc": "tr", "note": "Turkish state media"},
+    {"name": "Al Jazeera Arabic",  "handle": "aljazeera",        "cat": "Mideast", "cc": "qa", "note": "Qatari state-funded"},
+    {"name": "Al Arabiya English", "handle": "AlArabiyaEnglish", "cat": "Mideast", "cc": "sa", "note": "Saudi-owned"},
+    {"name": "Euronews",           "handle": "euronews",         "cat": "Europe",  "cc": "eu", "note": ""},
+    {"name": "GB News",            "handle": "GBNewsOnline",     "cat": "Europe",  "cc": "gb", "note": ""},
+    {"name": "ABC News (US)",      "handle": "ABCNews",          "cat": "US",      "cc": "us", "note": ""},
+    {"name": "NBC News NOW",       "handle": "NBCNews",          "cat": "US",      "cc": "us", "note": ""},
+    {"name": "CBS News",           "handle": "CBSNews",          "cat": "US",      "cc": "us", "note": ""},
+    {"name": "LiveNOW from FOX",   "handle": "livenowfox",       "cat": "US",      "cc": "us", "note": ""},
+    {"name": "CGTN",               "handle": "CGTN",             "cat": "Asia",    "cc": "cn", "note": "Chinese state media"},
+    {"name": "CNA",                "handle": "ChannelNewsAsia",  "cat": "Asia",    "cc": "sg", "note": "Singapore state-linked"},
+    {"name": "WION",               "handle": "WION",             "cat": "Asia",    "cc": "in", "note": ""},
+    {"name": "India Today",        "handle": "IndiaToday",       "cat": "Asia",    "cc": "in", "note": ""},
 ]
 _LIVE_TV_VID_RE = re.compile(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([0-9A-Za-z_-]{11})"')
 
@@ -2137,13 +2143,14 @@ def _resolve_live_video(handle):
     /live URL redirects to whatever is airing now, so its <link rel=canonical> is a watch?v= URL ONLY while the
     channel is live (offline it canonicals to the channel page, no video) — so a canonical watch id is a
     reliable "live now" signal AND self-heals a rotated stream id. '' when not live / unreadable, so the UI
-    greys the channel rather than embedding a dead player. Cached 20 min (a live hit) / 4 min (a miss, so a
-    channel that just went live recovers fast)."""
+    greys the channel rather than embedding a dead player. Cached 6 min (a live hit) / 4 min (a miss, so a
+    channel that just went live recovers fast). The short hit TTL also limits how stale a ROTATED id can get —
+    a 24/7 stream occasionally restarts under a NEW id and the old one becomes 'unavailable'."""
     cache = os.path.join(CACHE_DIR, "livetv_" + _slug(handle) + ".json")
     try:
         if os.path.exists(cache):
             j = json.load(open(cache, encoding="utf-8"))
-            ttl = 1200 if j.get("id") else 240
+            ttl = 360 if j.get("id") else 240
             if (time.time() - os.path.getmtime(cache)) < ttl:
                 return j.get("id", "")
     except Exception:
@@ -2155,9 +2162,10 @@ def _resolve_live_video(handle):
             headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"})
         raw = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
         m = _LIVE_TV_VID_RE.search(raw)
-        # require the LIVE-NOW flag (an offline channel canonicals to the channel page, no watch id; a merely
-        # SCHEDULED stream carries isUpcoming — don't embed a countdown).
-        if m and '"isLive":true' in raw and '"isUpcoming":true' not in raw:
+        # require: LIVE now (offline canonicals to the channel page, no watch id), NOT a scheduled countdown
+        # (isUpcoming), and EMBEDDABLE (playableInEmbed) — a stream that blocks embedding shows YouTube's
+        # "This video is unavailable" in the player, so grey it out. SHIPPED BUG: WION played "video unavailable".
+        if m and '"isLive":true' in raw and '"isUpcoming":true' not in raw and '"playableInEmbed":true' in raw:
             vid = m.group(1)
     except Exception:
         vid = ""
@@ -2182,12 +2190,14 @@ class Api:
                 vid = _resolve_live_video(ch["handle"])
             except Exception:
                 vid = ""
-            return {"name": ch["name"], "cat": ch.get("cat", ""), "id": vid, "live": bool(vid)}
+            return {"name": ch["name"], "cat": ch.get("cat", ""), "cc": ch.get("cc", ""),
+                    "note": ch.get("note", ""), "id": vid, "live": bool(vid)}
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
                 return list(ex.map(_one, _LIVE_TV_CHANNELS))
         except Exception:
-            return [{"name": c["name"], "cat": c.get("cat", ""), "id": "", "live": False} for c in _LIVE_TV_CHANNELS]
+            return [{"name": c["name"], "cat": c.get("cat", ""), "cc": c.get("cc", ""),
+                     "note": c.get("note", ""), "id": "", "live": False} for c in _LIVE_TV_CHANNELS]
 
     def ping(self):
         return {"ok": True, "ai": bool(load_gemini_key())}

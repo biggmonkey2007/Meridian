@@ -2850,7 +2850,8 @@ def main():
     _livetv_ok = (bool(_m) and _m.group(1) == "gCNeDWCI0vo"                       # live canonical -> the 11-char id
                   and not app._LIVE_TV_VID_RE.search(_tv_off)                     # channel-page canonical -> no id (greyed as off-air)
                   and len(app._LIVE_TV_CHANNELS) >= 8                             # a real roster
-                  and all(c.get("name") and c.get("handle") and c.get("cat") for c in app._LIVE_TV_CHANNELS)
+                  and all(c.get("name") and c.get("handle") and c.get("cat") and c.get("cc") for c in app._LIVE_TV_CHANNELS)  # each has a flag code
+                  and all("note" in c for c in app._LIVE_TV_CHANNELS)             # every channel carries an (even-handed, maybe empty) ownership caption
                   and len({c["handle"] for c in app._LIVE_TV_CHANNELS}) == len(app._LIVE_TV_CHANNELS))  # no dup handle
     ran[0] += 1
     if not _livetv_ok:
