@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.71"
+APP_VERSION = "1.4.72"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d73"   # d73: resweep so a DRC dot flies ONE Congo flag (the duplicate "Democratic Republic of the
+_DATA_VER = "d74"   # d74: resweep so OPINION/op-ed pieces drop off the map — a "lesson in"/"the case for"
+                    #      headline OR a first-person essay body ("When I look back…"). No re-summarize cost.
+                    # d73: resweep so a DRC dot flies ONE Congo flag (the duplicate "Democratic Republic of the
                     #      Congo"/"Dem. Rep. Congo" keys + the ambiguous bare "Congo" collapse), and a truncated
                     #      teaser is replaced by the FULL first paragraph from <content:encoded> (permanent
                     #      cut-off fix for Middle East Monitor + every WordPress feed).
@@ -3091,7 +3093,7 @@ class Api:
             title = _clean_headline(a.get("title") or "")
             if not url or len(title) < 12 or url in seen_urls:
                 continue
-            if _is_fluff(title, url) or _is_muted(a.get("domain"), a.get("_src"), url):
+            if _is_fluff(title, url, a.get("desc") or "") or _is_muted(a.get("domain"), a.get("_src"), url):
                 continue
             if _is_spam(title + " " + (a.get("desc") or "")):     # crypto-signals ad / invite-link pump — not news
                 continue
@@ -3303,7 +3305,7 @@ class Api:
                 title = _clean_headline(a.get("title") or "")
                 if not url or len(title) < 12 or url in seen_urls:
                     continue
-                if _is_fluff(title, url) or _is_muted(a.get("domain"), a.get("_src"), url):
+                if _is_fluff(title, url, a.get("desc") or "") or _is_muted(a.get("domain"), a.get("_src"), url):
                     continue
                 norm = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()[:55]
                 if norm in seen_titles:
@@ -4838,6 +4840,11 @@ _FLUFF_PAT = re.compile(
     r"spent|lost|survived|used\s+to|knew|know|left|fled|escaped|beat|battled|nearly|almost|once)\b|"
     r"[:\-]\s*(how|why)\b|"                         # explainer shape: "Greed and loopholes: How ... works"
     r"\bwhy\b.*\bmatters?\b|"
+    # OP-ED headline shapes: "X offer(s) the region a LESSON in nationhood", "A lesson in/for …", "The case
+    # for/against …". An opinion column, not a located event. SHIPPED BUG: a MEMO opinion piece made the map.
+    r"\b(?:offers?|gives?|teach(?:es)?|holds?|provides?|is)\s+(?:\w+\s+){0,3}a\s+lesson\b|"
+    r"\ba\s+lesson\s+(?:in|for|on|from)\b|^the\s+case\s+(?:for|against)\b|"
+    r"\b(?:what|why)\s+(?:\w+\s+){1,3}(?:gets?|got)\s+(?:wrong|right)\b|"   # "What the West gets wrong about …"
     # A PROCEDURAL COURT / INQUIRY step, or a WITNESS-TESTIMONY quote — nothing has been DECIDED, so it is not a
     # country/region-changing event (a VERDICT, ruling, sentence or conviction IS, and trips none of these).
     # SHIPPED BUG: "Final hearing day of antisemitism royal commission" and "Instagram head, at trial, says
@@ -4980,18 +4987,31 @@ def _post_media_trusted(text):
     return not _ROUNDUP_MEDIA_RE.search(text or "")
 
 
-def _is_fluff(title, url=""):
+# A first-person OPINION / personal-essay LEDE in the BODY — "When I look back at my university years … I am
+# reminded", "Growing up, I …", "In my view …". An op-ed, never a located event. SHIPPED BUG: a MEMO opinion
+# piece ("Syrian Kurds offer the region a lesson in nationhood") whose body opened "When I look back…" made the
+# map. A news QUOTE opens with a quotation mark, so this never catches reported speech; anchored to the START
+# of the body so a passing "…said I…" in real news is untouched.
+_OPINION_DESC = re.compile(
+    r"^\s*[\"'“”«]?\s*(?:when\s+i\b|i\s+(?:look\s+back|remember|recall|grew\s+up|still\b|was\s+(?:a|an|young|just))|"
+    r"growing\s+up\b|as\s+a\s+(?:young|former|lifelong|proud|new|child)\b|"
+    r"in\s+my\s+(?:view|opinion|experience|lifetime|book|humble)\b|let\s+me\s+(?:be|tell|start)\b|"
+    r"there\s+(?:is|are)\s+(?:a\s+)?moment)", re.I)
+
+
+def _is_fluff(title, url="", desc=""):
     """True for features/op-eds/documentaries/analysis that aren't a real event worth a dot on the map.
     Deliberately does NOT require an 'event verb' in general — that wrongly dropped real news ('missiles
     have IMPACTED the port', 'president NOMINATES a PM'). Losing real news is worse than keeping a feature.
     The narrow _is_thinkpiece() exception only fires on a 'Country: ideology-theme' headline with NO event
-    verb and NO number, so it can't swallow a real event. A multi-story newsletter DIGEST is also dropped."""
+    verb and NO number, so it can't swallow a real event. A multi-story newsletter DIGEST is also dropped.
+    The BODY is also read for a first-person op-ed lede ('When I look back…')."""
     low = (url or "").lower()
     for p in _FLUFF_PATHS:
         if p in low:
             return True
     return (bool(_FLUFF_PAT.search(title or "")) or _is_thinkpiece(title or "")
-            or bool(_DIGEST_RE.search(title or "")))
+            or bool(_DIGEST_RE.search(title or "")) or bool(_OPINION_DESC.search((desc or "").lstrip())))
 
 
 # A COVERT-SURVEILLANCE / espionage story (a state spying on a dissident, tapping phones, a mercenary

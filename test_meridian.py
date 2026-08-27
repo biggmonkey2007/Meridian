@@ -1130,6 +1130,13 @@ FLUFF_CASES = [
     ("Study finds new drug halts brain cancer", "", False, "GUARD: a real FINDING is news"),
     ("Scientists discover cancer breakthrough", "", False, "GUARD: a discovery is news"),
     ("Minister suspended over corruption scandal", "", False, "GUARD: a minister (not a schoolteacher) stays"),
+    # OPINION / op-ed — a "lesson in" headline or a first-person essay body is never a located event.
+    ("Syrian Kurds offer the region a lesson in nationhood", "", True,
+     "SHIPPED BUG: a Middle East Monitor op-ed made the map"),
+    ("A lesson in resilience from Gaza's rebuilders", "", True, "'a lesson in' is an op-ed shape"),
+    ("The case for a two-state solution", "", True, "'The case for/against' opens an op-ed"),
+    ("Ukraine offers Russia a ceasefire in the east", "", False, "GUARD: 'offers a ceasefire' is a real event, not 'a lesson'"),
+    ("Prosecutors present the case for conviction", "", False, "GUARD: 'the case for' mid-sentence (a trial) stays"),
     ("UN urges immediate ceasefire in Gaza", "", False, "GUARD: a concrete political demand is real news"),
     ("Zelensky urges allies to send more air defense", "", False, "GUARD: 'urges allies to send' is not ceremonial"),
     ("Christmas market attack kills 5 in Germany", "", False, "GUARD: a holiday word in a real attack stays"),
@@ -2784,6 +2791,9 @@ def main():
     # permanent MEMO fix: the parser prefers content:encoded over the truncated <description> excerpt.
     _memo_full = app._sharpen_desc("The UN Committee on the Elimination of Racial Discrimination (CERD) expressed alarm over statements by Israeli officials threatening to impose on Lebanon the same level of destruction as inflicted in Gaza and called for an end to rhetoric.")
     _sharp_ok = _sharp_ok and "same level of destruction" in _memo_full and _memo_full.rstrip().endswith("rhetoric.")
+    # A first-person op-ed LEDE in the body is fluff even when the headline looks like news.
+    _sharp_ok = _sharp_ok and app._is_fluff("Syrian Kurds and the region", "", "When I look back at my university years, I am reminded of a country that understood unity.")
+    _sharp_ok = _sharp_ok and not app._is_fluff("Israel expels Dutch officials from Gaza", "", "Israeli FM Saar ordered the immediate expulsion of Dutch representatives.")  # GUARD
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",
