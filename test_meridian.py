@@ -1160,6 +1160,14 @@ FLAG_CASES = [
      "both belligerents are parties, and the country it HAPPENED in leads"),
     ("Türkiye's Foreign Ministry commemorates Srebrenica genocide", "Turkey", ["Turkey"],
      "SHIPPED BUG: 'Türkiye' folded to nothing, so the story had NO flag at all"),
+    # THE CONGOS: a DRC story must fly ONE DRC flag — not the DRC twice + a spurious Republic-of-Congo flag.
+    ("Situation in eastern Democratic Republic of Congo, DRC: M23-allied groups expand south",
+     "Dem. Rep. Congo", ["Dem. Rep. Congo"],
+     "SHIPPED BUG: three Congo flags (DRC x2 + Republic) — the duplicate DRC names and bare 'Congo' collapse to one"),
+    ("Fighting in the Democratic Republic of the Congo as M23 advances", "Dem. Rep. Congo", ["Dem. Rep. Congo"],
+     "the 'the' spelling must NOT also fly 'Republic of the Congo' (a substring of the DRC's name)"),
+    ("DRC and Republic of the Congo sign a border deal", "Dem. Rep. Congo",
+     ["Dem. Rep. Congo", "Republic of the Congo"], "GUARD: a GENUINE two-Congo story keeps both"),
 ]
 
 
@@ -2772,6 +2780,10 @@ def main():
     _sharp_ok = _sharp_ok and _memo.endswith("Kiryat Gat.") and "following" not in _memo
     _sharp_ok = _sharp_ok and app._sharpen_desc("The payout could total 107.79 bln rubles.") == "The payout could total 107.79 billion rubles."
     _sharp_ok = _sharp_ok and app._sharpen_desc("Rescuers pulled survivors from the rubble after the blast.").endswith("after the blast.")  # GUARD: a complete sentence is untouched
+    # A FULL first paragraph (what <content:encoded> gives) survives WHOLE — no mid-sentence cut. This is the
+    # permanent MEMO fix: the parser prefers content:encoded over the truncated <description> excerpt.
+    _memo_full = app._sharpen_desc("The UN Committee on the Elimination of Racial Discrimination (CERD) expressed alarm over statements by Israeli officials threatening to impose on Lebanon the same level of destruction as inflicted in Gaza and called for an end to rhetoric.")
+    _sharp_ok = _sharp_ok and "same level of destruction" in _memo_full and _memo_full.rstrip().endswith("rhetoric.")
     ran[0] += 1
     if not _sharp_ok:
         fails.append(("sharpen", "credits+endstop", "brackets gone, period added, [sic]/label kept",

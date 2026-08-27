@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.70"
+APP_VERSION = "1.4.71"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d72"   # d72: resweep so SPORTS never make the map, a research-aspiration ("researchers hope to")
+_DATA_VER = "d73"   # d73: resweep so a DRC dot flies ONE Congo flag (the duplicate "Democratic Republic of the
+                    #      Congo"/"Dem. Rep. Congo" keys + the ambiguous bare "Congo" collapse), and a truncated
+                    #      teaser is replaced by the FULL first paragraph from <content:encoded> (permanent
+                    #      cut-off fix for Middle East Monitor + every WordPress feed).
+                    # d72: resweep so SPORTS never make the map, a research-aspiration ("researchers hope to")
                     #      / procedural local story drops, a named STATE is refined to the town the body gives
                     #      (Yucatan coast -> Chuburna), and MOEX/RTS + any 3+-cap acronym get a definition.
                     # d71: resweep so a place NAMED in the headline/body wins over the actor/source — a passive
@@ -7060,14 +7064,22 @@ def _feed_articles(url, home):
               or re.search(r"<updated>(.*?)</updated>", b, re.S) or re.search(r"<dc:date>(.*?)</dc:date>", b, re.S))
         im = (re.search(r'<media:thumbnail[^>]*url="([^"]+)"', b) or re.search(r'<media:content[^>]*url="([^"]+)"', b)
               or re.search(r'<enclosure[^>]*url="([^"]+)"', b))
-        dm = (re.search(r"<description>(.*?)</description>", b, re.S) or re.search(r"<summary[^>]*>(.*?)</summary>", b, re.S))
+        # WHY the teaser kept cutting off (Middle East Monitor, and any WordPress feed): the RSS <description>
+        # is a SHORT EXCERPT the CMS truncates mid-sentence ("…the 'same level of"). PERMANENT FIX for all
+        # sources: prefer <content:encoded> — the FULL article body the feed also ships — and read its FIRST
+        # paragraph, a whole sentence, instead of the chopped excerpt. Falls back to <description> when a feed
+        # has no full content. (The clip is generous so a complete lede survives; _sharpen_desc ends it on a
+        # whole sentence. The AI brief still rewrites this into the copyright-free "In brief".)
+        dm = (re.search(r"<content:encoded[^>]*>(.*?)</content:encoded>", b, re.S)
+              or re.search(r"<description>(.*?)</description>", b, re.S)
+              or re.search(r"<summary[^>]*>(.*?)</summary>", b, re.S))
         desc = ""
         if dm:
             _raw = _cdata(dm.group(1))
             _p = re.search(r"<p[^>]*>(.*?)</p>", _raw, re.S)
             _core = _p.group(1) if _p else _raw
             desc = re.sub(r"\s{2,}", " ", re.sub(r"<[^>]+>", " ", _core)).strip()
-            desc = re.split(r"(?i)continue reading|prefer the guardian|read more", desc)[0].strip()[:360]
+            desc = re.split(r"(?i)continue reading|prefer the guardian|read more", desc)[0].strip()[:600]
         # Google-News RSS wraps the real outlet in <source url="reuters.com">Reuters</source>. Without this the
         # link is a news.google.com redirect, so the dot was bylined "News" (from news.google.com) instead of
         # "Reuters". Take the outlet name AND its domain from the tag; a direct RSS feed has no <source>, so it
@@ -7267,6 +7279,13 @@ COUNTRY_ALIASES.update({
     "uk": "United Kingdom", "u k": "United Kingdom", "dr congo": "Dem. Rep. Congo",
     "drc": "Dem. Rep. Congo", "uae": "United Arab Emirates", "emirates": "United Arab Emirates",
     "ivory coast": "Côte d'Ivoire",
+    # THE CONGOS: COUNTRY_COORDS carries FOUR overlapping keys — the DRC twice ("Dem. Rep. Congo" +
+    # "Democratic Republic of the Congo") and a bare "Congo" beside "Republic of the Congo". A DRC story then
+    # flew THREE flags. Collapse every DRC spelling to ONE canonical, and the bare/ambiguous "Congo" to the DRC
+    # (the far more news-heavy one); "Republic of the Congo" is longer, so it still matches Brazzaville first.
+    "democratic republic of the congo": "Dem. Rep. Congo", "democratic republic of congo": "Dem. Rep. Congo",
+    "dem rep congo": "Dem. Rep. Congo", "congo kinshasa": "Dem. Rep. Congo", "congo drc": "Dem. Rep. Congo",
+    "republic of the congo": "Republic of the Congo", "congo brazzaville": "Republic of the Congo",
     # the names outlets ACTUALLY print. "Türkiye" folds to "turkiye" before it reaches this table;
     # without the entry, a story whose only actor was Türkiye had NO country at all.
     # SHIPPED: "NZ's South Island struck by magnitude-5.9 earthquake" fell back to the PUBLISHER
@@ -7276,11 +7295,15 @@ COUNTRY_ALIASES.update({
     "burma": "Myanmar", "swaziland": "eSwatini", "cape verde": "Cabo Verde",
     "south korea": "South Korea", "north korea": "North Korea", "the gambia": "Gambia",
 })
+# The bare word "Congo" is genuinely AMBIGUOUS (DRC vs Republic) and is a substring of BOTH full names, so
+# matching it flew a wrong extra flag either way. Drop it — news always says "DR Congo"/"DRC" or "Republic of
+# the Congo"/"Brazzaville", which match explicitly above; a lone "Congo" gets no flag rather than a guessed one.
+COUNTRY_ALIASES.pop("congo", None)
 
 # GDELT sourcecountry name -> canonical name (for the outlet-country fallback)
 GDELT_COUNTRY = {
     "United States": "United States of America", "United Kingdom": "United Kingdom",
-    "Congo DRC": "Dem. Rep. Congo", "Congo Republic": "Congo", "South Sudan": "S. Sudan",
+    "Congo DRC": "Dem. Rep. Congo", "Congo Republic": "Republic of the Congo", "South Sudan": "S. Sudan",
     "Ivory Coast": "Côte d'Ivoire", "Czech Republic": "Czechia",
 }
 
@@ -10604,6 +10627,12 @@ def _involved_countries(title, country=""):
         if m and m.group(1) in _PERSON_NOUNS:
             continue                                    # "Colombian man" — a nationality, not a party
         _add(DEMONYMS[dem])
+    # "Republic of the Congo" (Brazzaville) is a SUBSTRING of "DEMOCRATIC Republic of the Congo" (the DRC), so a
+    # DRC story wrongly flies it too. Keep it only on a GENUINE standalone mention (not the tail of the DRC name,
+    # and not already the DRC). SHIPPED BUG: three Congo flags on one DRC dot.
+    if "Republic of the Congo" in out and "Dem. Rep. Congo" in out \
+            and not re.search(r"(?<!democratic\s)republic of the congo", low) and "brazzaville" not in low:
+        out = [c for c in out if c != "Republic of the Congo"]
     return out[:4]
 
 
