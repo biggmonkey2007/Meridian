@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.86"
+APP_VERSION = "1.4.87"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d78"   # d78: resweep so a person's given name that's also a city no longer geolocates as the city
+_DATA_VER = "d79"   # d79: resweep so a country named as a REASON/tie ("sanction … over Iran ties" -> the UAE
+                    #      branch, not Tehran) or an INFLUENCE-OP actor ("China fueling America's rage" -> the US,
+                    #      not Beijing) no longer wins the dot, and a wire photo stops attaching to a same-COUNTRY-
+                    #      centroid story on one word (the Budanov statement vs an Orthodoxy map).
+                    # d78: resweep so a person's given name that's also a city no longer geolocates as the city
                     #      ("President Vladimir Putin" -> Russia, not the city Vladimir), and a wire photo stops
                     #      attaching to a same-country story on one coincidental word (a Zelensky-refinery photo
                     #      no longer lands on a lunar-rover story; a bomber clip no longer on an economic-ties one).
@@ -4688,7 +4692,11 @@ def _clip_matches(event_title, clip_text):
     # different nominal COUNTRY depending on the actor named ("Russian tankers" -> Russia, "Ukrainian drones"
     # -> Ukraine) even though both posts are the ONE strike in the Sea of Azov. CROSS-BORDER (a person-led
     # story, Trump on Lindsey Graham): a strong NAME match stands in for the missing shared location.
-    same_place = bool(ev_place and cl_place and ev_place == cl_place)
+    # SAME PLACE must be the same SPECIFIC place (a city/scene), NOT two country centroids sharing the country
+    # label. SHIPPED BUG: a Budanov war-statement and a "Ukraine's War Against Orthodoxy" map both fell to the
+    # UKRAINE centroid, so `ev_place == cl_place == "Ukraine"` wrongly counted as same-place and let one weak
+    # shared word attach the map. A weak (centroid) result is same-COUNTRY, never same-place.
+    same_place = bool(ev_place and cl_place and ev_place == cl_place and not _geo_is_weak(ev) and not _geo_is_weak(cl))
     same_country = bool(ev and cl and ev[3] and cl[3] == ev[3])
     # A single ubiquitous NAME alone (Trump + same country) is NOT the same event — it needs a shared
     # distinctive WORD, or a SECOND name. A single distinctive WORD (the "tanker"/"supermarket"/"pub") is
@@ -9673,6 +9681,19 @@ _CONTEXT_PREP = {"despite", "notwithstanding", "amid", "amidst"}
 _CONFLICT_NOUN = {"war", "campaign", "offensive", "strategy", "policy", "pressure", "effort", "efforts",
                   "struggle", "fight", "action", "actions", "measure", "measures", "sanction", "sanctions",
                   "aggression", "hostility", "hostilities", "standoff", "confrontation", "crackdown", "failure"}
+# A country named only as a RELATIONSHIP/REASON is the WHY, not the scene: "sanctioned over IRAN ties", "for
+# RUSSIA links", "CHINA connections". The event is at the sanctioned entity, not the country it's tied to.
+# SHIPPED BUG: "sanction UAE branch of Egyptian bank over IRAN ties" dotted Tehran, not the UAE branch.
+_REASON_NOUN = {"ties", "tie", "links", "link", "relations", "relationship", "relationships", "dealings",
+                "connections", "connection", "nexus", "affiliation", "affiliations", "dealing"}
+# A country running an INFLUENCE / interference operation is the ACTOR, not the scene — the operation targets
+# ANOTHER country. SHIPPED BUG: "CHINA is secretly FUELING America's data-center rage … influence AMERICANS"
+# dotted Beijing; it targets America. A country FOLLOWED soon by one of these verbs is the actor -> sunk.
+_INFLUENCE_VERB = {"fuel", "fuels", "fueling", "fuelling", "fueled", "fuelled", "stoke", "stokes", "stoking",
+                   "stir", "stirs", "stirring", "undermine", "undermines", "undermining", "meddle", "meddles",
+                   "meddling", "interfere", "interferes", "interfering", "destabilize", "destabilizes",
+                   "destabilizing", "destabilise", "manipulate", "manipulates", "manipulating", "influence",
+                   "influences", "influencing", "sow", "sows", "sowing", "infiltrate", "infiltrating"}
 # A judicial office right after a country/demonym marks the SEAT of a legal ruling — the story's real scene.
 # "UK judge rules", "US Supreme Court", "France's prosecutor charges…": the country is where the court sits.
 _JUDICIAL_SEAT = {"judge", "judges", "court", "courts", "justice", "prosecutor", "prosecutors",
@@ -9719,6 +9740,11 @@ def _context_places(hits, words):
         elif (h[1] in ("country", "demonym") and i + 2 < len(words) and words[i + 1] in _BACKER_WORDS
               and words[i + 2] not in _BACKER_VERB_AFTER):
             ctx.add(i)                     # "<Country> funded/backed/led <noun>" -> the sponsor, not the scene
+        elif h[1] in ("country", "demonym") and i + 1 < len(words) and words[i + 1] in _REASON_NOUN:
+            ctx.add(i)                     # "over IRAN ties / RUSSIA links" -> the reason for a penalty, not the scene
+        elif (h[1] in ("country", "demonym")
+              and any(words[k] in _INFLUENCE_VERB for k in range(i + 1, min(len(words), i + 4)))):
+            ctx.add(i)                     # "CHINA is secretly FUELING America's rage" -> the actor of an influence op, not the scene
         elif i >= 1 and words[i - 1] == "from" and any(
                 words[k] in _RETURN_WORDS for k in range(max(0, i - 5), i - 1)):
             ctx.add(i)                     # "returns/back FROM <place>" -> where the subject WAS, not the scene

@@ -1063,7 +1063,7 @@ body.topo-active .zoomers{bottom:130px}
    ownership captions. Theme-aware, scrollbar included. */
 .tv-win{position:fixed;z-index:1500;display:none;flex-direction:column;background:var(--panel);color:var(--ink);
   border:1px solid var(--line);border-radius:12px;box-shadow:0 22px 62px rgba(8,15,28,.5);overflow:hidden;
-  width:720px;height:453px;min-width:360px;min-height:150px;max-width:98vw;max-height:96vh}
+  width:720px;height:453px;min-width:300px;min-height:120px;max-width:98vw;max-height:96vh}
 .tv-win.open{display:flex}
 .tv-win.min{height:auto!important;min-height:0}
 .tv-win.min .tv-main{flex:0 0 0;height:0;min-height:0;overflow:hidden}   /* collapse to the title bar, KEEP the iframe (audio plays) */
@@ -6709,7 +6709,7 @@ function tvPlay(id, name, cc, note){
         if(ytPlayer && ytPlayer.loadVideoById && document.getElementById("tv-yt")){ ytPlayer.loadVideoById(id); }
         else {
           player.innerHTML='<div id="tv-yt" style="position:absolute;inset:0;width:100%;height:100%"></div>';
-          ytPlayer=new YT.Player("tv-yt",{ host:"https://www.youtube-nocookie.com", videoId:id,
+          ytPlayer=new YT.Player("tv-yt",{ host:"https://www.youtube-nocookie.com", videoId:id, width:"100%", height:"100%",
             playerVars:{autoplay:1,controls:0,rel:0,modestbranding:1,playsinline:1,fs:0,iv_load_policy:3,disablekb:1},
             events:{ onReady:function(e){ try{ e.target.playVideo(); _tvMuted?e.target.mute():e.target.unMute(); const v=document.getElementById("tvc-vol"); if(v&&e.target.setVolume) e.target.setVolume(+v.value); }catch(_){} } } });
         }
@@ -6732,12 +6732,15 @@ function tvSize16(w){
   const win=document.getElementById("tv-win"); if(!win) return;
   const railW = win.classList.contains("no-list") ? 0 : TV_RAIL;
   const headH = win.classList.contains("no-head") ? 0 : TV_HEAD;   // header can be collapsed to an overlay
-  w=Math.max(300, Math.min(w, innerWidth-16));
-  let stageW=Math.max(150, w-railW);
-  let h=headH + stageW*9/16;
-  const maxH=innerHeight-16;
-  if(h>maxH){ h=maxH; w=Math.round((h-headH)*16/9)+railW; }   // height-limited -> back-solve width
-  win.style.width=Math.round(w)+"px"; win.style.height=Math.round(h)+"px"; tvFloatW=Math.round(w);
+  // size the STAGE (the video) directly and derive the window from it, so the player is ALWAYS exactly 16:9 —
+  // no black letterbox. The stage is clamped to [MINS, MAXS]: a floor so it can't shrink small enough to bar,
+  // and a cap so the window can't be dragged huge.
+  const MINS=300, MAXS=Math.max(MINS, Math.min(960, innerWidth*0.95 - railW));
+  let stageW=Math.max(MINS, Math.min((w||0)-railW, MAXS));
+  const maxH=Math.min(620, innerHeight*0.92);
+  if(headH + stageW*9/16 > maxH){ stageW=Math.max(MINS, (maxH-headH)*16/9); }
+  const wOut=Math.round(stageW+railW), hOut=Math.round(headH + stageW*9/16);
+  win.style.width=wOut+"px"; win.style.height=hOut+"px"; tvFloatW=wOut;
 }
 // Collapse / expand the channel list — the "extendable" bit, so you can just watch the stream.
 function tvToggleList(){

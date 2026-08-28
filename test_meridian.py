@@ -863,6 +863,9 @@ CLIP_CASES = [
     ("Western countries show growing interest in resuming economic ties with Russia",
      "Footage shows a Russian Tu-22 strategic bomber struck at Belaya air base after a Ukrainian drone attack.",
      False, "SHIPPED BUG: an economic-ties story pulled a struck-bomber clip — same country, no shared distinctive subject"),
+  ("Head of Ukraine's Presidential Office Kyrylo Budanov says ending the war at this stage is simply unrealistic",
+     "Ukraine's War Against Orthodoxy. Three days ago, monk Varsonofiy was brutally killed at the Holy Mountains Lavra.",
+     False, "SHIPPED BUG: a Budanov war-statement and a persecution map BOTH fell to the UKRAINE centroid, so ev_place==cl_place wrongly read as same-place; a country centroid is same-COUNTRY, not same-place"),
 ]
 
 # Two DIFFERENT events must not be merged. (headline_a, headline_b, same_event?, why)
@@ -2534,6 +2537,21 @@ def main():
         "Strikes reported in Vladimir Oblast", "Russia", "", allow_ai=False)[2] or "")))
     _lg_fails.append(("titled-name-keeps-country", (app._locate(
         "President Trump's former campaign manager Brad Parscale ran the MAGA operation", "", "", allow_ai=False) or ["", "", "", ""])[3] == "United States of America"))
+    # A country named only as the REASON for a penalty ("over IRAN ties") is the WHY, not the scene — the event
+    # is at the sanctioned entity. SHIPPED BUG: "sanction UAE branch of Egyptian bank over Iran ties" -> Tehran.
+    _lg_fails.append(("sanction-over-ties", "UAE" in (app._locate(
+        "Treasury moves to sanction UAE branch of Egyptian bank over Iran ties", "",
+        "Banque Misr UAE processed about 1.8 billion for companies in Iran's shadow banking network.", allow_ai=False)[2] or "")))
+    _lg_fails.append(("sanction-not-tehran", (app._locate(
+        "Treasury moves to sanction UAE branch of Egyptian bank over Iran ties", "", "", allow_ai=False)[3]) != "Iran"))
+    # An INFLUENCE-OP actor is not the scene — the operation TARGETS another country. SHIPPED BUG: "China is
+    # secretly fueling America's data-center rage" dotted Beijing; it targets America.
+    _lg_fails.append(("influence-op-target", (app._locate(
+        "China is secretly fueling America's data center rage", "",
+        "A suspected Chinese bot farm tried to influence Americans to oppose AI data centers.", allow_ai=False)[3]) == "United States of America"))
+    # GUARD: a PHYSICAL strike ON Iran still dots Iran (the actor/influence sinks must not swallow a real strike).
+    _lg_fails.append(("strike-on-iran-kept", (app._locate(
+        "Israel strikes nuclear sites in Iran", "", "", allow_ai=False)[3]) == "Iran"))
     # ASYLUM / RESETTLEMENT dots where the person ENDED UP (the country that granted asylum), not the one fled.
     _lg_fails.append(("asylum-destination", (app._locate(
         "Christian Convert Who Fled Iran and Was Deported By Trump Finds New Home", "",
@@ -3037,7 +3055,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 52   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin-not-city (+ oblast/Trump guards)
+             + 56   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard)
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
