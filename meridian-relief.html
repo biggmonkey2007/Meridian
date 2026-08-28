@@ -78,11 +78,11 @@ a{color:inherit}
 /* ---------- Header ---------- */
 header{
   position:fixed;top:0;left:0;right:0;height:54px;z-index:40;
-  display:flex;align-items:center;gap:18px;padding:0 16px;
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;padding:0 16px;   /* 3 cols so the center segment sits at the TRUE viewport center, not between the siblings */
   background:rgba(255,255,255,.92);backdrop-filter:saturate(1.2) blur(8px);
   border-bottom:1px solid var(--line);
 }
-.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;justify-self:start}   /* col 1, left-aligned */
 .mark{width:22px;height:22px;flex:0 0 auto}
 .mark circle,.mark line{stroke:var(--ink);fill:none;stroke-width:1.1}
 .mark .m-dot{fill:var(--signal);stroke:none}
@@ -90,13 +90,13 @@ header{
 .tagline{font-size:11.5px;color:var(--ink-3);letter-spacing:.01em;white-space:nowrap}
 .tagline b{color:var(--ink-2);font-weight:600}
 .hdr-sep{width:1px;height:24px;background:var(--line)}
-.hdr-center{display:flex;align-items:center;gap:10px;margin:0 auto}
+.hdr-center{display:flex;align-items:center;gap:10px;justify-self:center}   /* col 2, viewport-centered */
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel-2);padding:2px}
 .seg button{border:none;background:transparent;padding:5px 13px;font-size:12.5px;font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums;letter-spacing:.02em;border-radius:7px;transition:background .14s,color .14s}
 .seg button:hover{color:var(--ink)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
 .seg-label{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;margin-right:2px}
-.hdr-right{display:flex;align-items:center;gap:14px}
+.hdr-right{display:flex;align-items:center;gap:14px;justify-self:end}   /* col 3, right-aligned */
 .live{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
 .live .pip{width:8px;height:8px;border-radius:50%;background:var(--signal);position:relative}
 .live .pip::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1.5px solid var(--signal);opacity:.5;animation:livepulse 2s ease-out infinite}

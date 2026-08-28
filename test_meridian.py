@@ -854,6 +854,15 @@ CLIP_CASES = [
     ("Lukashenko arrives in Moscow for talks with Putin",
      "Lukashenko arrived in Moscow for an unexpected visit", True,
      "...but a lone DISTINCTIVE name (Lukashenko) at the SAME place IS the same event, even though 'visit'/'arrive' are now generic"),
+    # SAME COUNTRY + a lone COINCIDENTAL word is not the same event — a photo mismatch across two different-place
+    # Russia stories. SHIPPED BUG: a lunar-rover TASS story got a Zelensky-refinery-strike photo (and its hero),
+    # and an 'economic ties with Russia' story got a struck-bomber clip, both on ONE shared word.
+    ("Russian lunar rovers to be capable of exploring areas at distances of up to 100 km",
+     "Zelensky says the Kstovo refinery, one of Russia's largest and capable of processing 17 million tons of oil annually, was struck.",
+     False, "SHIPPED BUG: lunar-rover story pulled a Zelensky-refinery photo on the lone word 'capable' + same country (Russia); different places, different subjects"),
+    ("Western countries show growing interest in resuming economic ties with Russia",
+     "Footage shows a Russian Tu-22 strategic bomber struck at Belaya air base after a Ukrainian drone attack.",
+     False, "SHIPPED BUG: an economic-ties story pulled a struck-bomber clip — same country, no shared distinctive subject"),
 ]
 
 # Two DIFFERENT events must not be merged. (headline_a, headline_b, same_event?, why)
@@ -2514,6 +2523,17 @@ def main():
     # GUARD: a genuine Houthi launch FROM Yemen (no facility named) still dots Yemen, not Saudi Arabia.
     _lg_fails.append(("houthi-launch-yemen", (app._locate(
         "Houthi forces launch missiles from Saada", "", "", allow_ai=False)[3]) == "Yemen"))
+    # A person's GIVEN NAME that is also a city must not be geolocated. SHIPPED BUG: "President Vladimir Putin"
+    # dotted the city Vladimir; it should be Russia. Guards: the real Vladimir Oblast is kept, and an ordinary
+    # titled name (President Trump) still locates the country (Trump -> US), not blanked away.
+    _lg_fails.append(("vladimir-putin-not-city", (app._locate(
+        "Russians' level of trust in President Vladimir Putin stands at 72%", "", "", allow_ai=False)[3]) == "Russia"))
+    _lg_fails.append(("vladimir-putin-not-vladimir", "Vladimir" not in (app._locate(
+        "Russians' level of trust in President Vladimir Putin stands at 72%", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("vladimir-oblast-kept", "Vladimir" in (app._locate(
+        "Strikes reported in Vladimir Oblast", "Russia", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("titled-name-keeps-country", (app._locate(
+        "President Trump's former campaign manager Brad Parscale ran the MAGA operation", "", "", allow_ai=False) or ["", "", "", ""])[3] == "United States of America"))
     # ASYLUM / RESETTLEMENT dots where the person ENDED UP (the country that granted asylum), not the one fled.
     _lg_fails.append(("asylum-destination", (app._locate(
         "Christian Convert Who Fled Iran and Was Deported By Trump Finds New Home", "",
@@ -3017,7 +3037,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 48   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi (site not attacker, + Yemen-launch guard)
+             + 52   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin-not-city (+ oblast/Trump guards)
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

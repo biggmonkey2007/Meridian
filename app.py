@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.82"
+APP_VERSION = "1.4.83"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d77"   # d77: resweep so a strike on a named SAUDI oil facility dots the SITE not the attacker — the
+_DATA_VER = "d78"   # d78: resweep so a person's given name that's also a city no longer geolocates as the city
+                    #      ("President Vladimir Putin" -> Russia, not the city Vladimir), and a wire photo stops
+                    #      attaching to a same-country story on one coincidental word (a Zelensky-refinery photo
+                    #      no longer lands on a lunar-rover story; a bomber clip no longer on an economic-ties one).
+                    # d77: resweep so a strike on a named SAUDI oil facility dots the SITE not the attacker — the
                     #      Gulf energy hubs (Jazan/Jizan, Jubail, Yanbu, Ras Tanura, Abqaiq, Khurais, Ras Laffan,
                     #      Ruwais) moved to _FACILITIES at FACILITY prior (NER-proof), so "Saudi Arabia's Jazan Oil
                     #      Refinery … in Houthi attacks" dots Jazan, not Yemen.
@@ -2137,7 +2141,8 @@ _LIVE_TV_CHANNELS = [
     {"name": "GB News",             "handle": "GBNewsOnline",      "cat": "Europe",       "cc": "gb", "note": ""},
     {"name": "LRT",                 "handle": "LRT",               "cat": "Europe",       "cc": "lt", "note": "Lithuanian public broadcaster"},
     {"name": "TVP World",           "handle": "TVPWorld",          "cat": "Europe",       "cc": "pl", "note": "Polish public broadcaster"},
-    {"name": "Al Arabiya English",  "handle": "AlArabiyaEnglish",  "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},
+    {"name": "Al Arabiya",          "handle": "AlArabiya",         "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},
+    {"name": "Al Hadath",           "handle": "AlHadath",          "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},
     {"name": "Al Jazeera Arabic",   "handle": "aljazeera",         "cat": "Mideast",      "cc": "qa", "note": "Qatari state-funded"},
     {"name": "ABC News (Australia)","handle": "abcnewsaustralia",  "cat": "Asia-Pacific", "cc": "au", "note": "Australian public broadcaster"},
     {"name": "CGTN",                "handle": "CGTN",              "cat": "Asia-Pacific", "cc": "cn", "note": "Chinese state media"},
@@ -4694,14 +4699,22 @@ def _clip_matches(event_title, clip_text):
     if same_place or same_country:
         _distinct_names = shared_names - _UBIQUITOUS_NAMES          # shared name(s) that aren't in-a-huge-share-of-the-wire
         _only_ubiq = bool(shared_names) and not _distinct_names     # the ONLY shared name(s) are ubiquitous
-        _need_words = 2 if _only_ubiq else 1
-        if len(shared_names) >= 2 or len(shared_words) >= _need_words:
+        if len(shared_names) >= 2:                                  # two shared distinctive names = same subject anywhere
             return True
-        # A lone DISTINCTIVE name at the SAME SPECIFIC PLACE is the same event (the same person in the same
-        # city) — the name-side analogue of the single distinctive WORD above. This is what keeps a genuine
-        # "Lukashenko arrives in Moscow" pair together now that the generic "visit"/"arrive" no longer counts,
-        # WITHOUT reopening the Ratcliffe mismatch (which shares NO name — only the place + a generic word).
-        return bool(_distinct_names) and same_place
+        if same_place:
+            # SAME SPECIFIC PLACE (same city): a single distinctive WORD (the "tanker"/"supermarket") names the
+            # actual subject, so it's enough; a lone distinctive NAME too. A lone UBIQUITOUS name needs two words.
+            if len(shared_words) >= (2 if _only_ubiq else 1):
+                return True
+            return bool(_distinct_names)
+        # SAME COUNTRY but NOT the same specific place: two DIFFERENT-place stories in one country share a
+        # coincidental word all the time, so a single word is NOT a subject — demand a stronger link (2 distinctive
+        # words, or a distinctive NAME + a word). SHIPPED BUG: a "Russian lunar rovers … CAPABLE of exploring" TASS
+        # story pulled in a "Zelensky … Kstovo refinery … CAPABLE of processing" strike photo on the lone word
+        # "capable"; a "resume economic ties with Russia" story pulled in a struck-bomber clip the same way.
+        if len(shared_words) >= 2:
+            return True
+        return bool(_distinct_names) and len(shared_words) >= 1
     return len(shared_names) >= 2
 
 
@@ -9923,6 +9936,28 @@ _REFINERY_NORM = re.compile(r"\b(oil|gas(?:\s+condensate)?|petroleum|petrochemic
 # Drop the "'s capital / largest city" phrase so the place resolves as a scene. When the capital is also NAMED
 # ("Bihar's capital Patna"), Patna already wins; this only helps the unnamed "X's capital" reference.
 _CAPITAL_OF_RE = re.compile(r"\b([A-Za-z][\w-]+)'s\s+(?:capital|largest\s+city|biggest\s+city|second\s+city|main\s+city)\b", re.I)
+# A GIVEN NAME that is ALSO a gazetteer city ("President Vladimir Putin" -> the city Vladimir) must not be
+# geolocated. When a leadership/honorific TITLE introduces a Capitalized name, blank ONLY the given (first)
+# name IF it is also a known city — keep ordinary names (Trump, Macron) so a national figure still locates
+# their country. PERSON titles only (deliberately NOT King/Prince/Governor -> real places "King County").
+_PERSON_TITLE_GEO_RE = re.compile(
+    r"\b(?:President(?:-elect)?|Vice[- ]President|Prime Minister|Deputy Prime Minister|Foreign Minister|"
+    r"Defen[cs]e Minister|Interior Minister|Finance Minister|Chancellor|Premier|Ambassador|Envoy|Ayatollah|"
+    r"Supreme Leader|Emir|Sheikh|Sultan|Pope|Senator|Congressman|Congresswoman|CEO|Foreign Secretary|"
+    r"Defence Secretary|Secretary of State|Minister|Mr|Mrs|Ms|Dr)\s+"
+    r"([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]+){0,2})")
+# ...and title-less full names where the FIRST name is a city (a bare "Vladimir Putin"); blank just the given
+# name. Extend the surname alternation as such names come up.
+_NAME_CITY_GEO_RE = re.compile(r"\bVladimir\b(?=\s+(?:Putin|Zelensky|Zelenskyy)\b)")
+
+
+def _blank_person_city(text):
+    """Blank a leadership title's given name ONLY when it is also a gazetteer city, so 'President Vladimir Putin'
+    can't dot the city Vladimir while 'President Trump' still locates the US via Trump."""
+    def _repl(m):
+        first = m.group(1).split()[0]
+        return m.group(0).replace(first, " ", 1) if first.lower() in CITY_CANDS else m.group(0)
+    return _PERSON_TITLE_GEO_RE.sub(_repl, text or "")
 
 
 @functools.lru_cache(maxsize=4096)
@@ -9943,6 +9978,8 @@ def _geolocate(title, sourcecountry, desc="", url=""):
     desc = _REFINERY_NORM.sub(r"\2", desc)
     title = _CAPITAL_OF_RE.sub(r"\1", title)     # "Bihar's capital" -> "Bihar" (a location, not a possessive)
     desc = _CAPITAL_OF_RE.sub(r"\1", desc)
+    title = _NAME_CITY_GEO_RE.sub(" ", _blank_person_city(title))   # "President Vladimir Putin" is a person, not the city Vladimir
+    desc = _NAME_CITY_GEO_RE.sub(" ", _blank_person_city(desc))
     title = _OUTLET_GEO_STRIP.sub(" ", _expand_water_coord(title))  # "Black and Azov seas" -> two seas; drop 'Wall Street Journal'
     # Strip the wire's promo lead and any source URL from the BODY before scanning — but NOT the dateline
     # (_dateline_place needs it). SHIPPED BUG: "JUST IN - Nikita Bier resigns…" dotted a village near Yalta,
