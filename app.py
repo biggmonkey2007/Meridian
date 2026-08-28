@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.83"
+APP_VERSION = "1.4.84"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2139,7 +2139,7 @@ _LIVE_TV_CHANNELS = [
     {"name": "NBC News NOW",        "handle": "NBCNews",           "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "Euronews",            "handle": "euronews",          "cat": "Europe",       "cc": "eu", "note": ""},
     {"name": "GB News",             "handle": "GBNewsOnline",      "cat": "Europe",       "cc": "gb", "note": ""},
-    {"name": "LRT",                 "handle": "LRT",               "cat": "Europe",       "cc": "lt", "note": "Lithuanian public broadcaster"},
+    {"name": "LRT",                 "handle": "LRTinklas",         "cat": "Europe",       "cc": "lt", "note": "Lithuanian public broadcaster"},
     {"name": "TVP World",           "handle": "TVPWorld",          "cat": "Europe",       "cc": "pl", "note": "Polish public broadcaster"},
     {"name": "Al Arabiya",          "handle": "AlArabiya",         "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},
     {"name": "Al Hadath",           "handle": "AlHadath",          "cat": "Mideast",      "cc": "sa", "note": "Saudi-owned"},

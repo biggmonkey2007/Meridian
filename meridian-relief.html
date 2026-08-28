@@ -1578,7 +1578,68 @@ const MIL_BASES = [
   ["Port Blair (Andaman)", 11.66, 92.72, "India", "Indian Navy tri-command"],
   ["Changi Naval Base", 1.32, 104.02, "Singapore", "Singapore Navy"],
   ["HMAS Stirling", -32.23, 115.68, "Australia", "Australian Navy (subs)"],
-  ["CFB Halifax", 44.65, -63.57, "Canada", "Canadian Navy (Atlantic)"]
+  ["CFB Halifax", 44.65, -63.57, "Canada", "Canadian Navy (Atlantic)"],
+  // — expanded set (major documented bases; not literally every base — see the note) —
+  ["MacDill Air Force Base", 27.85, -82.52, "United States", "US Air (CENTCOM/SOCOM HQ)"],
+  ["Camp Pendleton", 33.30, -117.35, "United States", "US Marines"],
+  ["Fort Cavazos (Fort Hood)", 31.13, -97.78, "United States", "US Army"],
+  ["Fort Campbell", 36.66, -87.46, "United States", "US Army (airborne)"],
+  ["Nellis Air Force Base", 36.24, -115.03, "United States", "US Air"],
+  ["Vandenberg Space Force Base", 34.74, -120.57, "United States", "US Space Force"],
+  ["Kings Bay Submarine Base", 30.80, -81.51, "United States", "US Navy (SSBN subs)"],
+  ["Naval Base Kitsap (Bangor)", 47.72, -122.71, "United States", "US Navy (SSBN subs)"],
+  ["Whiteman Air Force Base", 38.73, -93.55, "United States", "US Air (B-2 bombers)"],
+  ["Minot Air Force Base", 48.42, -101.36, "United States", "US Air (ICBM/bombers)"],
+  ["Joint Base Lewis-McChord", 47.11, -122.58, "United States", "US Army/Air"],
+  ["Camp Arifjan", 28.88, 48.15, "Kuwait", "US Army"],
+  // Russia
+  ["Plesetsk Cosmodrome", 62.93, 40.57, "Russia", "Russian Space/ICBM"],
+  ["Kapustin Yar", 48.57, 45.80, "Russia", "Russian missile range"],
+  ["Olenya Air Base", 68.15, 33.46, "Russia", "Russian Air (bombers)"],
+  ["Ukrainka Air Base", 51.17, 128.45, "Russia", "Russian Air (bombers)"],
+  ["Gadzhiyevo", 69.25, 33.33, "Russia", "Russian Navy (SSBN subs)"],
+  ["Kant Air Base", 42.85, 74.85, "Kyrgyzstan", "Russian Air"],
+  ["102nd Base (Gyumri)", 40.79, 43.85, "Armenia", "Russian Army"],
+  // China / Asia
+  ["Ngari Gunsa Air Base", 32.10, 80.05, "China", "Chinese Air (Tibet)"],
+  ["Hotan Air Base", 37.04, 79.86, "China", "Chinese Air (Xinjiang)"],
+  ["Ream Naval Base", 10.51, 103.61, "Cambodia", "Chinese-backed (Cambodia)"],
+  ["Misawa Air Base", 40.70, 141.37, "Japan", "US/Japan Air"],
+  ["Sasebo Naval Base", 33.16, 129.71, "Japan", "US Navy"],
+  ["Kunsan Air Base", 35.90, 126.62, "South Korea", "US Air"],
+  ["Chinhae Naval Base", 35.13, 128.68, "South Korea", "US/ROK Navy"],
+  ["Subic Bay", 14.79, 120.28, "Philippines", "Philippine/US (EDCA)"],
+  ["RAAF Tindal", -14.52, 132.38, "Australia", "Australian Air (bomber rotations)"],
+  ["Paya Lebar Air Base", 1.36, 103.91, "Singapore", "Singapore Air"],
+  ["Hindon Air Base", 28.71, 77.36, "India", "Indian Air"],
+  ["Ambala Air Base", 30.37, 76.82, "India", "Indian Air (Rafale)"],
+  ["Eastern Naval Command (Visakhapatnam)", 17.69, 83.30, "India", "Indian Navy (subs)"],
+  ["Nur Khan Air Base", 33.62, 73.10, "Pakistan", "Pakistani Air"],
+  ["PNS Jinnah (Ormara)", 25.21, 64.63, "Pakistan", "Pakistani Navy"],
+  // Europe / NATO
+  ["Büchel Air Base", 50.17, 7.06, "Germany", "German/US Air (nuclear)"],
+  ["Wiesbaden (US Army Europe HQ)", 50.05, 8.32, "Germany", "US Army Europe HQ"],
+  ["Redzikowo (Aegis Ashore)", 54.48, 17.11, "Poland", "US/NATO missile defense"],
+  ["Powidz Air Base", 52.38, 17.85, "Poland", "Polish/US Air"],
+  ["Deveselu (Aegis Ashore)", 44.07, 24.42, "Romania", "US/NATO missile defense"],
+  ["Mihail Kogălniceanu Air Base", 44.36, 28.49, "Romania", "Romanian/US Air"],
+  ["Ørland Air Station", 63.70, 9.61, "Norway", "Norwegian Air (F-35)"],
+  ["Keflavík", 63.99, -22.61, "Iceland", "NATO Air (rotational)"],
+  ["Ämari Air Base", 59.26, 24.21, "Estonia", "NATO Air Policing"],
+  ["Šiauliai Air Base", 55.89, 23.39, "Lithuania", "NATO Air Policing"],
+  ["RAF Marham", 52.65, 0.55, "United Kingdom", "UK Air (F-35)"],
+  ["Istres Air Base", 43.52, 4.92, "France", "French Air (tankers/nuclear)"],
+  // Middle East
+  ["Nevatim Air Base", 31.21, 35.01, "Israel", "Israeli Air (F-35)"],
+  ["Ramat David Air Base", 32.66, 35.18, "Israel", "Israeli Air"],
+  ["Palmachim Air Base", 31.90, 34.69, "Israel", "Israeli Air/Space"],
+  ["King Khalid Air Base", 18.30, 42.80, "Saudi Arabia", "Saudi Air"],
+  ["Konya Air Base", 37.98, 32.56, "Turkey", "Turkish/NATO Air (AWACS)"],
+  ["Chabahar (Konarak)", 25.44, 60.38, "Iran", "Iranian Navy"],
+  // Africa / South America
+  ["Simon's Town", -34.19, 18.43, "South Africa", "South African Navy"],
+  ["Berbera", 10.44, 45.02, "Somaliland", "UAE/regional base"],
+  ["Manaus (Amazon Military Command)", -3.11, -60.02, "Brazil", "Brazilian Army (Amazon)"]
 ];
 const RANGES = {"Himalayas": [[35.2,74.6],[34.5,75.8],[33.6,76.9],[32.5,78.4],[31.5,79.7],[30.5,81.0],[29.7,82.5],[28.9,84.0],[28.3,85.6],[28.0,87.1],[27.8,88.6],[27.9,90.1],[28.1,91.6],[28.6,93.1],[29.4,94.6],[29.6,95.4]], "Karakoram": [[36.6,74.0],[36.3,75.0],[35.9,76.0],[35.6,76.9],[35.4,77.6]], "Hindu Kush": [[37.0,69.6],[36.5,70.6],[36.0,71.6],[35.4,72.6],[34.8,73.6]], "Andes": [[11,-72],[8,-73.6],[5,-75.6],[2,-77.2],[-1,-78.6],[-5,-78.5],[-9,-77.5],[-13,-74.6],[-16,-71.6],[-19,-69],[-22,-68],[-25,-68.6],[-28,-69.6],[-31,-70.6],[-34,-70.2],[-37,-71],[-40,-71.6],[-43,-72.1],[-46,-72.6],[-49,-73],[-52,-73],[-54,-71.5]], "Rocky Mountains": [[60,-128],[57,-125],[54,-121],[51,-117],[49,-114.5],[46,-112],[44,-110.5],[42,-107.5],[40,-106],[38,-105.5],[36,-106],[34,-107.5],[32,-109.5]], "Appalachians": [[47,-69],[45,-71],[43,-73.2],[41,-76],[39,-79],[37,-81.2],[35,-83.5],[34,-85]], "Sierra Madre": [[30,-109],[27,-107],[24,-105.6],[21,-104.5],[19,-103],[17.6,-100]], "Alps": [[44.2,7.0],[44.9,6.9],[45.5,6.9],[46.0,7.8],[46.4,9.0],[46.7,10.5],[46.9,11.9],[47.1,13.1],[47.2,14.3],[47.1,15.3]], "Pyrenees": [[42.5,-1.6],[42.7,-0.5],[42.8,0.5],[42.6,1.5],[42.4,2.4]], "Apennines": [[44.3,7.9],[44.0,9.5],[43.4,11.4],[42.6,13.0],[41.8,14.0],[40.9,15.3],[40.0,16.0],[39.0,16.3],[38.1,16.0]], "Carpathians": [[49.6,18.9],[49.3,20.0],[49.0,21.2],[48.5,22.6],[47.8,23.6],[47.0,24.6],[46.3,25.2],[45.6,25.4],[45.3,24.0],[45.3,22.7]], "Scandinavian Mts": [[70,21],[68,18],[66,15],[64,13],[62,10.5],[60,8],[59,6.5]], "Caucasus": [[44.5,40.0],[43.8,41.5],[43.3,42.8],[42.8,44.0],[42.2,45.5],[41.5,47.0],[41.0,48.0]], "Ural Mountains": [[68,66],[66,63],[64,59.8],[61,59.5],[58,59.5],[55,59.4],[52,58.6],[51,57.5]], "Atlas Mountains": [[30.5,-9],[31,-7],[31.5,-5],[32,-3],[33,-1],[34,1.5],[35,4],[36,6.5],[36.7,8.6]], "Zagros Mountains": [[38,44],[36.5,45.5],[35,46.5],[33.5,47.6],[32,48.6],[30.5,50.5],[29,52],[28,53.5],[27,55]], "Tian Shan": [[42.5,74],[42.3,76],[42.0,78],[41.8,80],[42.0,82],[42.5,84],[43.0,86],[43.3,88]], "Altai Mountains": [[51,84],[50,86],[49,88],[48,90],[47,91.5],[46,92.5]], "Great Dividing Range": [[-16,145],[-19,146.5],[-22,148],[-25,150],[-28,151.5],[-31,152],[-34,150],[-36,148],[-37.5,146.5]], "Ethiopian Highlands": [[14,38],[12.5,38],[11,38.5],[9.5,38.8],[8,39.0],[7,38.5]], "Drakensberg": [[-25,30.5],[-26.5,30],[-28,29.5],[-29.5,29],[-30.5,28.5],[-31.5,28]]};
 const PEAKS=[["Everest",27.99,86.93,8849],["K2",35.88,76.51,8611],["Kangchenjunga",27.70,88.15,8586],["Lhotse",27.96,86.93,8516],["Makalu",27.89,87.09,8485],["Cho Oyu",28.09,86.66,8188],["Dhaulagiri",28.70,83.49,8167],["Annapurna",28.60,83.82,8091],["Nanga Parbat",35.24,74.59,8126],["Nanda Devi",30.37,79.97,7816],["Tirich Mir",36.26,71.84,7708],["Pobeda Peak",42.04,80.13,7439],["Gongga Shan",29.59,101.88,7556],["Damavand",35.96,52.11,5610],["Mount Ararat",39.70,44.30,5137],["Mount Fuji",35.36,138.73,3776],["Puncak Jaya",-4.08,137.16,4884],["Mount Kinabalu",6.08,116.56,4095],["Mont Blanc",45.83,6.86,4808],["Monte Rosa",45.94,7.87,4634],["Matterhorn",45.98,7.66,4478],["Mount Elbrus",43.35,42.44,5642],["Mount Etna",37.75,14.99,3357],["Mulhacen",37.05,-3.31,3479],["Zugspitze",47.42,10.98,2962],["Galdhopiggen",61.64,8.31,2469],["Musala",42.18,23.59,2925],["Mount Olympus",40.09,22.36,2918],["Kilimanjaro",-3.07,37.35,5895],["Mount Kenya",-0.15,37.31,5199],["Margherita Peak",0.39,29.87,5109],["Ras Dashen",13.24,38.37,4550],["Mount Meru",-3.25,36.75,4562],["Mount Elgon",1.13,34.55,4321],["Toubkal",31.06,-7.92,4167],["Mount Cameroon",4.20,9.17,4040],["Thabana Ntlenyana",-29.47,29.27,3482],["Emi Koussi",19.79,18.55,3445],["Denali",63.07,-151.01,6190],["Mount Logan",60.57,-140.41,5959],["Pico de Orizaba",19.03,-97.27,5636],["Mount Whitney",36.58,-118.29,4421],["Mount Rainier",46.85,-121.76,4392],["Popocatepetl",19.02,-98.62,5393],["Aconcagua",-32.65,-70.01,6961],["Ojos del Salado",-27.11,-68.54,6893],["Chimborazo",-1.47,-78.82,6263],["Huascaran",-9.12,-77.60,6768],["Cotopaxi",-0.68,-78.44,5897],["Aoraki",-43.59,170.14,3724],["Mount Kosciuszko",-36.46,148.26,2228],["Mauna Kea",19.82,-155.47,4207],["Vinson Massif",-78.53,-85.62,4892]];
@@ -3747,10 +3808,20 @@ function makeStraitIcon(){
   ctx.fillStyle="#0d6b86"; ctx.fill();
   return ctx.getImageData(0,0,sz*R,sz*R);
 }
+// military base = CROSSED SWORDS (U+2694), a universally-read military symbol, in a dark slate with a crisp
+// white edge — clearly not a news dot and not the teal port anchor.
+function makeBaseIcon(){
+  const R=2, sz=28, cv=document.createElement("canvas"); cv.width=cv.height=sz*R; const ctx=cv.getContext("2d"); ctx.scale(R,R);
+  ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="18px 'Segoe UI Symbol','Segoe UI Emoji','Apple Color Emoji',sans-serif";
+  ctx.lineWidth=2.0; ctx.strokeStyle="rgba(255,255,255,0.85)"; ctx.strokeText("⚔", sz/2, sz/2+1);
+  ctx.fillStyle="#3f4b5b"; ctx.fillText("⚔", sz/2, sz/2+1);
+  return ctx.getImageData(0,0,sz*R,sz*R);
+}
 function addGlobeOverlays(){
   if(!mlMap) return;
   try{ if(!mlMap.hasImage("port-anchor")) mlMap.addImage("port-anchor", makeAnchorIcon(), {pixelRatio:2}); }catch(e){}
   try{ if(!mlMap.hasImage("strait-narrows")) mlMap.addImage("strait-narrows", makeStraitIcon(), {pixelRatio:2}); }catch(e){}
+  try{ if(!mlMap.hasImage("mil-base")) mlMap.addImage("mil-base", makeBaseIcon(), {pixelRatio:2}); }catch(e){}
   // Insert UNDER the news dots (dots stay clickable on top). The port anchor is nudged DOWN (icon-offset)
   // and set to always show, so at a coastal capital it sits just BELOW the name — visible, not hidden and
   // not overlapping the letters. g-pulse is the lowest dot layer.
@@ -3765,13 +3836,12 @@ function addGlobeOverlays(){
     mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":true,"icon-offset":[0,22]},paint:{}}, underDots);   // always show + nudged down so a port at a capital sits BELOW the name (Riga/Tallinn), not hidden or overlapping
     // ports are symbol-only on the globe too (matches the flat map) — no name label so it can't overlap city labels
   }
-  // MILITARY BASES — a slate diamond-ish CIRCLE (no sprite icon needed), distinct from the bright news dots;
-  // the base NAME appears once you zoom in (z>=5). Off by default; the "Military bases" layer toggle shows it.
+  // MILITARY BASES — a CROSSED-SWORDS military icon (like the port anchor), distinct from the bright news dots;
+  // the base NAME appears once you zoom in (z>=5). Click a marker for its info popup. Off by default.
   if(!mlMap.getSource("g-bases")){
     mlMap.addSource("g-bases",{type:"geojson",data:milbasesGeoGL()});
-    mlMap.addLayer({id:"g-bases-pt",type:"circle",source:"g-bases",minzoom:2,layout:{visibility:layers.bases?"visible":"none"},
-      paint:{"circle-radius":["interpolate",["linear"],["zoom"],2,3.2,6,5],"circle-color":"#5b6b7a","circle-stroke-color":"#ffffff","circle-stroke-width":1.4,"circle-opacity":0.95}}, underDots);
-    mlMap.addLayer({id:"g-bases-lbl",type:"symbol",source:"g-bases",minzoom:5,layout:{visibility:layers.bases?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":10.5,"text-offset":[0,1.0],"text-anchor":"top","text-allow-overlap":false,"text-optional":true},paint:{"text-color":"#3c4c5c","text-halo-color":"#ffffff","text-halo-width":1.6}}, underDots);
+    mlMap.addLayer({id:"g-bases-pt",type:"symbol",source:"g-bases",minzoom:2,layout:{visibility:layers.bases?"visible":"none","icon-image":"mil-base","icon-size":["interpolate",["linear"],["zoom"],2,0.52,6,0.9],"icon-allow-overlap":true}, paint:{}}, underDots);
+    mlMap.addLayer({id:"g-bases-lbl",type:"symbol",source:"g-bases",minzoom:5,layout:{visibility:layers.bases?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":10.5,"text-offset":[0,1.15],"text-anchor":"top","text-allow-overlap":false,"text-optional":true},paint:{"text-color":"#3c4c5c","text-halo-color":"#ffffff","text-halo-width":1.6}}, underDots);
   }
   // SEA / GULF names — so a dot floating on water is identifiable without clicking it. Shown across zooms;
   // collision (text-allow-overlap:false) hides any that would overlap the basemap's own water label or a city.
