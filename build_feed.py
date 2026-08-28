@@ -164,6 +164,16 @@ def build_once():
         except Exception as ex:
             print("  world_%dh.json FAILED: %s" % (h, ex), flush=True)
     print("  wrote %d share pages -> %s/s/" % (pages, OUT), flush=True)
+    # LIVE TV — resolve each channel's current live video id once here (server-side; a browser can't, CORS
+    # blocks youtube.com) and hand it to the website as static JSON. The loop refresh keeps the ids fresh, so
+    # the web UI's webApi.live_tv() just fetches this file. (Desktop uses the pywebview Api.live_tv directly.)
+    try:
+        tv = api.live_tv()
+        _write_atomic(os.path.join(OUT, "live_tv.json"),
+                      json.dumps({"channels": tv, "generated": int(time.time())}, ensure_ascii=False, separators=(",", ":")))
+        print("  live_tv.json  %d/%d live" % (sum(1 for c in tv if c.get("live")), len(tv)), flush=True)
+    except Exception as ex:
+        print("  live_tv.json FAILED: %s" % ex, flush=True)
 
 
 def main():

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.80"
+APP_VERSION = "1.4.81"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -2127,8 +2127,10 @@ _LIVE_TV_CHANNELS = [
     {"name": "Sky News",            "handle": "SkyNews",           "cat": "World",        "cc": "gb", "note": ""},
     {"name": "TRT World",           "handle": "trtworld",          "cat": "World",        "cc": "tr", "note": "Turkish state media"},
     {"name": "ABC News (US)",       "handle": "ABCNews",           "cat": "N. America",   "cc": "us", "note": ""},
+    {"name": "Bloomberg",           "handle": "markets",           "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "CBS News",            "handle": "CBSNews",           "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "CBC News",            "handle": "cbcnews",           "cat": "N. America",   "cc": "ca", "note": "Canadian public broadcaster"},
+    {"name": "CNN",                 "handle": "CNN",               "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "LiveNOW from FOX",    "handle": "livenowfox",        "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "NBC News NOW",        "handle": "NBCNews",           "cat": "N. America",   "cc": "us", "note": ""},
     {"name": "Euronews",            "handle": "euronews",          "cat": "Europe",       "cc": "eu", "note": ""},
@@ -7178,6 +7180,12 @@ WORLD_FEEDS = [
     ("https://feeds.feedburner.com/breitbart", "United States of America"),                       # US populist right
     ("https://www.thegatewaypundit.com/feed/", "United States of America"),                       # US far right
     ("https://feeds.feedburner.com/zerohedge/feed", "United States of America"),                  # US contrarian / populist
+    # --- added: CNN + Bloomberg (BBC is already covered by the feeds.bbci.co.uk block above) ---
+    ("http://rss.cnn.com/rss/edition_world.rss", "United States of America"),                     # CNN — world
+    ("http://rss.cnn.com/rss/cnn_topstories.rss", "United States of America"),                    # CNN — top stories
+    ("https://feeds.bloomberg.com/politics/news.rss", "United States of America"),                # Bloomberg — politics
+    ("https://feeds.bloomberg.com/economics/news.rss", "United States of America"),               # Bloomberg — economics
+    ("https://feeds.bloomberg.com/markets/news.rss", "United States of America"),                 # Bloomberg — markets
 ]
 
 

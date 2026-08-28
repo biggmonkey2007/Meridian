@@ -1064,6 +1064,21 @@ body.topo-active .zoomers{bottom:130px}
 .tv-btn svg{width:14px;height:14px}
 .tv-btn:hover{background:var(--chip);color:var(--ink)}
 .tv-btn.on{color:var(--ink-1)}
+/* COLLAPSIBLE HEADER — hide the bar for a pure-video view; hover the top edge to peek it back (like a video
+   player's auto-hiding controls). In no-head mode the header floats as a translucent overlay over the video. */
+.tv-reveal{display:none;position:absolute;top:0;left:0;right:0;height:22px;z-index:4;cursor:pointer}
+.tv-win.no-head .tv-reveal{display:block}
+.tv-reveal::after{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:32px;height:3.5px;border-radius:3px;background:rgba(255,255,255,.3);transition:background .15s,width .15s}
+.tv-reveal:hover::after{background:rgba(255,255,255,.62);width:46px}
+.tv-win.no-head .tv-head{position:absolute;top:0;left:0;right:0;z-index:5;border-radius:12px 12px 0 0;transform:translateY(-102%);
+  transition:transform .2s ease;background:rgba(14,19,27,.9);border-bottom:1px solid rgba(255,255,255,.09);backdrop-filter:blur(7px)}
+.tv-win.no-head.peek .tv-head{transform:translateY(0)}
+.tv-win.no-head .tv-head .tv-now .nm{color:#f3f5f8}
+.tv-win.no-head .tv-head .tv-btn{color:rgba(255,255,255,.7)}
+.tv-win.no-head .tv-head .tv-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+.tv-win.no-head .tv-head .tv-btn.on{color:#fff}
+#tv-collapse svg{transition:transform .2s}
+.tv-win.no-head #tv-collapse svg{transform:rotate(180deg)}   /* chevron flips to "restore" when collapsed */
 .tv-main{display:flex;min-height:0;flex:1;overflow:hidden}
 .tv-stage{flex:1;min-width:0;background:#0a0d12;position:relative;display:flex;align-items:center;justify-content:center}
 .tv-player{width:100%;aspect-ratio:16/9;max-height:100%;position:relative;background:#0a0d12}   /* MATTE-fit 16:9 so no ugly black bar */
@@ -1305,6 +1320,7 @@ video{color-scheme:dark}
     <div class="tv-now" id="tv-now"><span class="nm">Live TV</span></div>
     <div class="tv-actions">
       <button class="tv-btn" id="tv-list" title="Channels" aria-label="Show or hide the channel list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button class="tv-btn" id="tv-collapse" title="Hide the bar (hover the top to bring it back)" aria-label="Hide the header bar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14l5-5 5 5"/></svg></button>
       <button class="tv-btn" id="tv-min" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
       <button class="tv-btn" id="tv-x" title="Close" aria-label="Close live TV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
@@ -1314,6 +1330,7 @@ video{color-scheme:dark}
     <div class="tv-rail" id="tv-rail"><div class="tv-load"><span class="spin"></span> Finding live channels…</div></div>
   </div>
   <div class="tv-resize" id="tv-resize" title="Drag to resize" aria-hidden="true"></div>
+  <div class="tv-reveal" id="tv-reveal" title="Bring the bar back" aria-hidden="true"></div>
 </div>
 
 <div id="stage">
@@ -4121,6 +4138,13 @@ function webApi(){
       if(!r.ok) throw new Error("feed "+r.status);
       return await r.json();
     },
+    // LIVE TV on the WEBSITE: the build server (build_feed.py) resolves the live video ids and writes them to
+    // live_tv.json (a browser can't — CORS blocks youtube.com). So on the web this just reads that static file.
+    live_tv: async ()=>{
+      const r=await fetch(FEED_BASE+"/live_tv.json",{cache:"no-cache"});
+      if(!r.ok) throw new Error("live_tv "+r.status);
+      const j=await r.json(); return j.channels||[];
+    },
     app_version: async ()=>({feed: FEED_BASE, web: true})
   };
   return _webApi;
@@ -6373,11 +6397,12 @@ function tvPlay(id, name, cc, note){
 function tvSize16(w){
   const win=document.getElementById("tv-win"); if(!win) return;
   const railW = win.classList.contains("no-list") ? 0 : TV_RAIL;
+  const headH = win.classList.contains("no-head") ? 0 : TV_HEAD;   // header can be collapsed to an overlay
   w=Math.max(300, Math.min(w, innerWidth-16));
   let stageW=Math.max(150, w-railW);
-  let h=TV_HEAD + stageW*9/16;
+  let h=headH + stageW*9/16;
   const maxH=innerHeight-16;
-  if(h>maxH){ h=maxH; w=Math.round((h-TV_HEAD)*16/9)+railW; }   // height-limited -> back-solve width
+  if(h>maxH){ h=maxH; w=Math.round((h-headH)*16/9)+railW; }   // height-limited -> back-solve width
   win.style.width=Math.round(w)+"px"; win.style.height=Math.round(h)+"px"; tvFloatW=Math.round(w);
 }
 // Collapse / expand the channel list — the "extendable" bit, so you can just watch the stream.
@@ -6387,6 +6412,16 @@ function tvToggleList(){
   const shown=!w.classList.contains("no-list");
   const b=document.getElementById("tv-list"); if(b) b.classList.toggle("on", shown);
   if(!tvIsMobile() && w.classList.contains("open")) tvSize16((parseInt(w.style.width,10)||tvFloatW||660));   // re-fit 16:9 to the new stage width
+}
+// Collapse the HEADER bar for a pure-video view. When collapsed, hover the top edge (the reveal strip) to peek
+// the bar back — like a video player's auto-hiding controls. Keeps the video the SAME size (window loses the bar).
+function tvToggleHead(){
+  const w=document.getElementById("tv-win"); if(!w) return;
+  const collapsing=!w.classList.contains("no-head");
+  w.classList.toggle("no-head", collapsing);
+  if(!collapsing) w.classList.remove("peek");
+  const b=document.getElementById("tv-collapse"); if(b) b.classList.toggle("on", collapsing);
+  if(!tvIsMobile() && w.classList.contains("open")) tvSize16((parseInt(w.style.width,10)||tvFloatW||660));
 }
 async function tvLoad(){
   const rail=document.getElementById("tv-rail"); if(!rail) return;
@@ -6426,7 +6461,20 @@ function closeLiveTV(){
 { const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=()=>{ const w=document.getElementById("tv-win"); (w&&w.classList.contains("open")&&!w.classList.contains("min"))?closeLiveTV():openLiveTV(); };
   const tx=document.getElementById("tv-x"); if(tx) tx.onclick=closeLiveTV;
   const tl=document.getElementById("tv-list"); if(tl) tl.onclick=tvToggleList;
+  const tc=document.getElementById("tv-collapse"); if(tc) tc.onclick=tvToggleHead;
   const tmn=document.getElementById("tv-min"); if(tmn) tmn.onclick=()=>{ const w=document.getElementById("tv-win"); if(w) w.classList.toggle("min"); }; }
+// HEADER PEEK — when the bar is collapsed, hovering the thin top strip (or the bar itself) slides it back down;
+// leaving it slides it away again. A short hide delay + show-on-enter keeps it from flickering as you move.
+(function(){
+  const win=document.getElementById("tv-win"), head=document.getElementById("tv-drag"), reveal=document.getElementById("tv-reveal");
+  if(!win||!head||!reveal) return;
+  let hideT=null;
+  const show=()=>{ clearTimeout(hideT); if(win.classList.contains("no-head")) win.classList.add("peek"); };
+  const hide=()=>{ clearTimeout(hideT); hideT=setTimeout(()=>win.classList.remove("peek"), 130); };
+  reveal.addEventListener("mouseenter", show); reveal.addEventListener("mouseleave", hide);
+  head.addEventListener("mouseenter", show);   head.addEventListener("mouseleave", hide);
+  reveal.addEventListener("click", ()=>{ if(win.classList.contains("no-head")) win.classList.toggle("peek"); });   // tap on touch
+})();
 // DRAG by the header, RESIZE from the corner grip (keeps the player 16:9). Dragging near a screen edge SNAPS the
 // window flush to that edge AT ITS CURRENT SIZE (edge-magnetism — never resizes to fill the side). Mouse + touch.
 (function(){
