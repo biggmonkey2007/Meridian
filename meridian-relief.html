@@ -402,6 +402,14 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 #gloss-pop.below::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:var(--panel)}
 /* Seaport profile popup — opens when a port anchor is clicked (like the country panel, but for the port). */
 #port-pop{position:fixed;z-index:3200;width:min(300px,88vw);max-height:min(72vh,540px);overflow-y:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:13px;box-shadow:0 14px 44px rgba(10,16,24,.34);padding:13px 14px 12px;opacity:0;transform:translateY(4px) scale(.985);transition:opacity .14s ease,transform .14s ease;pointer-events:none}
+/* MILITARY-BASE click popup (maplibre popup, themed) */
+.maplibregl-popup.base-popup .maplibregl-popup-content{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:9px 12px 10px;font-family:var(--sans)}
+.maplibregl-popup.base-popup .maplibregl-popup-tip{display:none}
+.maplibregl-popup.base-popup .maplibregl-popup-close-button{color:var(--ink-3);font-size:17px;padding:0 5px;line-height:1}
+.base-pop .bp-name{font-weight:700;font-size:13px;letter-spacing:-.01em;padding-right:10px}
+.base-pop .bp-type{font-size:11.5px;color:var(--ink-2);margin-top:2px;font-weight:600}
+.base-pop .bp-co{font-size:11px;color:var(--ink-3);margin-top:1px}
+.base-pop .bp-note{font-size:9px;color:var(--ink-3);margin-top:6px;font-style:italic}
 #port-pop.show{opacity:1;transform:none;pointer-events:auto}
 #port-pop .pp-x{position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;background:var(--chip);border-radius:7px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
 #port-pop .pp-x:hover{background:var(--line);color:var(--ink)}
@@ -1071,12 +1079,18 @@ body.topo-active .zoomers{bottom:130px}
 .tv-reveal::after{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);width:32px;height:3.5px;border-radius:3px;background:rgba(255,255,255,.3);transition:background .15s,width .15s}
 .tv-reveal:hover::after{background:rgba(255,255,255,.62);width:46px}
 .tv-win.no-head .tv-head{position:absolute;top:0;left:0;right:0;z-index:5;border-radius:12px 12px 0 0;transform:translateY(-102%);
-  transition:transform .2s ease;background:rgba(14,19,27,.9);border-bottom:1px solid rgba(255,255,255,.09);backdrop-filter:blur(7px)}
+  transition:transform .2s ease;background:rgba(250,251,253,.93);border-bottom:1px solid rgba(20,30,45,.1);backdrop-filter:blur(7px)}
 .tv-win.no-head.peek .tv-head{transform:translateY(0)}
-.tv-win.no-head .tv-head .tv-now .nm{color:#f3f5f8}
-.tv-win.no-head .tv-head .tv-btn{color:rgba(255,255,255,.7)}
-.tv-win.no-head .tv-head .tv-btn:hover{background:rgba(255,255,255,.15);color:#fff}
-.tv-win.no-head .tv-head .tv-btn.on{color:#fff}
+.tv-win.no-head .tv-head .tv-now .nm{color:var(--ink)}
+.tv-win.no-head .tv-head .tv-btn{color:var(--ink-2)}
+.tv-win.no-head .tv-head .tv-btn:hover{background:rgba(20,30,45,.08);color:var(--ink)}
+.tv-win.no-head .tv-head .tv-btn.on{color:var(--ink)}
+/* DARK MODE — the collapsed overlay flips to a dark frosted bar with light text (light default is above) */
+:root[data-theme="dark"] .tv-win.no-head .tv-head{background:rgba(14,19,27,.9);border-bottom-color:rgba(255,255,255,.09)}
+:root[data-theme="dark"] .tv-win.no-head .tv-head .tv-now .nm{color:#f3f5f8}
+:root[data-theme="dark"] .tv-win.no-head .tv-head .tv-btn{color:rgba(255,255,255,.72)}
+:root[data-theme="dark"] .tv-win.no-head .tv-head .tv-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+:root[data-theme="dark"] .tv-win.no-head .tv-head .tv-btn.on{color:#fff}
 #tv-collapse svg{transition:transform .2s}
 .tv-win.no-head #tv-collapse svg{transform:rotate(180deg)}   /* chevron flips to "restore" when collapsed */
 .tv-main{display:flex;min-height:0;flex:1;overflow:hidden}
@@ -1501,6 +1515,71 @@ const RIVERS = {"f":[["Kama",[[51.94,55.7],[51.88,55.69],[51.82,55.7],[51.75,55.
 const REGIONS = {"North America": ["Canada", "United States of America", "Mexico"], "Central America": ["Guatemala", "Belize", "Honduras", "El Salvador", "Nicaragua", "Costa Rica", "Panama"], "The Caribbean": ["Cuba", "Haiti", "Dominican Rep.", "Jamaica", "Bahamas", "Trinidad and Tobago", "Puerto Rico"], "The Andes": ["Colombia", "Ecuador", "Peru", "Bolivia", "Chile"], "Southern Cone": ["Argentina", "Uruguay", "Paraguay"], "British Isles": ["United Kingdom", "Ireland"], "Iberia": ["Spain", "Portugal"], "Benelux": ["Netherlands", "Belgium", "Luxembourg"], "Scandinavia": ["Norway", "Sweden", "Denmark", "Finland"], "Baltic States": ["Estonia", "Latvia", "Lithuania"], "Central Europe": ["Germany", "Poland", "Czechia", "Slovakia", "Austria", "Hungary", "Switzerland", "Slovenia"], "The Balkans": ["Croatia", "Serbia", "Bosnia and Herz.", "Montenegro", "Kosovo", "Macedonia", "Albania", "Bulgaria", "Romania", "Greece"], "Maghreb": ["Morocco", "Algeria", "Tunisia", "Libya"], "The Sahel": ["Mauritania", "Mali", "Niger", "Chad", "Burkina Faso", "Sudan"], "West Africa": ["Nigeria", "Ghana", "Côte d'Ivoire", "Senegal", "Guinea", "Benin", "Togo", "Sierra Leone", "Liberia"], "Horn of Africa": ["Ethiopia", "Somalia", "Eritrea", "Djibouti", "Somaliland"], "East Africa": ["Kenya", "Tanzania", "Uganda", "Rwanda", "Burundi"], "Southern Africa": ["South Africa", "Namibia", "Botswana", "Zimbabwe", "Zambia", "Mozambique", "Lesotho", "eSwatini"], "Middle East": ["Saudi Arabia", "United Arab Emirates", "Qatar", "Bahrain", "Kuwait", "Oman", "Yemen", "Iraq", "Iran", "Israel", "Jordan", "Lebanon", "Syria", "Palestine"], "The Caucasus": ["Georgia", "Armenia", "Azerbaijan"], "Central Asia": ["Kazakhstan", "Uzbekistan", "Turkmenistan", "Kyrgyzstan", "Tajikistan"], "South Asia": ["India", "Pakistan", "Bangladesh", "Nepal", "Sri Lanka", "Bhutan", "Afghanistan"], "East Asia": ["China", "Japan", "South Korea", "North Korea", "Taiwan", "Mongolia"], "Southeast Asia": ["Indonesia", "Malaysia", "Thailand", "Vietnam", "Philippines", "Myanmar", "Cambodia", "Laos", "Singapore", "Brunei", "Timor-Leste"], "Oceania": ["Australia", "New Zealand", "Papua New Guinea", "Fiji", "Solomon Is.", "Vanuatu"]};
 const REGION_PALETTE = ["#C0653F", "#3E7CB1", "#2E8B6B", "#B5852A", "#7E5AA8", "#4A7A8C", "#A8466B", "#5C7A3A", "#9A6630", "#5F6BB0", "#3F8F8F"];
 const PORTS = {"China": [["Shanghai", 31.23, 121.49], ["Shenzhen", 22.54, 114.06], ["Ningbo", 29.87, 121.55], ["Qingdao", 36.07, 120.32], ["Guangzhou", 23.1, 113.44], ["Tianjin", 38.98, 117.7]], "Hong Kong": [["Hong Kong", 22.3, 114.13]], "Singapore": [["Port of Singapore", 1.26, 103.84]], "South Korea": [["Busan", 35.1, 129.04], ["Incheon", 37.45, 126.6]], "Japan": [["Yokohama", 35.45, 139.66], ["Nagoya", 35.05, 136.86], ["Kobe", 34.68, 135.21], ["Tokyo", 35.62, 139.78]], "Netherlands": [["Rotterdam", 51.95, 4.14], ["Amsterdam", 52.4, 4.85]], "Belgium": [["Antwerp", 51.26, 4.4], ["Zeebrugge", 51.33, 3.2]], "Germany": [["Hamburg", 53.53, 9.97], ["Bremerhaven", 53.54, 8.58]], "United States of America": [["Los Angeles", 33.74, -118.27], ["Long Beach", 33.75, -118.21], ["New York/NJ", 40.67, -74.04], ["Savannah", 32.08, -81.1], ["Houston", 29.73, -95.27], ["Seattle", 47.6, -122.34]], "United Kingdom": [["Felixstowe", 51.95, 1.31], ["Southampton", 50.9, -1.42], ["London Gateway", 51.51, 0.45]], "Spain": [["Algeciras", 36.13, -5.44], ["Valencia", 39.45, -0.32], ["Barcelona", 41.34, 2.16]], "United Arab Emirates": [["Jebel Ali", 25.01, 55.06], ["Khalifa Port", 24.81, 54.65]], "Malaysia": [["Port Klang", 3.0, 101.39], ["Tanjung Pelepas", 1.36, 103.55]], "India": [["Mumbai (JNPT)", 18.95, 72.95], ["Mundra", 22.74, 69.7], ["Chennai", 13.1, 80.3], ["Kolkata", 22.55, 88.31]], "Italy": [["Genoa", 44.4, 8.9], ["Gioia Tauro", 38.43, 15.9], ["Trieste", 45.64, 13.76]], "France": [["Le Havre", 49.48, 0.12], ["Marseille", 43.34, 5.36]], "Greece": [["Piraeus", 37.94, 23.64]], "Brazil": [["Santos", -23.96, -46.3], ["Paranaguá", -25.5, -48.51]], "Panama": [["Balboa", 8.95, -79.57], ["Colón", 9.36, -79.9]], "Egypt": [["Port Said", 31.26, 32.3], ["Alexandria", 31.18, 29.87], ["Damietta", 31.46, 31.82]], "Saudi Arabia": [["Jeddah", 21.48, 39.16], ["Dammam", 26.5, 50.2], ["King Abdullah", 22.5, 39.1]], "Sri Lanka": [["Colombo", 6.95, 79.84]], "Turkey": [["Ambarlı (Istanbul)", 40.97, 28.68], ["Mersin", 36.8, 34.63], ["İzmir", 38.43, 27.1]], "Russia": [["Novorossiysk", 44.72, 37.78], ["St Petersburg", 59.9, 30.25], ["Vladivostok", 43.07, 131.9]], "Indonesia": [["Tanjung Priok", -6.1, 106.88], ["Surabaya", -7.2, 112.73]], "Vietnam": [["Cat Lai (HCMC)", 10.76, 106.79], ["Hai Phong", 20.86, 106.69]], "Thailand": [["Laem Chabang", 13.08, 100.89], ["Bangkok", 13.7, 100.57]], "Philippines": [["Manila", 14.59, 120.96]], "Taiwan": [["Kaohsiung", 22.61, 120.27], ["Keelung", 25.13, 121.74]], "Australia": [["Melbourne", -37.83, 144.92], ["Port Botany", -33.98, 151.23], ["Brisbane", -27.38, 153.17], ["Fremantle", -32.05, 115.74]], "South Africa": [["Durban", -29.87, 31.03], ["Cape Town", -33.91, 18.43], ["Richards Bay", -28.8, 32.08]], "Nigeria": [["Lagos (Apapa)", 6.44, 3.36], ["Port Harcourt", 4.76, 7.01]], "Morocco": [["Tanger Med", 35.88, -5.5], ["Casablanca", 33.6, -7.62]], "Canada": [["Vancouver", 49.29, -123.1], ["Montreal", 45.55, -73.54], ["Prince Rupert", 54.31, -130.32]], "Mexico": [["Manzanillo", 19.05, -104.31], ["Veracruz", 19.2, -96.13], ["Lázaro Cárdenas", 17.96, -102.18]], "Argentina": [["Buenos Aires", -34.61, -58.37], ["Rosario", -32.95, -60.63]], "Chile": [["Valparaíso", -33.04, -71.63], ["San Antonio", -33.59, -71.61]], "Peru": [["Callao", -12.05, -77.14]], "Colombia": [["Cartagena", 10.4, -75.51], ["Buenaventura", 3.88, -77.07]], "Ecuador": [["Guayaquil", -2.27, -79.9]], "Pakistan": [["Karachi", 24.81, 66.98], ["Gwadar", 25.13, 62.32]], "Bangladesh": [["Chittagong", 22.31, 91.8]], "Iran": [["Bandar Abbas", 27.14, 56.21]], "Iraq": [["Umm Qasr", 30.03, 47.93]], "Oman": [["Salalah", 16.95, 54.01], ["Sohar", 24.5, 56.62]], "Qatar": [["Hamad Port", 24.99, 51.61]], "Kuwait": [["Shuwaikh", 29.35, 47.93]], "Israel": [["Haifa", 32.83, 35.0], ["Ashdod", 31.83, 34.65]], "Lebanon": [["Beirut", 33.9, 35.52], ["Tripoli", 34.45, 35.83]], "Kenya": [["Mombasa", -4.06, 39.67]], "Tanzania": [["Dar es Salaam", -6.83, 39.3]], "Ghana": [["Tema", 5.62, 0.0], ["Takoradi", 4.89, -1.76]], "Côte d'Ivoire": [["Abidjan", 5.28, -4.01]], "Senegal": [["Dakar", 14.68, -17.42]], "Djibouti": [["Djibouti", 11.59, 43.14]], "Angola": [["Luanda", -8.78, 13.23]], "Mozambique": [["Maputo", -25.97, 32.57], ["Beira", -19.83, 34.84]], "Sweden": [["Gothenburg", 57.69, 11.84]], "Norway": [["Oslo", 59.9, 10.72], ["Bergen", 60.39, 5.31]], "Denmark": [["Aarhus", 56.15, 10.22], ["Copenhagen", 55.7, 12.62]], "Finland": [["Helsinki", 60.15, 24.95]], "Poland": [["Gdańsk", 54.4, 18.67], ["Gdynia", 54.53, 18.55]], "Portugal": [["Sines", 37.95, -8.84], ["Lisbon", 38.7, -9.15]], "Ireland": [["Dublin", 53.35, -6.21]], "Croatia": [["Rijeka", 45.33, 14.44]], "Ukraine": [["Odessa", 46.49, 30.74]], "Romania": [["Constanța", 44.17, 28.65]], "Algeria": [["Algiers", 36.77, 3.07]], "Tunisia": [["Radès", 36.79, 10.28]], "Libya": [["Tripoli", 32.9, 13.18]], "Yemen": [["Aden", 12.79, 45.02]], "Myanmar": [["Yangon", 16.77, 96.18]], "Cambodia": [["Sihanoukville", 10.65, 103.52]], "New Zealand": [["Auckland", -36.84, 174.77], ["Tauranga", -37.64, 176.18]], "Cuba": [["Havana", 23.14, -82.35]], "Dominican Rep.": [["Caucedo", 18.42, -69.63]], "Jamaica": [["Kingston", 17.97, -76.79]], "Venezuela": [["Puerto Cabello", 10.47, -68.01]], "Uruguay": [["Montevideo", -34.9, -56.21]], "Iceland": [["Reykjavík", 64.15, -21.94]], "Estonia": [["Tallinn", 59.44, 24.77]], "Latvia": [["Riga", 56.95, 24.1]], "Lithuania": [["Klaipėda", 55.7, 21.13]], "Georgia": [["Poti", 42.15, 41.67], ["Batumi", 41.65, 41.64]], "Bulgaria": [["Varna", 43.2, 27.92]], "Bahrain": [["Khalifa Bin Salman", 26.16, 50.66]], "Brunei": [["Muara", 5.02, 115.07]], "Bahamas": [["Freeport", 26.53, -78.7]], "Trinidad and Tobago": [["Port of Spain", 10.65, -61.51]], "Papua New Guinea": [["Port Moresby", -9.47, 147.15]], "Somalia": [["Mogadishu", 2.03, 45.34]], "Sudan": [["Port Sudan", 19.62, 37.22]], "Eritrea": [["Massawa", 15.61, 39.47]], "Madagascar": [["Toamasina", -18.16, 49.41]], "Cameroon": [["Douala", 4.05, 9.7]], "Gabon": [["Libreville", 0.39, 9.45]], "Congo": [["Pointe-Noire", -4.79, 11.84]], "Dem. Rep. Congo": [["Matadi", -5.82, 13.46]], "Namibia": [["Walvis Bay", -22.95, 14.5]], "Costa Rica": [["Limón", 10.0, -83.03]], "Guatemala": [["Puerto Quetzal", 13.92, -90.79]], "Honduras": [["Puerto Cortés", 15.83, -87.95]], "El Salvador": [["Acajutla", 13.59, -89.83]], "Nicaragua": [["Corinto", 12.48, -87.18]]};
+// MAJOR MILITARY BASES — a toggleable reference layer of PUBLICLY-DOCUMENTED major bases (the same info on
+// Wikipedia / widely reported), NOT live troop movements (no free, verified source exists for those). Each:
+// [name, lat, lng, country, type]. Off by default; toggle "Military bases" in Map layers.
+const MIL_BASES = [
+  ["Naval Station Norfolk", 36.95, -76.33, "United States", "US Navy (largest)"],
+  ["Naval Base San Diego", 32.68, -117.13, "United States", "US Navy (Pacific Fleet)"],
+  ["Joint Base Pearl Harbor–Hickam", 21.35, -157.95, "United States", "US Navy/Air"],
+  ["Fort Liberty (Fort Bragg)", 35.14, -79.00, "United States", "US Army (airborne)"],
+  ["Naval Support Activity Bahrain", 26.21, 50.61, "Bahrain", "US Navy 5th Fleet"],
+  ["Al Udeid Air Base", 25.12, 51.32, "Qatar", "US Air (CENTCOM)"],
+  ["Ramstein Air Base", 49.44, 7.60, "Germany", "US Air (Europe)"],
+  ["Aviano Air Base", 46.03, 12.60, "Italy", "US Air"],
+  ["Naval Air Station Sigonella", 37.40, 14.92, "Italy", "US/NATO Navy Air"],
+  ["Naval Station Rota", 36.62, -6.35, "Spain", "US/Spain Navy"],
+  ["Incirlik Air Base", 37.00, 35.43, "Turkey", "US/NATO Air"],
+  ["RAF Lakenheath", 52.41, 0.56, "United Kingdom", "US Air"],
+  ["Camp Lemonnier", 11.55, 43.15, "Djibouti", "US base (Africa)"],
+  ["Camp Humphreys", 36.96, 127.03, "South Korea", "US Army (largest overseas)"],
+  ["Osan Air Base", 37.09, 127.03, "South Korea", "US Air"],
+  ["Kadena Air Base", 26.35, 127.77, "Japan", "US Air (Okinawa)"],
+  ["Fleet Activities Yokosuka", 35.29, 139.66, "Japan", "US Navy 7th Fleet"],
+  ["Yokota Air Base", 35.75, 139.35, "Japan", "US Air"],
+  ["Andersen Air Force Base", 13.58, 144.93, "Guam", "US Air"],
+  ["Naval Base Guam", 13.43, 144.66, "Guam", "US Navy (subs)"],
+  ["Diego Garcia", -7.31, 72.41, "BIOT", "US/UK Navy/Air"],
+  ["Al Dhafra Air Base", 24.25, 54.55, "United Arab Emirates", "US Air"],
+  ["Ain al-Asad Air Base", 33.79, 42.44, "Iraq", "US/Iraq Air"],
+  ["Guantanamo Bay", 19.90, -75.15, "Cuba", "US Navy"],
+  ["Pituffik Space Base (Thule)", 76.53, -68.70, "Greenland", "US Space Force"],
+  ["Darwin (RAAF/US Marines)", -12.41, 130.87, "Australia", "Australia/US"],
+  // Russia
+  ["Sevastopol Naval Base", 44.62, 33.53, "Crimea", "Russian Navy (Black Sea)"],
+  ["Baltiysk (Kaliningrad)", 54.65, 19.91, "Russia", "Russian Navy (Baltic)"],
+  ["Severomorsk", 69.07, 33.42, "Russia", "Russian Navy (Northern)"],
+  ["Vladivostok", 43.10, 131.87, "Russia", "Russian Navy (Pacific)"],
+  ["Tartus Naval Base", 34.90, 35.87, "Syria", "Russian Navy"],
+  ["Khmeimim Air Base", 35.41, 35.95, "Syria", "Russian Air"],
+  ["Engels-2 Air Base", 51.48, 46.21, "Russia", "Russian Air (bombers)"],
+  // China
+  ["PLA Support Base Djibouti", 11.59, 43.07, "Djibouti", "Chinese base (first overseas)"],
+  ["Yulin Naval Base (Hainan)", 18.20, 109.69, "China", "Chinese Navy (subs)"],
+  ["Zhanjiang", 21.20, 110.40, "China", "Chinese Navy (South Sea Fleet)"],
+  ["Qingdao", 36.10, 120.42, "China", "Chinese Navy (North Sea Fleet)"],
+  ["Ningbo", 29.87, 121.55, "China", "Chinese Navy (East Sea Fleet)"],
+  ["Fiery Cross Reef", 9.55, 112.89, "Spratly Islands", "Chinese outpost (disputed)"],
+  ["Subi Reef", 10.92, 114.08, "Spratly Islands", "Chinese outpost (disputed)"],
+  ["Mischief Reef", 9.90, 115.53, "Spratly Islands", "Chinese outpost (disputed)"],
+  ["Woody Island", 16.83, 112.34, "Paracel Islands", "Chinese outpost (disputed)"],
+  // UK / France / others
+  ["HMNB Portsmouth", 50.80, -1.10, "United Kingdom", "Royal Navy"],
+  ["HMNB Clyde (Faslane)", 56.07, -4.82, "United Kingdom", "Royal Navy (subs)"],
+  ["RAF Akrotiri", 34.59, 32.99, "Cyprus", "UK Air"],
+  ["Toulon Naval Base", 43.11, 5.90, "France", "French Navy"],
+  ["French Forces Djibouti", 11.55, 43.16, "Djibouti", "French base"],
+  ["French Base (Abu Dhabi)", 24.42, 54.47, "United Arab Emirates", "French base"],
+  ["Souda Bay", 35.53, 24.15, "Greece", "NATO Navy"],
+  ["Prince Sultan Air Base", 24.06, 47.58, "Saudi Arabia", "US/Saudi Air"],
+  ["Muwaffaq Salti Air Base", 31.83, 36.78, "Jordan", "US/Jordan Air"],
+  ["Bandar Abbas Naval Base", 27.13, 56.21, "Iran", "Iranian Navy"],
+  ["INS Kadamba (Karwar)", 14.82, 74.13, "India", "Indian Navy"],
+  ["Port Blair (Andaman)", 11.66, 92.72, "India", "Indian Navy tri-command"],
+  ["Changi Naval Base", 1.32, 104.02, "Singapore", "Singapore Navy"],
+  ["HMAS Stirling", -32.23, 115.68, "Australia", "Australian Navy (subs)"],
+  ["CFB Halifax", 44.65, -63.57, "Canada", "Canadian Navy (Atlantic)"]
+];
 const RANGES = {"Himalayas": [[35.2,74.6],[34.5,75.8],[33.6,76.9],[32.5,78.4],[31.5,79.7],[30.5,81.0],[29.7,82.5],[28.9,84.0],[28.3,85.6],[28.0,87.1],[27.8,88.6],[27.9,90.1],[28.1,91.6],[28.6,93.1],[29.4,94.6],[29.6,95.4]], "Karakoram": [[36.6,74.0],[36.3,75.0],[35.9,76.0],[35.6,76.9],[35.4,77.6]], "Hindu Kush": [[37.0,69.6],[36.5,70.6],[36.0,71.6],[35.4,72.6],[34.8,73.6]], "Andes": [[11,-72],[8,-73.6],[5,-75.6],[2,-77.2],[-1,-78.6],[-5,-78.5],[-9,-77.5],[-13,-74.6],[-16,-71.6],[-19,-69],[-22,-68],[-25,-68.6],[-28,-69.6],[-31,-70.6],[-34,-70.2],[-37,-71],[-40,-71.6],[-43,-72.1],[-46,-72.6],[-49,-73],[-52,-73],[-54,-71.5]], "Rocky Mountains": [[60,-128],[57,-125],[54,-121],[51,-117],[49,-114.5],[46,-112],[44,-110.5],[42,-107.5],[40,-106],[38,-105.5],[36,-106],[34,-107.5],[32,-109.5]], "Appalachians": [[47,-69],[45,-71],[43,-73.2],[41,-76],[39,-79],[37,-81.2],[35,-83.5],[34,-85]], "Sierra Madre": [[30,-109],[27,-107],[24,-105.6],[21,-104.5],[19,-103],[17.6,-100]], "Alps": [[44.2,7.0],[44.9,6.9],[45.5,6.9],[46.0,7.8],[46.4,9.0],[46.7,10.5],[46.9,11.9],[47.1,13.1],[47.2,14.3],[47.1,15.3]], "Pyrenees": [[42.5,-1.6],[42.7,-0.5],[42.8,0.5],[42.6,1.5],[42.4,2.4]], "Apennines": [[44.3,7.9],[44.0,9.5],[43.4,11.4],[42.6,13.0],[41.8,14.0],[40.9,15.3],[40.0,16.0],[39.0,16.3],[38.1,16.0]], "Carpathians": [[49.6,18.9],[49.3,20.0],[49.0,21.2],[48.5,22.6],[47.8,23.6],[47.0,24.6],[46.3,25.2],[45.6,25.4],[45.3,24.0],[45.3,22.7]], "Scandinavian Mts": [[70,21],[68,18],[66,15],[64,13],[62,10.5],[60,8],[59,6.5]], "Caucasus": [[44.5,40.0],[43.8,41.5],[43.3,42.8],[42.8,44.0],[42.2,45.5],[41.5,47.0],[41.0,48.0]], "Ural Mountains": [[68,66],[66,63],[64,59.8],[61,59.5],[58,59.5],[55,59.4],[52,58.6],[51,57.5]], "Atlas Mountains": [[30.5,-9],[31,-7],[31.5,-5],[32,-3],[33,-1],[34,1.5],[35,4],[36,6.5],[36.7,8.6]], "Zagros Mountains": [[38,44],[36.5,45.5],[35,46.5],[33.5,47.6],[32,48.6],[30.5,50.5],[29,52],[28,53.5],[27,55]], "Tian Shan": [[42.5,74],[42.3,76],[42.0,78],[41.8,80],[42.0,82],[42.5,84],[43.0,86],[43.3,88]], "Altai Mountains": [[51,84],[50,86],[49,88],[48,90],[47,91.5],[46,92.5]], "Great Dividing Range": [[-16,145],[-19,146.5],[-22,148],[-25,150],[-28,151.5],[-31,152],[-34,150],[-36,148],[-37.5,146.5]], "Ethiopian Highlands": [[14,38],[12.5,38],[11,38.5],[9.5,38.8],[8,39.0],[7,38.5]], "Drakensberg": [[-25,30.5],[-26.5,30],[-28,29.5],[-29.5,29],[-30.5,28.5],[-31.5,28]]};
 const PEAKS=[["Everest",27.99,86.93,8849],["K2",35.88,76.51,8611],["Kangchenjunga",27.70,88.15,8586],["Lhotse",27.96,86.93,8516],["Makalu",27.89,87.09,8485],["Cho Oyu",28.09,86.66,8188],["Dhaulagiri",28.70,83.49,8167],["Annapurna",28.60,83.82,8091],["Nanga Parbat",35.24,74.59,8126],["Nanda Devi",30.37,79.97,7816],["Tirich Mir",36.26,71.84,7708],["Pobeda Peak",42.04,80.13,7439],["Gongga Shan",29.59,101.88,7556],["Damavand",35.96,52.11,5610],["Mount Ararat",39.70,44.30,5137],["Mount Fuji",35.36,138.73,3776],["Puncak Jaya",-4.08,137.16,4884],["Mount Kinabalu",6.08,116.56,4095],["Mont Blanc",45.83,6.86,4808],["Monte Rosa",45.94,7.87,4634],["Matterhorn",45.98,7.66,4478],["Mount Elbrus",43.35,42.44,5642],["Mount Etna",37.75,14.99,3357],["Mulhacen",37.05,-3.31,3479],["Zugspitze",47.42,10.98,2962],["Galdhopiggen",61.64,8.31,2469],["Musala",42.18,23.59,2925],["Mount Olympus",40.09,22.36,2918],["Kilimanjaro",-3.07,37.35,5895],["Mount Kenya",-0.15,37.31,5199],["Margherita Peak",0.39,29.87,5109],["Ras Dashen",13.24,38.37,4550],["Mount Meru",-3.25,36.75,4562],["Mount Elgon",1.13,34.55,4321],["Toubkal",31.06,-7.92,4167],["Mount Cameroon",4.20,9.17,4040],["Thabana Ntlenyana",-29.47,29.27,3482],["Emi Koussi",19.79,18.55,3445],["Denali",63.07,-151.01,6190],["Mount Logan",60.57,-140.41,5959],["Pico de Orizaba",19.03,-97.27,5636],["Mount Whitney",36.58,-118.29,4421],["Mount Rainier",46.85,-121.76,4392],["Popocatepetl",19.02,-98.62,5393],["Aconcagua",-32.65,-70.01,6961],["Ojos del Salado",-27.11,-68.54,6893],["Chimborazo",-1.47,-78.82,6263],["Huascaran",-9.12,-77.60,6768],["Cotopaxi",-0.68,-78.44,5897],["Aoraki",-43.59,170.14,3724],["Mount Kosciuszko",-36.46,148.26,2228],["Mauna Kea",19.82,-155.47,4207],["Vinson Massif",-78.53,-85.62,4892]];
 const ANCHOR = "M0,-4.6 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 M0,-3.6 L0,4.4 M-2.7,-1.6 L2.7,-1.6 M-3.6,2.2 Q0,5.8 3.6,2.2";
@@ -1736,7 +1815,7 @@ if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
 let mode = "map";
 let windowH = 24;
 let filterCats = new Set(CAT_ORDER);
-const layers = { labels:true, shade:true, straits:true, ports:true };
+const layers = { labels:true, shade:true, straits:true, ports:true, bases:false };   // military bases: off by default (a specialist overlay)
 let currentBase = "clean";
 
 let map = null, mapReady = false, countriesGeo = null, countryByName = {};
@@ -3636,6 +3715,18 @@ function startGlobePulse(){
 }
 function straitsGeoGL(){ return {type:"FeatureCollection",features:(typeof STRAIT_DEFS!=="undefined"?STRAIT_DEFS:[]).map(s=>({type:"Feature",geometry:{type:"Point",coordinates:[s.lng,s.lat]},properties:{name:s.name}}))}; }
 function portsGeoGL(){ const feats=[]; if(typeof PORTS!=="undefined") Object.keys(PORTS).forEach(cn=>PORTS[cn].forEach(p=>feats.push({type:"Feature",geometry:{type:"Point",coordinates:[p[2],p[1]]},properties:{name:p[0],country:cn}}))); return {type:"FeatureCollection",features:feats}; }
+function milbasesGeoGL(){ return {type:"FeatureCollection",features:(typeof MIL_BASES!=="undefined"?MIL_BASES:[]).map(b=>({type:"Feature",geometry:{type:"Point",coordinates:[b[2],b[1]]},properties:{name:b[0],country:b[3],btype:b[4]}}))}; }
+let _basePopup=null;
+function openBase(pr, coord){
+  try{ if(_basePopup){ _basePopup.remove(); _basePopup=null; } }catch(_){}
+  if(typeof maplibregl==="undefined" || !mlMap) return;
+  const html=`<div class="base-pop"><div class="bp-name">${esc(pr.name||"Base")}</div>`
+    + (pr.btype?`<div class="bp-type">${esc(pr.btype)}</div>`:"")
+    + (pr.country?`<div class="bp-co">${esc(pr.country)}</div>`:"")
+    + `<div class="bp-note">Public reference location — not live troop data</div></div>`;
+  _basePopup=new maplibregl.Popup({closeButton:true,closeOnClick:true,maxWidth:"230px",className:"base-popup",offset:12})
+    .setLngLat(coord).setHTML(html).addTo(mlMap);
+}
 function makeAnchorIcon(){
   const R=2, sz=28, cv=document.createElement("canvas"); cv.width=cv.height=sz*R; const ctx=cv.getContext("2d"); ctx.scale(R,R);   // 2x -> crisp on retina
   ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="19px 'Segoe UI Symbol','Segoe UI Emoji','Apple Color Emoji',sans-serif";
@@ -3674,6 +3765,14 @@ function addGlobeOverlays(){
     mlMap.addLayer({id:"g-ports-pt",type:"symbol",source:"g-ports",minzoom:4,layout:{visibility:layers.ports?"visible":"none","icon-image":"port-anchor","icon-size":0.82,"icon-allow-overlap":true,"icon-offset":[0,22]},paint:{}}, underDots);   // always show + nudged down so a port at a capital sits BELOW the name (Riga/Tallinn), not hidden or overlapping
     // ports are symbol-only on the globe too (matches the flat map) — no name label so it can't overlap city labels
   }
+  // MILITARY BASES — a slate diamond-ish CIRCLE (no sprite icon needed), distinct from the bright news dots;
+  // the base NAME appears once you zoom in (z>=5). Off by default; the "Military bases" layer toggle shows it.
+  if(!mlMap.getSource("g-bases")){
+    mlMap.addSource("g-bases",{type:"geojson",data:milbasesGeoGL()});
+    mlMap.addLayer({id:"g-bases-pt",type:"circle",source:"g-bases",minzoom:2,layout:{visibility:layers.bases?"visible":"none"},
+      paint:{"circle-radius":["interpolate",["linear"],["zoom"],2,3.2,6,5],"circle-color":"#5b6b7a","circle-stroke-color":"#ffffff","circle-stroke-width":1.4,"circle-opacity":0.95}}, underDots);
+    mlMap.addLayer({id:"g-bases-lbl",type:"symbol",source:"g-bases",minzoom:5,layout:{visibility:layers.bases?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":10.5,"text-offset":[0,1.0],"text-anchor":"top","text-allow-overlap":false,"text-optional":true},paint:{"text-color":"#3c4c5c","text-halo-color":"#ffffff","text-halo-width":1.6}}, underDots);
+  }
   // SEA / GULF names — so a dot floating on water is identifiable without clicking it. Shown across zooms;
   // collision (text-allow-overlap:false) hides any that would overlap the basemap's own water label or a city.
   if(!mlMap.getSource("g-seas")){
@@ -3692,6 +3791,7 @@ function updateGlobeOverlayVis(){
   if(!mlMap) return;
   ["g-straits-pt","g-straits-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.straits?"visible":"none"); });
   ["g-ports-pt"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.ports?"visible":"none"); });
+  ["g-bases-pt","g-bases-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.bases?"visible":"none"); });
   ["g-seas-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.setLayoutProperty(id,"visibility",layers.labels?"visible":"none"); });
 }
 function buildGlobeLayers(){
@@ -3769,6 +3869,8 @@ async function showMap(proj){          // proj: "globe" | "flat"
       // A port anchor -> its profile popup. queryRenderedFeatures only returns VISIBLE features, so a hidden
       // ports layer never fires. A small box around the point makes the little anchor easy to hit.
       if(mlMap.getLayer("g-ports-pt")){ const box=[[e.point.x-8,e.point.y-8],[e.point.x+8,e.point.y+8]]; const ps=mlMap.queryRenderedFeatures(box,{layers:["g-ports-pt"]}); if(ps && ps.length){ const pr=ps[0].properties||{}; const g=(ps[0].geometry&&ps[0].geometry.coordinates)||[e.lngLat.lng,e.lngLat.lat]; openPort(pr.name||"", pr.country||"", g[0], g[1], e.point.x, e.point.y); return; } }
+      // a MILITARY BASE marker -> a small popup with its name, host country and type (public reference info)
+      if(mlMap.getLayer("g-bases-pt")){ const bx=[[e.point.x-7,e.point.y-7],[e.point.x+7,e.point.y+7]]; const bs=mlMap.queryRenderedFeatures(bx,{layers:["g-bases-pt"]}); if(bs && bs.length){ const pr=bs[0].properties||{}; const g=(bs[0].geometry&&bs[0].geometry.coordinates)||[e.lngLat.lng,e.lngLat.lat]; openBase(pr, g); return; } }
       const c=countryAt(e.lngLat.lng, e.lngLat.lat); if(c && c.properties && c.properties.name) selectCountry(c.properties.name); else deselectAll();
     });
     mlMap.on("mousemove",(e)=>{
@@ -3831,7 +3933,7 @@ function renderLayers(){
   if(!host) return;
   const opts = [["clean","Clean relief"],["topo","Topographic"],["satellite","Satellite"]]
     .map(o=> '<option value="'+o[0]+'"'+(o[0]===currentBase?" selected":"")+'>'+o[1]+'</option>').join("");
-  const togs = [["labels","Place labels"],["shade","Terrain shading"],["straits","Strategic straits"],["ports","Major ports"]]
+  const togs = [["labels","Place labels"],["shade","Terrain shading"],["straits","Strategic straits"],["ports","Major ports"],["bases","Military bases"]]
     .map(t=> '<div class="lyr '+(layers[t[0]]?"on":"")+'" data-lyr="'+t[0]+'"><span class="lyr-name">'+t[1]+'</span><span class="tog"></span></div>').join("");
   // toggles first, then the basemap ("map type") dropdown at the very bottom
   host.innerHTML = togs + '<div class="basemap-row" style="margin-top:8px"><label class="bm-label" for="bm-select">Basemap</label><select id="bm-select">'+opts+'</select></div>';
