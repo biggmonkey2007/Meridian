@@ -424,11 +424,6 @@ img.flag-img{object-fit:cover;background:#eef1f5}
 .base-pop .bp-wiki:hover{text-decoration:underline}
 :root:not([data-theme="light"]) .base-pop .bp-wiki{color:#6fa8e6}
 .base-pop .bp-note{font-size:9px;color:var(--ink-3);margin-top:9px;font-style:italic}
-/* legend for the owner colour-coding, shown in the layers panel while Military bases is on */
-.lyr-legend{display:none;padding:4px 2px 2px 5px}
-#layer-items.bases-on .lyr-legend{display:block}
-.lyr-legend .ll-row{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-2);margin-top:3px}
-.lyr-legend .ll-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
 #port-pop.show{opacity:1;transform:none;pointer-events:auto}
 #port-pop .pp-x{position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;background:var(--chip);border-radius:7px;color:var(--ink-2);font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer}
 #port-pop .pp-x:hover{background:var(--line);color:var(--ink)}
@@ -1117,6 +1112,23 @@ body.topo-active .zoomers{bottom:130px}
 .tv-player{width:100%;aspect-ratio:16/9;max-height:100%;position:relative;background:#0a0d12}   /* MATTE-fit 16:9 so no ugly black bar */
 .tv-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 .tv-empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a95a1;font-size:12.5px;padding:16px;text-align:center}
+/* our OWN control bar at the BOTTOM of the stream (mute/volume/fullscreen) — shown when the custom YouTube
+   player is active (controls hidden on YouTube's side); the sound button lives here, not up top. */
+.tv-controls{position:absolute;left:0;right:0;bottom:0;z-index:3;display:none;align-items:center;gap:10px;padding:7px 11px;
+  background:linear-gradient(to top,rgba(6,10,16,.82),rgba(6,10,16,.36) 70%,transparent);opacity:0;transition:opacity .16s}
+.tv-controls.on{display:flex}
+.tv-stage:hover .tv-controls.on,.tv-controls.on:focus-within{opacity:1}
+.tvc-btn{width:30px;height:30px;flex:0 0 auto;border:none;background:transparent;color:#fff;border-radius:7px;display:grid;place-items:center;cursor:pointer;opacity:.92}
+.tvc-btn svg{width:19px;height:19px}
+.tvc-btn:hover{background:rgba(255,255,255,.16);opacity:1}
+.tvc-fs{margin-left:auto}
+#tvc-mute .ic-mute{display:none}
+#tvc-mute.muted .ic-vol{display:none}
+#tvc-mute.muted .ic-mute{display:block;color:#ff8f86}
+.tvc-vol{width:82px;height:4px;flex:0 0 auto;-webkit-appearance:none;appearance:none;background:rgba(255,255,255,.32);border-radius:3px;cursor:pointer}
+.tvc-vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer}
+.tvc-live{display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:800;letter-spacing:.08em;color:rgba(255,255,255,.9)}
+.tvc-dot{width:6px;height:6px;border-radius:50%;background:#e0403a}
 /* CHANNEL RAIL — collapsible (the ☰ button), clean flag + name rows (no busy per-row dots), subtle sections */
 .tv-rail{width:200px;flex:0 0 200px;border-left:1px solid var(--line);overflow-y:auto;background:var(--panel);
   scrollbar-width:thin;scrollbar-color:var(--line) transparent}
@@ -1359,7 +1371,17 @@ video{color-scheme:dark}
     </div>
   </div>
   <div class="tv-main">
-    <div class="tv-stage"><div class="tv-player" id="tv-player"><div class="tv-empty">Pick a channel to start watching.</div></div></div>
+    <div class="tv-stage"><div class="tv-player" id="tv-player"><div class="tv-empty">Pick a channel to start watching.</div></div>
+      <div class="tv-controls" id="tv-controls" aria-hidden="true">
+        <button class="tvc-btn" id="tvc-mute" title="Mute / unmute" aria-label="Mute or unmute">
+          <svg class="ic-vol" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a4 4 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="ic-mute" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+        <input class="tvc-vol" id="tvc-vol" type="range" min="0" max="100" value="100" aria-label="Volume">
+        <span class="tvc-live"><span class="tvc-dot"></span>LIVE</span>
+        <button class="tvc-btn tvc-fs" id="tvc-fs" title="Fullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      </div>
+    </div>
     <div class="tv-rail" id="tv-rail"><div class="tv-load"><span class="spin"></span> Finding live channels…</div></div>
   </div>
   <div class="tv-resize" id="tv-resize" title="Drag to resize" aria-hidden="true"></div>
@@ -3831,7 +3853,15 @@ function baseOwner(type){
   return "host";
 }
 const OWNER_CC = { us:"us", ru:"ru", cn:"cn" };   // operator flag for the big three; nato/host use the host flag
-function milbasesGeoGL(){ return {type:"FeatureCollection",features:(typeof MIL_BASES!=="undefined"?MIL_BASES:[]).map(b=>({type:"Feature",geometry:{type:"Point",coordinates:[b[2],b[1]]},properties:{name:b[0],country:b[3],btype:b[4],owner:baseOwner(b[4])}}))}; }
+// the ISO-2 of the country that OWNS the base, so its marker can carry that country's FLAG (US/Russia/China
+// operate abroad -> their flag; a national base -> the host flag; "xx" when there's no clean flag).
+function baseFlagCC(type, country){
+  const o=baseOwner(type);
+  if(o==="us") return "us"; if(o==="ru") return "ru"; if(o==="cn") return "cn";
+  const cc=(typeof ISO2!=="undefined" && ISO2[country]);
+  return cc ? cc.toLowerCase() : "xx";
+}
+function milbasesGeoGL(){ return {type:"FeatureCollection",features:(typeof MIL_BASES!=="undefined"?MIL_BASES:[]).map(b=>({type:"Feature",geometry:{type:"Point",coordinates:[b[2],b[1]]},properties:{name:b[0],country:b[3],btype:b[4],owner:baseOwner(b[4]),flagcc:baseFlagCC(b[4],b[3])}}))}; }
 let _basePopup=null, _baseNo=0;
 function fmtBaseCoord(lng,lat){ return Math.abs(lat).toFixed(2)+"°"+(lat>=0?"N":"S")+", "+Math.abs(lng).toFixed(2)+"°"+(lng>=0?"E":"W"); }
 function openBase(pr, coord){
@@ -3895,27 +3925,40 @@ function makeStraitIcon(){
   ctx.fillStyle="#0d6b86"; ctx.fill();
   return ctx.getImageData(0,0,sz*R,sz*R);
 }
-// military base = a clean MAP PIN with a white center, COLORED BY OWNER (blue US / red Russia / gold China /
-// teal NATO / slate national) so you can tell who a base belongs to WITHOUT clicking. Crisp vector, drawn 2x.
-const BASE_COLORS = { us:"#2f6fd0", ru:"#d1453c", cn:"#d99a2b", nato:"#2e9d7a", host:"#5b6675" };
-function makeBasePin(color){
-  const R=2, w=22, h=28, cv=document.createElement("canvas"); cv.width=w*R; cv.height=h*R; const ctx=cv.getContext("2d"); ctx.scale(R,R);
-  const cx=w/2, top=3.5, r=6.6, py=top+r;              // teardrop: a circle up top tapering to a point
-  ctx.beginPath();
-  ctx.moveTo(cx, h-2);
-  ctx.bezierCurveTo(cx-r-1.2, py+r*0.9, cx-r, top+1, cx, top+0.5);
-  ctx.bezierCurveTo(cx+r, top+1, cx+r+1.2, py+r*0.9, cx, h-2);
-  ctx.closePath();
-  ctx.lineWidth=1.6; ctx.strokeStyle="rgba(255,255,255,0.92)"; ctx.stroke();
-  ctx.fillStyle=color||"#5b6675"; ctx.fill();
-  ctx.beginPath(); ctx.arc(cx, py, 2.5, 0, Math.PI*2); ctx.fillStyle="#ffffff"; ctx.fill();   // the white "hole"
+// military base marker = a SHIELD (military badge) carrying the owning country's FLAG, so you can read
+// ownership straight off the map. `img` = a loaded flag Image (else a neutral slate shield). Drawn 2x, crisp.
+function makeFlagShield(img){
+  const R=2, w=21, h=25, cv=document.createElement("canvas"); cv.width=w*R; cv.height=h*R; const ctx=cv.getContext("2d"); ctx.scale(R,R);
+  const cx=w/2;
+  ctx.beginPath();                                    // shield outline: flat top, rounded shoulders, point at bottom
+  ctx.moveTo(3, 4); ctx.lineTo(w-3, 4);
+  ctx.lineTo(w-3, 12); ctx.quadraticCurveTo(w-3, 19, cx, h-2.5);
+  ctx.quadraticCurveTo(3, 19, 3, 12); ctx.closePath();
+  ctx.save(); ctx.clip();
+  if(img){ try{ ctx.drawImage(img, 2.5, 3, w-5, h-6); }catch(_){ ctx.fillStyle="#5b6675"; ctx.fillRect(0,0,w,h); } }
+  else { ctx.fillStyle="#5b6675"; ctx.fillRect(0,0,w,h); }
+  ctx.restore();
+  ctx.lineWidth=1.5; ctx.strokeStyle="#ffffff"; ctx.stroke();                 // white rim -> pops on any basemap
+  ctx.lineWidth=0.7; ctx.strokeStyle="rgba(20,30,45,0.45)"; ctx.stroke();     // hairline dark edge for contrast
   return ctx.getImageData(0,0,w*R,h*R);
+}
+// LAZY-LOAD the flag for each base marker on demand: MapLibre fires styleimagemissing for "baseflag-<cc>";
+// add a neutral shield at once (stops the event re-firing), then fetch the flag PNG and swap in a flag-shield.
+function ensureBaseFlag(id){
+  if(!mlMap || mlMap.hasImage(id)) return;
+  try{ mlMap.addImage(id, makeFlagShield(null), {pixelRatio:2}); }catch(_){ return; }
+  const cc=id.slice("baseflag-".length);
+  if(!cc || cc==="xx") return;
+  const im=new Image(); im.crossOrigin="anonymous";
+  im.onload=function(){ try{ mlMap.removeImage(id); mlMap.addImage(id, makeFlagShield(im), {pixelRatio:2}); if(mlMap.triggerRepaint) mlMap.triggerRepaint(); }catch(_){} };
+  im.onerror=function(){};
+  im.src="https://flagcdn.com/h40/"+cc+".png";
 }
 function addGlobeOverlays(){
   if(!mlMap) return;
   try{ if(!mlMap.hasImage("port-anchor")) mlMap.addImage("port-anchor", makeAnchorIcon(), {pixelRatio:2}); }catch(e){}
   try{ if(!mlMap.hasImage("strait-narrows")) mlMap.addImage("strait-narrows", makeStraitIcon(), {pixelRatio:2}); }catch(e){}
-  try{ Object.keys(BASE_COLORS).forEach(k=>{ if(!mlMap.hasImage("base-"+k)) mlMap.addImage("base-"+k, makeBasePin(BASE_COLORS[k]), {pixelRatio:2}); }); }catch(e){}
+  try{ if(!mlMap.__baseFlagHook){ mlMap.__baseFlagHook=true; mlMap.on("styleimagemissing", function(e){ if((e.id||"").indexOf("baseflag-")===0) ensureBaseFlag(e.id); }); } }catch(e){}
   // Insert UNDER the news dots (dots stay clickable on top). The port anchor is nudged DOWN (icon-offset)
   // and set to always show, so at a coastal capital it sits just BELOW the name — visible, not hidden and
   // not overlapping the letters. g-pulse is the lowest dot layer.
@@ -3934,7 +3977,7 @@ function addGlobeOverlays(){
   // the base NAME appears once you zoom in (z>=5). Click a marker for its info popup. Off by default.
   if(!mlMap.getSource("g-bases")){
     mlMap.addSource("g-bases",{type:"geojson",data:milbasesGeoGL()});
-    mlMap.addLayer({id:"g-bases-pt",type:"symbol",source:"g-bases",minzoom:2,layout:{visibility:layers.bases?"visible":"none","icon-image":["concat","base-",["get","owner"]],"icon-anchor":"bottom","icon-size":["interpolate",["linear"],["zoom"],2,0.5,6,0.9],"icon-allow-overlap":true}, paint:{}}, underDots);
+    mlMap.addLayer({id:"g-bases-pt",type:"symbol",source:"g-bases",minzoom:2,layout:{visibility:layers.bases?"visible":"none","icon-image":["concat","baseflag-",["get","flagcc"]],"icon-anchor":"bottom","icon-size":["interpolate",["linear"],["zoom"],2,0.62,6,1],"icon-allow-overlap":true}, paint:{}}, underDots);
     mlMap.addLayer({id:"g-bases-lbl",type:"symbol",source:"g-bases",minzoom:5,layout:{visibility:layers.bases?"visible":"none","text-field":["get","name"],"text-font":["Open Sans Regular"],"text-size":10.5,"text-offset":[0,0.55],"text-anchor":"top","text-allow-overlap":false,"text-optional":true},paint:{"text-color":"#3c4c5c","text-halo-color":"#ffffff","text-halo-width":1.6}}, underDots);
   }
   // SEA / GULF names — so a dot floating on water is identifiable without clicking it. Shown across zooms;
@@ -4099,15 +4142,9 @@ function renderLayers(){
     .map(o=> '<option value="'+o[0]+'"'+(o[0]===currentBase?" selected":"")+'>'+o[1]+'</option>').join("");
   const togs = [["labels","Place labels"],["shade","Terrain shading"],["straits","Strategic straits"],["ports","Major ports"],["bases","Military bases"]]
     .map(t=> '<div class="lyr '+(layers[t[0]]?"on":"")+'" data-lyr="'+t[0]+'"><span class="lyr-name">'+t[1]+'</span><span class="tog"></span></div>').join("");
-  // toggles first, then the base-owner colour legend (shown only when Military bases is on), then the basemap
-  const legend = '<div class="lyr-legend">'
-    + '<div class="ll-row"><span class="ll-dot" style="background:#2f6fd0"></span>United States</div>'
-    + '<div class="ll-row"><span class="ll-dot" style="background:#d1453c"></span>Russia</div>'
-    + '<div class="ll-row"><span class="ll-dot" style="background:#d99a2b"></span>China</div>'
-    + '<div class="ll-row"><span class="ll-dot" style="background:#2e9d7a"></span>NATO</div>'
-    + '<div class="ll-row"><span class="ll-dot" style="background:#5b6675"></span>National / other</div></div>';
-  host.innerHTML = togs + legend + '<div class="basemap-row" style="margin-top:8px"><label class="bm-label" for="bm-select">Basemap</label><select id="bm-select">'+opts+'</select></div>';
-  host.classList.toggle("bases-on", !!layers.bases);
+  // toggles first, then the basemap ("map type") dropdown at the bottom (each base marker carries its owner's
+  // flag, so no colour legend is needed)
+  host.innerHTML = togs + '<div class="basemap-row" style="margin-top:8px"><label class="bm-label" for="bm-select">Basemap</label><select id="bm-select">'+opts+'</select></div>';
   const sel = document.getElementById("bm-select");
   if(sel) sel.onchange = ()=> setBasemap(sel.value);
   host.querySelectorAll("[data-lyr]").forEach(n=> n.onclick = ()=> toggleLayer(n.dataset.lyr));
@@ -4121,7 +4158,6 @@ function toggleLayer(k){
   layers[k] = !layers[k];
   const n = document.querySelector('[data-lyr="'+k+'"]');
   if(n) n.classList.toggle("on", layers[k]);
-  if(k==="bases"){ const h=document.getElementById("layer-items"); if(h) h.classList.toggle("bases-on", layers.bases); }
   if(k==="labels"){
     if(layers.labels && currentBase!=="osmintl"){ if(!labelLayer){ labelLayer=mkLabels().addTo(map); } }
     else if(labelLayer){ map.removeLayer(labelLayer); labelLayer=null; }
@@ -6654,18 +6690,42 @@ function tvRender(list){
     b.onclick=()=>tvPlay(b.getAttribute("data-id"), b.getAttribute("data-name"), b.getAttribute("data-cc"), b.getAttribute("data-note"));
   });
 }
+// YouTube's own controls put the mute button at the TOP for live streams (annoying). So when the IFrame API is
+// available we run the player with controls:0 and provide OUR OWN bottom bar (mute/volume/fullscreen). If the
+// API isn't ready we fall back to the plain embed (YouTube's controls) so Live TV always works.
+let ytPlayer=null, _tvMuted=false;
+try{ window.onYouTubeIframeAPIReady=function(){}; }catch(_){}
+function loadYTApi(){ if(window.YT&&window.YT.Player) return; if(document.getElementById("yt-api")) return; try{ const s=document.createElement("script"); s.id="yt-api"; s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); }catch(_){} }
+function tvPlainEmbed(player,id,name){ player.innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&modestbranding=1&playsinline=1" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(name||"Live TV")}"></iframe>`; }
+function tvMuteIcon(){ const b=document.getElementById("tvc-mute"); if(b) b.classList.toggle("muted", _tvMuted); }
 function tvPlay(id, name, cc, note){
   if(!id || id===tvCurrent) return;
   tvCurrent=id;
-  const player=document.getElementById("tv-player");
+  const player=document.getElementById("tv-player"), ctr=document.getElementById("tv-controls");
   if(player){
-    player.innerHTML=`<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&modestbranding=1&playsinline=1" `
-      + `frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(name||"Live TV")}"></iframe>`;
+    let apiOK=false;
+    if(window.YT && window.YT.Player){
+      try{
+        if(ytPlayer && ytPlayer.loadVideoById && document.getElementById("tv-yt")){ ytPlayer.loadVideoById(id); }
+        else {
+          player.innerHTML='<div id="tv-yt" style="position:absolute;inset:0;width:100%;height:100%"></div>';
+          ytPlayer=new YT.Player("tv-yt",{ host:"https://www.youtube-nocookie.com", videoId:id,
+            playerVars:{autoplay:1,controls:0,rel:0,modestbranding:1,playsinline:1,fs:0,iv_load_policy:3,disablekb:1},
+            events:{ onReady:function(e){ try{ e.target.playVideo(); _tvMuted?e.target.mute():e.target.unMute(); const v=document.getElementById("tvc-vol"); if(v&&e.target.setVolume) e.target.setVolume(+v.value); }catch(_){} } } });
+        }
+        apiOK=true;
+      }catch(e){ apiOK=false; }
+    } else { loadYTApi(); }
+    if(!apiOK) tvPlainEmbed(player, id, name);
+    if(ctr){ ctr.classList.toggle("on", apiOK); ctr.setAttribute("aria-hidden", apiOK?"false":"true"); }
   }
   const now=document.getElementById("tv-now");
   if(now) now.innerHTML=(cc?flagImg(cc):"")+`<span class="nm">${esc(name||"")}</span>`+(note?`<span class="note">${esc(note)}</span>`:"");
   document.querySelectorAll(".tv-ch").forEach(b=>b.classList.toggle("on", b.getAttribute("data-id")===id));
 }
+{ const mu=document.getElementById("tvc-mute"); if(mu) mu.onclick=function(){ _tvMuted=!_tvMuted; try{ if(ytPlayer){ _tvMuted?ytPlayer.mute():ytPlayer.unMute(); } }catch(_){} tvMuteIcon(); };
+  const vol=document.getElementById("tvc-vol"); if(vol) vol.oninput=function(){ try{ if(ytPlayer&&ytPlayer.setVolume){ ytPlayer.setVolume(+this.value); if(+this.value>0 && _tvMuted){ _tvMuted=false; ytPlayer.unMute(); tvMuteIcon(); } else if(+this.value===0 && !_tvMuted){ _tvMuted=true; ytPlayer.mute(); tvMuteIcon(); } } }catch(_){} };
+  const fs=document.getElementById("tvc-fs"); if(fs) fs.onclick=function(){ const st=document.querySelector(".tv-win .tv-stage"); try{ if(st&&st.requestFullscreen) st.requestFullscreen(); }catch(_){} }; }
 // Size the FLOATING window so the PLAYER stays exactly 16:9 (no black letterbox). Height follows width. Rail-
 // aware: when the channel list is collapsed the stage is full-width.
 function tvSize16(w){
@@ -6713,6 +6773,7 @@ async function tvLoad(){
 }
 function openLiveTV(){
   const w=document.getElementById("tv-win"); if(!w) return;
+  try{ loadYTApi(); }catch(_){}                       // warm the IFrame API so the first channel gets our bottom controls
   w.classList.remove("min"); w.classList.add("open"); w.setAttribute("aria-hidden","false");
   { const b=document.getElementById("btn-tv"); if(b) b.classList.add("on"); }
   { const tl=document.getElementById("tv-list"); if(tl) tl.classList.toggle("on", !w.classList.contains("no-list")); }
@@ -6729,7 +6790,9 @@ function closeLiveTV(){
   const w=document.getElementById("tv-win"); if(!w) return;
   w.classList.remove("open","min"); w.setAttribute("aria-hidden","true");   // KEEP position/size so it reopens where you left it
   { const b=document.getElementById("btn-tv"); if(b) b.classList.remove("on"); }
-  const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove the iframe -> stop playback
+  try{ if(ytPlayer&&ytPlayer.destroy) ytPlayer.destroy(); }catch(_){} ytPlayer=null;   // tear down the API player -> stop playback
+  const ctr=document.getElementById("tv-controls"); if(ctr){ ctr.classList.remove("on"); ctr.setAttribute("aria-hidden","true"); }
+  const p=document.getElementById("tv-player"); if(p) p.innerHTML=`<div class="tv-empty">Pick a channel to start watching.</div>`;  // remove any plain iframe too
   const now=document.getElementById("tv-now"); if(now) now.innerHTML=`<span class="nm">Live TV</span>`; tvCurrent=null;
 }
 { const bt=document.getElementById("btn-tv"); if(bt) bt.onclick=()=>{ const w=document.getElementById("tv-win"); (w&&w.classList.contains("open")&&!w.classList.contains("min"))?closeLiveTV():openLiveTV(); };
