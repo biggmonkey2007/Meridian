@@ -2651,6 +2651,10 @@ function countryLabelsGeo(){
 }
 function ensureCountryLabels(){
   if(typeof mlMap==="undefined" || !mlMap || !mlLoaded) return;
+  // BULLETPROOF: kill the tiled Positron country labels at RUNTIME (the style-object blanking didn't stick — a
+  // cached style / the label-toggle re-showing them left the tiled names rendering, so with OUR layer added on
+  // top the name printed TWICE). setLayoutProperty on the live layer always applies; text-field:"" -> no glyphs.
+  ["place_country_1","place_country_2"].forEach(id=>{ if(mlMap.getLayer(id)){ try{ mlMap.setLayoutProperty(id,"text-field",""); mlMap.setLayoutProperty(id,"visibility","none"); }catch(e){} } });
   if(currentBase==="osmintl"){ if(mlMap.getLayer("g-country-lbl")) try{ mlMap.removeLayer("g-country-lbl"); mlMap.removeSource("g-country-lbl"); }catch(e){} return; }   // OSM raster has its own baked country names
   if(!countriesGeo) return;                          // called again once the atlas loads
   const data=countryLabelsGeo();
@@ -3734,7 +3738,9 @@ function tuneLabelTiers(){
 // the toggle finally works on the clean map too, not just the old raster-label bases).
 function applyCartoLabelToggle(){
   const vis = layers.labels ? "visible" : "none";
-  _gCartoIds.forEach(id=>{ const l = mlMap.getLayer(id); if(l && l.type==="symbol"){ try{ mlMap.setLayoutProperty(id,"visibility",vis); }catch(e){} } });
+  // NEVER re-show the tiled country tiers — OUR g-country-lbl replaces them (they duplicate on the globe). Every
+  // other CARTO symbol tier (cities, regions, water) follows the toggle as before.
+  _gCartoIds.forEach(id=>{ if(id==="place_country_1"||id==="place_country_2") return; const l = mlMap.getLayer(id); if(l && l.type==="symbol"){ try{ mlMap.setLayoutProperty(id,"visibility",vis); }catch(e){} } });
   if(mlMap.getLayer("g-country-lbl")){ try{ mlMap.setLayoutProperty("g-country-lbl","visibility",vis); }catch(e){} }   // our own country labels obey the toggle too
 }
 // 1:1 COASTLINE — the highlight polygon comes from a coarser atlas than the basemap, so its edge cut across

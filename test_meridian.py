@@ -2459,6 +2459,25 @@ def main():
         fails.append(("merge", "disaster-cluster", "nepal 3->1, US 2 cities->2, +unrelated->2",
                       f"one={_dis_one} diff={_dis_diff} unrelated={_dis_unrelated}",
                       "a natural disaster at one scene folds to one dot; different scenes / non-disaster stay apart"))
+    # NEAR-DUPLICATE BODY: same outlet re-headlines a story reusing its intro verbatim (France 24's two election
+    # pieces, 11/13 shared body words) with DIFFERENT titles + DIFFERENT places -> one dot. Two GENUINELY
+    # different same-country stories (distinct bodies) stay apart.
+    def _fr(t, s, pl, la, ln, hrs):
+        return {"title": t, "sum": s, "place": pl, "country": "France", "lat": la, "lng": ln, "hrs": hrs,
+                "source": "France 24", "domain": "france24.com", "sources": [{"name": "France 24", "url": t}], "image": ""}
+    _bodydup_one = len(app._merge_same_event([
+        _fr("France's politicians look to close gap with far right ahead of key election",
+            "With eight months until the next french Presidential election, politicians are ramping up their campaigning, with interviews, meetings and public statements. But who exactly will run has yet to be decided.", "France", 46.6, 2.4, 0.32),
+        _fr("With no clear contender everyone thinks they have a shot at succeeding to Macron",
+            "There are eight months left until the next french Presidential election, politicians are ramping up their campaigning, with interviews, meetings and public statements. As it gets closer more candidates are vying for a spot.", "Paris, France", 48.85, 2.35, 0.38)])) == 1
+    _bodydup_diff = len(app._merge_same_event([
+        _fr("France raises fuel taxes", "The French government announced a rise in diesel and petrol taxes to fund green transport projects, effective next month across the country.", "France", 46.6, 2.4, 1.0),
+        _fr("France beats Germany in football", "Kylian Mbappe scored twice as France defeated Germany in a friendly at the Stade de France, delighting home fans in Paris.", "Paris, France", 48.85, 2.35, 1.1)])) == 2
+    ran[0] += 1
+    if not (_bodydup_one and _bodydup_diff):
+        fails.append(("merge", "body-dup", "re-headlined same body->1; different bodies->2",
+                      f"one={_bodydup_one} diff={_bodydup_diff}",
+                      "a heavy near-verbatim body overlap folds a re-headline; distinct bodies stay apart"))
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
@@ -3128,6 +3147,7 @@ def main():
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
              + 1    # + natural-disaster cluster merge (Nepal 7->1; different scenes / non-disaster stay apart)
+             + 1    # + near-duplicate body merge (re-headlined same story folds; distinct bodies stay apart)
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection

@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.90"
+APP_VERSION = "1.4.91"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,9 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d81"   # d81: resweep so a headline's ordinary word stops dotting its namesake town ("Superior Court"
+_DATA_VER = "d82"   # d82: resweep so a re-headlined story with a near-verbatim body folds into ONE dot (the two
+                    #      France 24 election pieces), even with different titles + different places.
+                    # d81: resweep so a headline's ordinary word stops dotting its namesake town ("Superior Court"
                     #      -> no dot, not Superior WI; "Sandy beaches" -> not Sandy UT), a promo/format tag is
                     #      stripped from headlines ("… (FULL ARTICLE)", "— WATCH"), and a capital named in the
                     #      headline pins the CITY not the country centroid (Bishkek, not Kyrgyzstan) on rebake.
@@ -658,7 +660,10 @@ def _summarize(title, text, source="", depth=False):
               "a reason ('but the reasons are different', 'here's why', 'what you need to know'), resolve it — pull "
               "the concrete substance the article gives (the figures, the cause, the specifics) INTO the brief; "
               "NEVER end on the tease or restate the cliffhanger. If the text genuinely withholds the answer, give "
-              "the hardest facts it DOES contain (numbers, names, what changed) rather than a hollow line. ALWAYS "
+              "the hardest facts it DOES contain (numbers, names, what changed) rather than a hollow line. This is "
+              "PhD/NYT-level writing: never leave a rhetorical question hanging in YOUR OWN voice either — do not "
+              "end the brief on a question you don't answer ('The dilemma?', 'What happens next?'). Pose a question "
+              "only if you immediately answer it; otherwise state the point as a plain declarative sentence. ALWAYS "
               "ground a reader who knows nothing: even a short "
               "statement or single-quote story gets at least one plain sentence of that context (what the wider "
               "crisis, dispute or policy actually is — 'The Rohingya are a Muslim minority who fled a 2017 military "
@@ -668,6 +673,10 @@ def _summarize(title, text, source="", depth=False):
               "Lebanon'), AND any TECHNICAL, financial or specialist term the headline leans on — what it measures "
               "and why it matters ('the max ruble-deposit rate is the top interest Russian banks pay savers, a "
               "gauge of how tight money is; it tracks the central bank's key rate').\n"
+              "MONEY: lead with the story's OWN/native currency and put the US-dollar equivalent in parentheses with "
+              "a plain $ — 'R$10.9 trillion ($2.1 trillion)', '€5 billion ($5.4 billion)', '₹500 crore ($60 million)'. "
+              "Never lead in US dollars for a non-US story, and never write false precision ('R$98.963 billion' -> "
+              "'R$99 billion'); round to at most one decimal.\n"
               "SHAPE: a 1-3 sentence prose lede that says what happened AND the one piece of context needed to "
               "make sense of it; then, ONLY if the story is rich enough, "
               "1-2 more short paragraphs of the next most important detail; then optionally 1-2 bullets ('- ...') "
@@ -6848,16 +6857,25 @@ def _merge_same_event(events, window_h=18):
         toks = _norm_tokens(e.get("title") or "")
         prp = _proper_words(e.get("title") or "") - _WEAK_MATCH   # distinctive NAMES (person/place), minus demonyms
         dis = _disaster_tokens(blob)                              # flood/quake/landslide… -> the same catastrophe
+        body = _sigwords(e.get("sum") or "") - _GENERIC_WORDS - _WEAK_MATCH - _TOPIC_GENERIC   # distinctive BODY words
         pl, co = e.get("place") or "", e.get("country") or ""
         la, ln = e.get("lat"), e.get("lng")
         hit = None
-        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln, mprp, mdis) in enumerate(metas):
+        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln, mprp, mdis, mbody) in enumerate(metas):
             # A COUNTRY MISMATCH normally blocks a merge (many different events happen in one country), EXCEPT
             # when both share a DISTINCTIVE multi-token NAME (a person / specific entity) AND near-identical
             # wording — then it is ONE story wherever it was datelined. SHIPPED BUG: "US … Dolly Parton dies"
             # (mis-dotted UK) stood apart from "Dolly Parton has died" (US); a person's death is one event.
             _name_bridge = len(prp & mprp) >= 2
             _same_disaster = bool(dis & mdis)                    # both name the SAME kind of catastrophe
+            # NEAR-DUPLICATE BODY: the same outlet (or a wire) re-runs a story under a NEW headline but reuses
+            # its intro almost verbatim — the two France 24 election pieces shared 11 of 13 distinctive body
+            # words yet had different titles AND different places (France vs Paris), so nothing merged. A heavy
+            # body overlap IS the fingerprint of one re-headlined story; require a high bar (>=6 shared AND >=60%
+            # of the smaller, both bodies substantial) so two genuinely different stories never fold together.
+            _body_ov = body & mbody
+            _body_dup = (len(body) >= 8 and len(mbody) >= 8 and len(_body_ov) >= 6
+                         and len(_body_ov) >= 0.6 * min(len(body), len(mbody)))
             _win = 60 if _same_disaster else window_h            # a disaster's coverage runs for days, not hours
             if abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > _win:
                 continue
@@ -6893,7 +6911,10 @@ def _merge_same_event(events, window_h=18):
                     # headlines (toll, rescue, aid) that share the catastrophe word but little else — one
                     # situation, one dot. Guarded by _pl_match (same place/coords), so two DIFFERENT floods in
                     # different parts of a big country stay apart; the shared disaster word is the fingerprint.
-                    or (same_country and _pl_match and _same_disaster))
+                    or (same_country and _pl_match and _same_disaster)
+                    # SAME re-headlined story: same country + a heavy near-verbatim body overlap (France 24's two
+                    # election pieces), even when the titles and the exact place differ.
+                    or (same_country and _body_dup))
             if same:
                 hit = i
                 break
@@ -6902,7 +6923,7 @@ def _merge_same_event(events, window_h=18):
             continue
         e.setdefault("sources", [_src_of(e)])   # keep any citations the inline dedup already added
         kept.append(e)
-        metas.append((co, toll, inj, key, toks, pl, la, ln, prp, dis))
+        metas.append((co, toll, inj, key, toks, pl, la, ln, prp, dis, body))
     return kept
 
 
