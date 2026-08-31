@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.89"
+APP_VERSION = "1.4.90"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,11 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d80"   # d80: resweep so a demonym stops being read as a WEAPON'S nationality across a person-noun or
+_DATA_VER = "d81"   # d81: resweep so a headline's ordinary word stops dotting its namesake town ("Superior Court"
+                    #      -> no dot, not Superior WI; "Sandy beaches" -> not Sandy UT), a promo/format tag is
+                    #      stripped from headlines ("… (FULL ARTICLE)", "— WATCH"), and a capital named in the
+                    #      headline pins the CITY not the country centroid (Bishkek, not Kyrgyzstan) on rebake.
+                    # d80: resweep so a demonym stops being read as a WEAPON'S nationality across a person-noun or
                     #      "by" ("Nepali rescue WORKERS … aid delivery BY drone" -> Nepal, not the US source); a
                     #      hallucinated WATER can't override a named refinery the headline gives (Kstovo not the
                     #      Black Sea); a natural disaster folds its many angles into ONE dot (Nepal 7->1); war-front
@@ -6144,12 +6148,28 @@ def _tidy_spacing(t):
     return re.sub(r"\s{2,}", " ", t).strip()
 
 
+# A trailing PROMO / FORMAT TAG an outlet bolts onto its headline — "(FULL ARTICLE)", "(FULL STORY)",
+# "(READ MORE)", "— WATCH", "(VIDEO)". It is house furniture, never news, and looks terrible on a card. Two
+# shapes: BRACKETED (closing bracket OPTIONAL, so a mid-cut "(FULL ARTICLE" is caught too — case-insensitive,
+# a bracket already marks it a tag) or after a DASH/PIPE (there it must be UPPERCASE, so a real "… — watch the
+# game" is never touched). Anchored to the END of the headline. Extend the vocabulary as new tags are spotted.
+_PROMO_TAG_INNER = (r"(?:FULL\s+(?:ARTICLE|STORY|TEXT|INTERVIEW|SPEECH|STATEMENT|VIDEO|RECAP|REPORT|COVERAGE|THREAD)"
+                    r"|READ\s+(?:MORE|FULL|IN\s+FULL)|WATCH(?:\s+(?:LIVE|NOW|FULL|HERE|THIS))?"
+                    r"|LIVE(?:\s+(?:NOW|UPDATES?|BLOG|STREAM))?|VIDEO|PHOTOS?|IN\s+(?:PICTURES|PHOTOS)"
+                    r"|EXCLUSIVE|OPINION|ANALYSIS|UPDATED?|BREAKING|MUST[\s-]+(?:WATCH|READ|SEE)|LISTEN|PODCAST"
+                    r"|THREAD|GALLERY|SLIDESHOW|EXPLAINER|RECAP)")
+_PROMO_TAG_BRACKET = re.compile(r"\s*[\(\[]\s*" + _PROMO_TAG_INNER + r"\s*[\)\]]?\s*$", re.I)
+_PROMO_TAG_DASH    = re.compile(r"\s*[-–—|]\s*" + _PROMO_TAG_INNER + r"[.!?]?\s*$")   # case-SENSITIVE (uppercase tag)
+
+
 def _clean_headline(t):
     t = _htmlmod.unescape(t or "")
     t = _strip_promo(t)                                          # bare links (incl. bit.ly), "Follow @x", @handles
     t = _strip_emoji(t)                                          # no inline "🔥"/"➡️"/"✅"/"™"/"�" in a headline
     t = _expand_abbrevs(t)                                       # "1H"->"first half", "bln"->"billion" (house style)
     t = _MEDIA_TAIL.sub("", t).strip()                          # "… deportations says video" (link already gone) -> drop the callout
+    t = _PROMO_TAG_BRACKET.sub("", t).strip()                   # "… (FULL ARTICLE)" / cut-off "… (FULL ARTICLE"
+    t = _PROMO_TAG_DASH.sub("", t).strip()                      # "… — WATCH" / "… | VIDEO"
     t = _tidy_spacing(t)                                         # spaces, commas, parentheses
     # strip a trailing " - Outlet" BYLINE (Google-News aggregation furniture) whenever a REAL headline
     # (>= 20 chars) remains before the dash — so a short "UAE says … at it - Reuters" loses its byline too.
@@ -7686,6 +7706,19 @@ _MONTHS = {"january", "february", "march", "april", "may", "june", "july",
 # (shine), "china" (porcelain), "turkey" (the bird / cold turkey), "guinea" (guinea pig), "chad" (hanging
 # chad). "Polish"/"China"/"Turkey" the country still work; "a bit of polish" does not go to Poland.
 _CASED_PLACE_WORDS = {"polish", "china", "turkey", "guinea", "chad"}
+# COMMON ENGLISH WORDS (adjectives / abstract nouns) that are ALSO a US town, often mid-size so the pop>=15k
+# gate doesn't stop them — so a headline's ordinary word dotted the town ("Superior Court" -> Superior, WI;
+# "Sandy beaches" -> Sandy, UT; "Normal traffic" -> Normal, IL). These read as the WORD unless the sentence
+# EXPLICITLY locates something there ("in Superior", "the town of Sandy"). DELIBERATELY EXCLUDES famous real
+# places whose common-word sense is rare in the news (Nice, Bath, Reading, Mobile, Deal, Sandwich, Split) — a
+# "Nice attack" must still dot Nice, France. Only words whose TOWN reading is almost always the wrong one.
+_WORD_TOWNS = {
+    "superior", "sandy", "normal", "boring", "liberty", "hope", "truth", "enterprise", "industry", "progress",
+    "pride", "eureka", "surprise", "accident", "sunrise", "paradise", "comfort", "harmony", "freedom",
+    "independence", "sanctuary", "rainbow", "sunshine", "hurricane", "opportunity", "energy", "security",
+    "justice", "welfare", "protection", "defiance", "hazard", "peculiar", "sacrifice", "triumph", "friendship",
+    "unity",
+}
 _MANUAL_PLACES = {   # regions/nicknames GeoNames doesn't list as a city
     # Jackson Hole, Wyoming — home of the Fed's annual economic symposium, so it recurs in markets news. The
     # gazetteer matched bare "Jackson" to the bigger Jackson, MISSISSIPPI (~1,800 km off). Pin the real valley.
@@ -9440,6 +9473,11 @@ def _scan_places(text, spans, mentions):
                 # like Kyrylivka in "a hotel in the town of Kirilovka on the Azov Sea".
                 if not located_here and i >= 2 and words[i - 1] == "of" and words[i - 2] in _PLACE_OF_NOUNS:
                     located_here = True
+                # A COMMON ENGLISH WORD that is also a (often mid-size) town is the WORD, not the town, unless the
+                # sentence explicitly locates something there — "Superior Court"/"Sandy beaches"/"Normal traffic"
+                # must not dot Superior WI / Sandy UT / Normal IL. The pop>=15k gate below misses these.
+                if size == 1 and gram in _WORD_TOWNS and not located_here:
+                    continue
                 # An ALL-CAPS token of 3+ letters is an ACRONYM (HIV, USAID, GDP, NASA, OPEC), not a city —
                 # unless the sentence explicitly locates something there. SHIPPED: "HIV prevention drug" dotted
                 # the village of Hiv, Iran. Real city names are Title-case in headlines, never SCREAMING-caps.

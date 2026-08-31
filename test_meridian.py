@@ -2649,6 +2649,14 @@ def main():
             "Houthi drones strike a tanker in the Red Sea", "", "", allow_ai=False)[2] or "")))
     finally:
         app._ai_where = _sav_aw
+    # A COMMON ENGLISH WORD that is also a town is the WORD, not the town, unless the sentence locates something
+    # there. SHIPPED: "Superior Court" -> Superior WI; "Sandy beaches" -> Sandy UT (pop>15k slipped the tiny-town
+    # gate). An explicit "in Superior" / "town of Sandy" still resolves.
+    _lg_fails.append(("word-town-superior", app._geolocate("Superior Court ruling on abortion", "", "") is None))
+    _lg_fails.append(("word-town-sandy", app._geolocate("Sandy beaches eroding fast", "", "") is None))
+    _lg_fails.append(("word-town-normal", app._geolocate("Normal traffic resumes after crash", "", "") is None))
+    _lg_fails.append(("word-town-located-ok", "Superior" in (app._geolocate(
+        "Explosion in Superior, Wisconsin", "", "") or ["", "", "", ""])[2]))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2925,6 +2933,17 @@ def main():
     # while a compound ("anti-corruption") and a tiny head ("War - what is it") are left intact.
     _srcnote_ok = _srcnote_ok and (app._clean_headline("UAE says Iran launched two missiles at it - Reuters") == "UAE says Iran launched two missiles at it"
                                    and app._clean_headline("Suspect detained in anti-corruption sweep") == "Suspect detained in anti-corruption sweep")
+    # PROMO / FORMAT TAG STRIP — "(FULL ARTICLE)", a cut-off "(FULL ARTICLE", "— WATCH", "| VIDEO" are house
+    # furniture and look terrible on a card. Stripped forever. GUARD: real content ("(2024)", "(Reuters)", a
+    # lowercase "the video showed", a mid-headline "exclusive interview") is untouched.
+    _srcnote_ok = _srcnote_ok and (
+        app._clean_headline("Lavrov outlines Arctic 'challenges and opportunities' (FULL ARTICLE)") == "Lavrov outlines Arctic 'challenges and opportunities'"
+        and app._clean_headline("Something happened (FULL ARTICLE") == "Something happened"
+        and app._clean_headline("Gaza update (VIDEO)") == "Gaza update"
+        and app._clean_headline("Zelensky speaks — WATCH") == "Zelensky speaks"
+        and app._clean_headline("Analysts warn of a downturn (2024)") == "Analysts warn of a downturn (2024)"
+        and app._clean_headline("Trump gives exclusive interview to Fox") == "Trump gives exclusive interview to Fox"
+        and app._clean_headline("The video showed the strike") == "The video showed the strike")
     _sharp_ok = _sharp_ok and _srcnote_ok
     # A wire teaser truncated mid-sentence on a connector ("…in Kiryat Gat, following") must not become
     # "…following." — drop the dangling connector. And wire abbreviations spell out ("bln"->"billion").
@@ -3112,7 +3131,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 61   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override
+             + 65   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override + 4 word-town veto (Superior/Sandy/Normal + located-ok)
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser
