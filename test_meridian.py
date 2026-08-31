@@ -2433,6 +2433,32 @@ def main():
         fails.append(("merge", "kyiv-3-sources", "1 dot, 3 sources, France 24 first",
                       f"dots={len(_m)} kdot_sources={len(_kdot.get('sources', [])) if _kdot else 0}",
                       "three outlets covering '9 dead in Kyiv' must merge into one cited dot; Odesa stays separate"))
+
+    # NATURAL-DISASTER CLUSTER: a flood/quake/landslide draws many different-angle headlines at the same scene
+    # that share the catastrophe word but little else -> one situation, one dot (SHIPPED: 7 Nepal dots). Guarded
+    # by same-place, so two DIFFERENT floods in different cities stay apart, and an unrelated (non-disaster) story
+    # at the same place never folds in.
+    def _dz(t, s, la, ln, hrs):
+        return {"title": t, "sum": s, "place": "Nepal", "country": "Nepal", "lat": la, "lng": ln, "hrs": hrs,
+                "cat": "climate", "source": "x", "domain": "x.com", "sources": [{"name": "x", "url": "x"}], "image": ""}
+    _nepal = [
+        _dz("Nepal floods and landslides kill dozens", "Monsoon rains triggered deadly landslides", 27.72, 85.32, 50),
+        _dz("See Nepali Rescue Workers Testing Aid Delivery by Drone", "Survivors of the deadly flood and landslide test drones", 27.72, 85.32, 40),
+        _dz("Death toll from Nepal floods rises", "More bodies found after flooding", 27.72, 85.32, 10),
+    ]
+    _dis_one = len(app._merge_same_event([dict(e) for e in _nepal])) == 1
+    _dis_diff = len(app._merge_same_event([                                # two different-CITY storms stay apart
+        {"title": "Storm floods Miami", "sum": "", "place": "Miami, United States", "country": "United States of America",
+         "lat": 25.76, "lng": -80.19, "hrs": 20, "cat": "climate", "sources": [{"name": "a", "url": "a"}], "image": ""},
+        {"title": "Storm floods Los Angeles", "sum": "", "place": "Los Angeles, United States", "country": "United States of America",
+         "lat": 34.05, "lng": -118.24, "hrs": 18, "cat": "climate", "sources": [{"name": "b", "url": "b"}], "image": ""}])) == 2
+    _dis_unrelated = len(app._merge_same_event([dict(_nepal[0]),
+        _dz("Nepal parliament debates new budget", "Lawmakers meet in Kathmandu", 27.72, 85.32, 45)])) == 2
+    ran[0] += 1
+    if not (_dis_one and _dis_diff and _dis_unrelated):
+        fails.append(("merge", "disaster-cluster", "nepal 3->1, US 2 cities->2, +unrelated->2",
+                      f"one={_dis_one} diff={_dis_diff} unrelated={_dis_unrelated}",
+                      "a natural disaster at one scene folds to one dot; different scenes / non-disaster stay apart"))
     print(f"  {'ok ' if _me_ok else 'FAIL'} {len(_m)} dots; Kyiv sources="
           f"{[s['name'] for s in (_kdot.get('sources', []) if _kdot else [])]}")
 
@@ -2601,6 +2627,28 @@ def main():
     _lg_fails.append(("yucatan-body-scene", "Chuburna" in (app._locate(   # the body's town wins over the country
         "Construction on tourist project on Yucatan coast halted", "",
         "at the site near Chuburna Puerto, 15 km from the beach town of Progreso.", allow_ai=False)[2] or "")))
+    # MATERIEL-NATIONALITY must not fire across a PERSON noun or a method 'by': "Nepali rescue WORKERS … aid
+    # delivery BY drone" is Nepal (the people), not a "Nepali drone". SHIPPED BUG: fell back to Washington D.C.
+    _lg_fails.append(("nepali-workers-by-drone", (app._locate(
+        "See Nepali Rescue Workers Testing Aid Delivery by Drone", "United States",
+        "Some survivors of the deadly flood and landslide have no access to food.", allow_ai=False)[3]) == "Nepal"))
+    _lg_fails.append(("materiel-guard-kept", "Kyiv" in (app._locate(    # a REAL "Russian drone" still drops to the scene
+        "Russian drone strikes Kyiv", "", "", allow_ai=False)[2] or "")))
+    _lg_fails.append(("materiel-projectile-kuwait", (app._locate(       # weapon ADJACENT to the demonym: still vetoed
+        "An Iranian projectile, likely a one-way drone, impacted at Ali al-Salem Air Base, Kuwait", "", "",
+        allow_ai=False)[3]) == "Kuwait"))
+    # A WATER the AI hallucinates must NOT override a named refinery the HEADLINE gives — a refinery report is not
+    # a maritime event. SHIPPED BUG: a Kstovo refinery report dotted the Black Sea. Guard keeps a REAL sea-strike.
+    _sav_aw = app._ai_where
+    try:
+        app._ai_where = lambda t: "Black Sea" if "Kstovo" in t else _sav_aw(t)
+        _lg_fails.append(("kstovo-not-sea", "Kstovo" in (app._locate(
+            "Zelensky says the Kstovo refinery, one of Russia's largest, has stopped operating", "", "",
+            allow_ai=False)[2] or "")))
+        _lg_fails.append(("kstovo-maritime-still-water", "Red Sea" in (app._locate(
+            "Houthi drones strike a tanker in the Red Sea", "", "", allow_ai=False)[2] or "")))
+    finally:
+        app._ai_where = _sav_aw
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2855,6 +2903,14 @@ def main():
                    and app._source_note("CGTN", "cgtn.com") == "Chinese state media"
                    and app._source_note("Al Jazeera", "aljazeera.com") == "Qatari state-funded"
                    and app._source_note("BBC", "bbc.co.uk") == "UK public broadcaster"
+                   # EXPANDED coverage, same even-handed ownership/origin standard (never a verdict):
+                   and app._source_note("Haaretz", "haaretz.com") == "Israeli media"
+                   and app._source_note("The Kyiv Independent", "kyivindependent.com") == "Ukrainian media"
+                   and app._source_note("Ukrinform", "ukrinform.net") == "Ukrainian state media"   # state beats origin
+                   and app._source_note("CBC News", "cbc.ca") == "Canadian public broadcaster"
+                   and app._source_note("Gulf News", "gulfnews.com") == "UAE media"
+                   and app._source_note("Colonel Cassad", "") == "Pro-Russia coverage"
+                   and app._source_note("Visegrad24", "") == "Pro-Ukraine coverage"
                    and app._source_note("Reuters", "reuters.com") == ""            # independent -> no label
                    and app._indepth_source("The New York Times", "nytimes.com")    # in-depth outlet -> longer brief
                    and app._indepth_source("Premium Times", "premiumtimesng.com")  # a national paper -> fuller brief too
@@ -3052,10 +3108,11 @@ def main():
              + 1   # + _wiki_thumb bounds Wikimedia URLs to a thumbnail
              + 1   # + map-worthy importance gate (broad-feature / local drop)
              + 3    # + casualty-fingerprint merge + AI semantic-dedup net + water-not-collapsed
+             + 1    # + natural-disaster cluster merge (Nepal 7->1; different scenes / non-disaster stay apart)
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 56   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard)
+             + 61   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

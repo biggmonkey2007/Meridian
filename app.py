@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.87"
+APP_VERSION = "1.4.88"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d79"   # d79: resweep so a country named as a REASON/tie ("sanction … over Iran ties" -> the UAE
+_DATA_VER = "d80"   # d80: resweep so a demonym stops being read as a WEAPON'S nationality across a person-noun or
+                    #      "by" ("Nepali rescue WORKERS … aid delivery BY drone" -> Nepal, not the US source); a
+                    #      hallucinated WATER can't override a named refinery the headline gives (Kstovo not the
+                    #      Black Sea); a natural disaster folds its many angles into ONE dot (Nepal 7->1); war-front
+                    #      domestic press + broader even-handed source-bias notes flow into every event.
+                    # d79: resweep so a country named as a REASON/tie ("sanction … over Iran ties" -> the UAE
                     #      branch, not Tehran) or an INFLUENCE-OP actor ("China fueling America's rage" -> the US,
                     #      not Beijing) no longer wins the dot, and a wire photo stops attaching to a same-COUNTRY-
                     #      centroid story on one word (the Budanov statement vs an Orthodoxy map).
@@ -645,7 +650,12 @@ def _summarize(title, text, source="", depth=False):
               "from the FACTS, never a rewrite or paraphrase. Write for a sharp 8th-grade reader: short plain "
               "words, short active sentences. It must ADD to the headline, not restate it: give the reader the "
               "BACKGROUND to understand the situation — in your own words, what is going on, why now, and what it "
-              "means for the people or country involved. ALWAYS ground a reader who knows nothing: even a short "
+              "means for the people or country involved. ANSWER THE HOOK: if the source poses a question or teases "
+              "a reason ('but the reasons are different', 'here's why', 'what you need to know'), resolve it — pull "
+              "the concrete substance the article gives (the figures, the cause, the specifics) INTO the brief; "
+              "NEVER end on the tease or restate the cliffhanger. If the text genuinely withholds the answer, give "
+              "the hardest facts it DOES contain (numbers, names, what changed) rather than a hollow line. ALWAYS "
+              "ground a reader who knows nothing: even a short "
               "statement or single-quote story gets at least one plain sentence of that context (what the wider "
               "crisis, dispute or policy actually is — 'The Rohingya are a Muslim minority who fled a 2017 military "
               "crackdown in Myanmar'). Never pad with empty filler or repeat the headline, but never leave the "
@@ -6324,6 +6334,34 @@ _SOURCE_ORIGIN = [
     (("deutsche welle", "dw.com"), "German public broadcaster"),
     (("france 24", "france24", "rfi ", "radio france"), "French public broadcaster"),
     (("npr", "pbs"), "US public broadcaster"),
+    # more STATE / PUBLIC broadcasters worldwide — same ownership standard, applied even-handedly
+    (("belta", "sb.by", "belarus segodnya"), "Belarusian state media"),
+    (("azertac", "azartac", "trend.az", "apa.az"), "Azerbaijani state media"),
+    (("armenpress", "public radio of armenia", "public television of armenia"), "Armenian public media"),
+    (("tanjug", "rts.rs", "radio television of serbia"), "Serbian state media"),
+    (("vietnam news agency", "vnanet", "nhan dan", "nhandan", "vov.vn"), "Vietnamese state media"),
+    (("qatar news agency", "qna.org.qa", "gulf times"), "Qatari state media"),
+    (("khaleej times", "gulf news", "gulfnews"), "UAE media"),
+    (("associated press of pakistan", "app.com.pk", "radio pakistan", "ptv news"), "Pakistani state media"),
+    (("prasar bharati", "ddnews", "dd news", "all india radio"), "Indian public broadcaster"),
+    (("sabc news", "south african broadcasting"), "South African public broadcaster"),
+    (("cbc news", "cbc.ca", "radio-canada"), "Canadian public broadcaster"),
+    (("abc.net.au", "australian broadcasting corporation"), "Australian public broadcaster"),
+    (("nhk world", "nhk news", "nhk.or.jp"), "Japanese public broadcaster"),
+    (("kbs world", "korean broadcasting system"), "South Korean public broadcaster"),
+    (("al-ahram", "ahram online", "ahram.org", "egyptian state information"), "Egyptian state media"),
+    (("aps.dz", "algerie presse service", "algeria press service"), "Algerian state media"),
+    (("herald.co.zw", "the herald zimbabwe"), "Zimbabwean state media"),
+    (("ukrinform",), "Ukrainian state media"),
+    # NATIONAL ORIGIN for outlets of a state PARTY to a conflict the map covers — a factual "whose press this
+    # is", applied symmetrically to every side, never a verdict. Private outlets get the plain-origin note (not
+    # "state"); a reader weighs the domestic framing themselves.
+    (("times of israel", "timesofisrael", "jerusalem post", "jpost", "haaretz", "ynetnews", "israel hayom",
+      "israelhayom", "i24news", "i24 news", "arutz sheva", "israelnationalnews"), "Israeli media"),
+    (("kyiv independent", "kyivindependent", "ukrainska pravda", "pravda.com.ua", "unian", "kyiv post",
+      "kyivpost", "nv.ua", "new voice of ukraine"), "Ukrainian media"),
+    (("maan news", "maannews", "quds news network", "qudsn", "shehab news", "palinfo",
+      "palestine chronicle"), "Palestinian media"),
 ]
 
 # EDITORIAL LEAN of the OSINT / war Telegram channels we follow — a factual note on a channel's KNOWN
@@ -6334,10 +6372,14 @@ _SOURCE_ORIGIN = [
 # than a guessed political label). The user asked for these (NOELREPORTS = pro-Ukraine); extend as needed.
 _TG_LEAN = [
     (("noel_reports", "noelreports", "noel reports", "ukraine weapons tracker", "ukraineweapons",
-      "front_ukrainian", "ukraine now", "ukrainenow", "kyiv post"), "Pro-Ukraine coverage"),
+      "front_ukrainian", "ukraine now", "ukrainenow", "kyiv post", "operativnozsu", "operativno zsu",
+      "wartranslated", "war translated", "visegrad24", "visegrad 24", "defmon", "tpyxa", "ukraine_watch"),
+     "Pro-Ukraine coverage"),
     (("rybar", "intelslava", "intel slava", "slava z", "readovka", "wargonzo", "war gonzo",
       "solovievlive", "soloviev", "grey zone", "greyzone", "sladkov", "rvvoenkor", "milchronicles",
-      "sremski", "zvezda", "vysokygovorit"), "Pro-Russia coverage"),
+      "sremski", "zvezda", "vysokygovorit", "colonelcassad", "colonel cassad", "boris_rozhin",
+      "poddubny", "epoddubny", "milinfolive", "milinfo", "voenkor", "kotenok", "swodki"),
+     "Pro-Russia coverage"),
 ]
 
 
@@ -6747,6 +6789,23 @@ def _cite_source(primary, dup):
         primary["image"] = dup["image"]
 
 
+# A NATURAL DISASTER is ONE unfolding situation, not a fresh event per outlet/angle. A flood, quake or
+# landslide in a country draws a dozen different headlines over a couple of days (the death toll, the rescue,
+# the aid-by-drone, the survivors) that share almost no distinctive wording — so they never met the "3 shared
+# tokens" bar and STACKED as 7 separate Nepal dots. When two dots sit at the SAME scene and both name the SAME
+# kind of catastrophe, they are the same disaster: fold them (cite, never drop), over a wider multi-day window.
+_DISASTER_WORDS = set(_stem(w) for w in (
+    "flood", "floods", "flooding", "landslide", "landslides", "mudslide", "mudslides", "earthquake",
+    "quake", "aftershock", "cyclone", "typhoon", "hurricane", "tornado", "wildfire", "wildfires",
+    "bushfire", "bushfires", "drought", "eruption", "volcano", "volcanic", "tsunami", "avalanche",
+    "blizzard", "heatwave", "monsoon", "mudflow", "inundation", "deluge",
+))
+
+
+def _disaster_tokens(blob):
+    return _sigwords(blob or "") & _DISASTER_WORDS
+
+
 def _merge_same_event(events, window_h=18):
     """Fold multiple sources covering the SAME event into ONE dot: the FIRST to report it stays as the
     primary and every other source is cited on it (never dropped). Same-event demands STRONG evidence —
@@ -6768,16 +6827,19 @@ def _merge_same_event(events, window_h=18):
         key = _sigwords(e.get("title") or "") - _GENERIC_WORDS - _WEAK_MATCH
         toks = _norm_tokens(e.get("title") or "")
         prp = _proper_words(e.get("title") or "") - _WEAK_MATCH   # distinctive NAMES (person/place), minus demonyms
+        dis = _disaster_tokens(blob)                              # flood/quake/landslide… -> the same catastrophe
         pl, co = e.get("place") or "", e.get("country") or ""
         la, ln = e.get("lat"), e.get("lng")
         hit = None
-        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln, mprp) in enumerate(metas):
+        for i, (mco, mtoll, minj, mkey, mtoks, mpl, mla, mln, mprp, mdis) in enumerate(metas):
             # A COUNTRY MISMATCH normally blocks a merge (many different events happen in one country), EXCEPT
             # when both share a DISTINCTIVE multi-token NAME (a person / specific entity) AND near-identical
             # wording — then it is ONE story wherever it was datelined. SHIPPED BUG: "US … Dolly Parton dies"
             # (mis-dotted UK) stood apart from "Dolly Parton has died" (US); a person's death is one event.
             _name_bridge = len(prp & mprp) >= 2
-            if abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > window_h:
+            _same_disaster = bool(dis & mdis)                    # both name the SAME kind of catastrophe
+            _win = 60 if _same_disaster else window_h            # a disaster's coverage runs for days, not hours
+            if abs(e.get("hrs", 0) - kept[i].get("hrs", 0)) > _win:
                 continue
             if mco != co and not _name_bridge:
                 continue
@@ -6806,7 +6868,12 @@ def _merge_same_event(events, window_h=18):
                     # shared tokens must include something BEYOND strike boilerplate — else two separate strikes
                     # in 'Southern Lebanon' merge on 'air force airstrike against southern' alone. New area = new
                     # dot, exactly as the reader expects; a real city dot is never gated (`_is_area_place` False).
-                    or (same_country and _pl_match and len(_shared) >= 3 and len(_shared_content) >= 2 and _area_ok))
+                    or (same_country and _pl_match and len(_shared) >= 3 and len(_shared_content) >= 2 and _area_ok)
+                    # SAME NATURAL DISASTER at the SAME scene: a flood/quake/landslide draws many different
+                    # headlines (toll, rescue, aid) that share the catastrophe word but little else — one
+                    # situation, one dot. Guarded by _pl_match (same place/coords), so two DIFFERENT floods in
+                    # different parts of a big country stay apart; the shared disaster word is the fingerprint.
+                    or (same_country and _pl_match and _same_disaster))
             if same:
                 hit = i
                 break
@@ -6815,7 +6882,7 @@ def _merge_same_event(events, window_h=18):
             continue
         e.setdefault("sources", [_src_of(e)])   # keep any citations the inline dedup already added
         kept.append(e)
-        metas.append((co, toll, inj, key, toks, pl, la, ln, prp))
+        metas.append((co, toll, inj, key, toks, pl, la, ln, prp, dis))
     return kept
 
 
@@ -7207,6 +7274,21 @@ WORLD_FEEDS = [
     ("https://feeds.bloomberg.com/politics/news.rss", "United States of America"),                # Bloomberg — politics
     ("https://feeds.bloomberg.com/economics/news.rss", "United States of America"),               # Bloomberg — economics
     ("https://feeds.bloomberg.com/markets/news.rss", "United States of America"),                 # Bloomberg — markets
+    # --- WAR-FRONT DOMESTIC PRESS: outlets FROM states currently at war, mostly covering their own concerns.
+    # Both sides of each front are represented (even-handed); each is tagged with its home country so a dot with
+    # no place in the text falls back to the right country, and each carries its factual origin note (srcnote).
+    # Ukraine (Russo-Ukrainian war):
+    ("https://kyivindependent.com/rss/", "Ukraine"),                                               # Kyiv Independent
+    ("https://www.pravda.com.ua/eng/rss/", "Ukraine"),                                             # Ukrainska Pravda (Eng)
+    # Russia (independent / in-exile, for balance against the state wires above):
+    ("https://www.themoscowtimes.com/rss/news", "Russia"),                                         # The Moscow Times
+    ("https://meduza.io/rss/en/all", "Russia"),                                                    # Meduza (Eng)
+    # Israel / Palestine:
+    ("https://www.ynetnews.com/Integration/StoryRss3082.xml", "Israel"),                           # Ynetnews
+    ("https://www.palestinechronicle.com/feed/", "Palestine"),                                     # Palestine Chronicle
+    # Other active fronts (Sudan civil war, Myanmar civil war):
+    ("https://sudantribune.com/feed/", "Sudan"),                                                   # Sudan Tribune
+    ("https://www.irrawaddy.com/feed", "Myanmar"),                                                 # The Irrawaddy
 ]
 
 
@@ -9478,9 +9560,11 @@ def _is_materiel_nationality(h, words):
     for k in range(j, min(j + 8, len(words))):
         w = words[k]
         if (w in _GEO_PREP or w in _GEO_ACTION or w in _SAY_VERBS or w in _ACTOR_SEAT_VERBS
+                or w in _PERSON_NOUNS or w in ("by", "with", "using", "used", "carrying")
                 or w in ("launches", "launched", "fires", "fired", "conducts", "conducted", "deploys", "deployed")):
-            break                                    # a verb/preposition ends the weapon phrase — the country
-            #  before it is the ACTOR, not the weapon's nationality ("North Korea TESTS missile" is North Korea)
+            break                                    # a verb/preposition/person-noun ends the weapon phrase — the
+            #  demonym before it is the ACTOR or the PEOPLE, not the weapon's flag ("North Korea TESTS missile" is
+            #  North Korea; "NEPALI rescue WORKERS … aid delivery BY drone" is Nepal, not a Nepali drone)
         if w in _MATERIEL_NOUNS:
             return True
     return False
@@ -10849,6 +10933,13 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
                 # -> the AI said Orenburg (Orsk) and overrode the correct Khabarovsk Krai.
                 if (r and not _geo_is_weak(r) and r[3] == g[3]
                         and _place_in_title(r[2], title) and not _place_in_title(g[2], title)):
+                    return r
+                # A WATER the AI names must NOT override a SPECIFIC scene the HEADLINE itself gives (a named
+                # refinery/city) unless the story really is a maritime event. SHIPPED BUG: "Zelensky says the
+                # KSTOVO REFINERY … has stopped operating" dotted the Black Sea — the AI mistook an oil-export
+                # report for a sea. If the text names no water at all, the AI's water is a hallucination.
+                if (water and r and not _geo_is_weak(r) and _place_in_title(r[2], title)
+                        and not _maritime_water((title or "") + ". " + (desc or ""))):
                     return r
                 return g                              # a specific, anchored place -> use the AI's pinpoint
             if r is None or _geo_is_weak(r):

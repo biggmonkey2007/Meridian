@@ -1705,7 +1705,60 @@ const MIL_BASES = [
   ["Lombrum Naval Base (Manus)", -2.03, 147.37, "Papua New Guinea", "PNG/Australia/US Navy"],
   ["Sulur Air Force Station", 11.00, 77.16, "India", "Indian Air"],
   ["Manda Bay (Camp Simba)", -2.28, 40.95, "Kenya", "US/Kenya"],
-  ["Alcântara Launch Center", -2.37, -44.40, "Brazil", "Brazilian Space/Military"]
+  ["Alcântara Launch Center", -2.37, -44.40, "Brazil", "Brazilian Space/Military"],
+  // — batch 4: Russia in Africa (Africa Corps), Turkey/France/UK overseas, and more active bases —
+  // Russia — Africa Corps / expeditionary (ex-Wagner), the fast-growing footprint
+  ["Bamako (Africa Corps)", 12.63, -8.00, "Mali", "Russian expeditionary (Africa Corps)"],
+  ["Ouagadougou (Africa Corps)", 12.37, -1.53, "Burkina Faso", "Russian expeditionary (Africa Corps)"],
+  ["Berengo Camp", 4.27, 18.06, "Central African Republic", "Russian expeditionary (Africa Corps)"],
+  ["Niamey (Base 101)", 13.48, 2.17, "Niger", "Russian expeditionary (Africa Corps)"],
+  ["Al-Khadim Air Base", 32.68, 21.07, "Libya", "Russian Air (expeditionary)"],
+  ["Al-Jufra Air Base", 29.20, 16.00, "Libya", "Russian/Libyan Air"],
+  ["Port Sudan (naval)", 19.62, 37.22, "Sudan", "Russian Navy (Red Sea, planned)"],
+  // Russia — proper (more majors)
+  ["Novorossiysk Naval Base", 44.72, 37.79, "Russia", "Russian Navy (Black Sea)"],
+  ["Rybachiy Submarine Base", 52.92, 158.48, "Russia", "Russian Navy (Pacific subs)"],
+  ["Chkalovsk Air Base", 54.77, 20.40, "Russia", "Russian Air (Kaliningrad)"],
+  ["Belbek Air Base", 44.69, 33.57, "Crimea", "Russian Air (Crimea)"],
+  // Turkey — overseas
+  ["Camp TURKSOM (Mogadishu)", 2.01, 45.29, "Somalia", "Turkish Army (largest overseas)"],
+  ["Tariq bin Ziyad Base", 25.20, 51.40, "Qatar", "Turkish Army"],
+  ["Bashiqa Camp", 36.53, 43.37, "Iraq", "Turkish Army"],
+  ["Al-Watiya Air Base", 32.15, 11.87, "Libya", "Turkish/Libyan Air"],
+  ["Geçitkale Air Base", 35.24, 33.72, "Cyprus", "Turkish Air (N. Cyprus)"],
+  // France — overseas (active)
+  ["Camp de Port-Bouët", 5.26, -3.93, "Côte d'Ivoire", "French Forces"],
+  ["Base Kossei (N'Djamena)", 12.13, 15.03, "Chad", "French Air"],
+  ["Camp de Gaulle (Libreville)", 0.46, 9.41, "Gabon", "French Forces"],
+  ["FANC (Nouméa)", -22.27, 166.44, "New Caledonia", "French Forces (Pacific)"],
+  // UK — overseas
+  ["RAF Mount Pleasant", -51.82, -58.45, "Falkland Islands", "British Forces (Falklands)"],
+  ["British Forces Gibraltar", 36.14, -5.35, "Gibraltar", "Royal Navy"],
+  ["BATUK (Nanyuki)", 0.02, 37.10, "Kenya", "British Army"],
+  ["British Forces Brunei", 4.61, 114.33, "Brunei", "British Army (Gurkhas)"],
+  // US — more active majors
+  ["Thumrait Air Base", 17.66, 54.02, "Oman", "US/Oman Air"],
+  ["Naval Station Mayport", 30.39, -81.42, "United States", "US Navy"],
+  ["Eielson Air Force Base", 64.67, -147.10, "United States", "US Air (Arctic)"],
+  ["JB Elmendorf-Richardson", 61.25, -149.80, "United States", "US Air/Army (Alaska)"],
+  ["Naval Air Station Oceana", 36.82, -76.03, "United States", "US Navy Air"],
+  ["Peterson Space Force Base", 38.82, -104.70, "United States", "US Space Force"],
+  ["Lajes Field (Azores)", 38.76, -27.09, "Portugal", "US/Portugal Air"],
+  ["MCAS Futenma", 26.27, 127.76, "Japan", "US Marines (Okinawa)"],
+  // India
+  ["INS Varsha (Rambilli)", 17.68, 82.98, "India", "Indian Navy (subs)"],
+  ["Farkhor Air Base", 37.50, 69.40, "Tajikistan", "Indian Air (overseas)"],
+  // Middle East / Africa — national
+  ["Mohamed Naguib Base", 30.92, 28.80, "Egypt", "Egyptian Army (largest in ME)"],
+  ["Berenice Military Base", 23.98, 35.48, "Egypt", "Egyptian Army (Red Sea)"],
+  ["King Abdulaziz Naval Base", 27.14, 49.57, "Saudi Arabia", "Saudi Navy (Gulf)"],
+  ["King Faisal Naval Base", 21.35, 39.13, "Saudi Arabia", "Saudi Navy (Red Sea)"],
+  ["Bandar-e Jask Naval Base", 25.64, 57.77, "Iran", "Iranian Navy (Gulf of Oman)"],
+  ["Bushehr Naval Base", 28.97, 50.84, "Iran", "Iranian Navy"],
+  // Asia-Pacific — national
+  ["Gwadar Naval Base", 25.13, 62.33, "Pakistan", "Pakistan Navy"],
+  ["Sinpo Naval Base", 40.03, 128.18, "North Korea", "North Korean Navy (subs)"],
+  ["RAAF Amberley", -27.64, 152.71, "Australia", "Australian Air"]
 ];
 const RANGES = {"Himalayas": [[35.2,74.6],[34.5,75.8],[33.6,76.9],[32.5,78.4],[31.5,79.7],[30.5,81.0],[29.7,82.5],[28.9,84.0],[28.3,85.6],[28.0,87.1],[27.8,88.6],[27.9,90.1],[28.1,91.6],[28.6,93.1],[29.4,94.6],[29.6,95.4]], "Karakoram": [[36.6,74.0],[36.3,75.0],[35.9,76.0],[35.6,76.9],[35.4,77.6]], "Hindu Kush": [[37.0,69.6],[36.5,70.6],[36.0,71.6],[35.4,72.6],[34.8,73.6]], "Andes": [[11,-72],[8,-73.6],[5,-75.6],[2,-77.2],[-1,-78.6],[-5,-78.5],[-9,-77.5],[-13,-74.6],[-16,-71.6],[-19,-69],[-22,-68],[-25,-68.6],[-28,-69.6],[-31,-70.6],[-34,-70.2],[-37,-71],[-40,-71.6],[-43,-72.1],[-46,-72.6],[-49,-73],[-52,-73],[-54,-71.5]], "Rocky Mountains": [[60,-128],[57,-125],[54,-121],[51,-117],[49,-114.5],[46,-112],[44,-110.5],[42,-107.5],[40,-106],[38,-105.5],[36,-106],[34,-107.5],[32,-109.5]], "Appalachians": [[47,-69],[45,-71],[43,-73.2],[41,-76],[39,-79],[37,-81.2],[35,-83.5],[34,-85]], "Sierra Madre": [[30,-109],[27,-107],[24,-105.6],[21,-104.5],[19,-103],[17.6,-100]], "Alps": [[44.2,7.0],[44.9,6.9],[45.5,6.9],[46.0,7.8],[46.4,9.0],[46.7,10.5],[46.9,11.9],[47.1,13.1],[47.2,14.3],[47.1,15.3]], "Pyrenees": [[42.5,-1.6],[42.7,-0.5],[42.8,0.5],[42.6,1.5],[42.4,2.4]], "Apennines": [[44.3,7.9],[44.0,9.5],[43.4,11.4],[42.6,13.0],[41.8,14.0],[40.9,15.3],[40.0,16.0],[39.0,16.3],[38.1,16.0]], "Carpathians": [[49.6,18.9],[49.3,20.0],[49.0,21.2],[48.5,22.6],[47.8,23.6],[47.0,24.6],[46.3,25.2],[45.6,25.4],[45.3,24.0],[45.3,22.7]], "Scandinavian Mts": [[70,21],[68,18],[66,15],[64,13],[62,10.5],[60,8],[59,6.5]], "Caucasus": [[44.5,40.0],[43.8,41.5],[43.3,42.8],[42.8,44.0],[42.2,45.5],[41.5,47.0],[41.0,48.0]], "Ural Mountains": [[68,66],[66,63],[64,59.8],[61,59.5],[58,59.5],[55,59.4],[52,58.6],[51,57.5]], "Atlas Mountains": [[30.5,-9],[31,-7],[31.5,-5],[32,-3],[33,-1],[34,1.5],[35,4],[36,6.5],[36.7,8.6]], "Zagros Mountains": [[38,44],[36.5,45.5],[35,46.5],[33.5,47.6],[32,48.6],[30.5,50.5],[29,52],[28,53.5],[27,55]], "Tian Shan": [[42.5,74],[42.3,76],[42.0,78],[41.8,80],[42.0,82],[42.5,84],[43.0,86],[43.3,88]], "Altai Mountains": [[51,84],[50,86],[49,88],[48,90],[47,91.5],[46,92.5]], "Great Dividing Range": [[-16,145],[-19,146.5],[-22,148],[-25,150],[-28,151.5],[-31,152],[-34,150],[-36,148],[-37.5,146.5]], "Ethiopian Highlands": [[14,38],[12.5,38],[11,38.5],[9.5,38.8],[8,39.0],[7,38.5]], "Drakensberg": [[-25,30.5],[-26.5,30],[-28,29.5],[-29.5,29],[-30.5,28.5],[-31.5,28]]};
 const PEAKS=[["Everest",27.99,86.93,8849],["K2",35.88,76.51,8611],["Kangchenjunga",27.70,88.15,8586],["Lhotse",27.96,86.93,8516],["Makalu",27.89,87.09,8485],["Cho Oyu",28.09,86.66,8188],["Dhaulagiri",28.70,83.49,8167],["Annapurna",28.60,83.82,8091],["Nanga Parbat",35.24,74.59,8126],["Nanda Devi",30.37,79.97,7816],["Tirich Mir",36.26,71.84,7708],["Pobeda Peak",42.04,80.13,7439],["Gongga Shan",29.59,101.88,7556],["Damavand",35.96,52.11,5610],["Mount Ararat",39.70,44.30,5137],["Mount Fuji",35.36,138.73,3776],["Puncak Jaya",-4.08,137.16,4884],["Mount Kinabalu",6.08,116.56,4095],["Mont Blanc",45.83,6.86,4808],["Monte Rosa",45.94,7.87,4634],["Matterhorn",45.98,7.66,4478],["Mount Elbrus",43.35,42.44,5642],["Mount Etna",37.75,14.99,3357],["Mulhacen",37.05,-3.31,3479],["Zugspitze",47.42,10.98,2962],["Galdhopiggen",61.64,8.31,2469],["Musala",42.18,23.59,2925],["Mount Olympus",40.09,22.36,2918],["Kilimanjaro",-3.07,37.35,5895],["Mount Kenya",-0.15,37.31,5199],["Margherita Peak",0.39,29.87,5109],["Ras Dashen",13.24,38.37,4550],["Mount Meru",-3.25,36.75,4562],["Mount Elgon",1.13,34.55,4321],["Toubkal",31.06,-7.92,4167],["Mount Cameroon",4.20,9.17,4040],["Thabana Ntlenyana",-29.47,29.27,3482],["Emi Koussi",19.79,18.55,3445],["Denali",63.07,-151.01,6190],["Mount Logan",60.57,-140.41,5959],["Pico de Orizaba",19.03,-97.27,5636],["Mount Whitney",36.58,-118.29,4421],["Mount Rainier",46.85,-121.76,4392],["Popocatepetl",19.02,-98.62,5393],["Aconcagua",-32.65,-70.01,6961],["Ojos del Salado",-27.11,-68.54,6893],["Chimborazo",-1.47,-78.82,6263],["Huascaran",-9.12,-77.60,6768],["Cotopaxi",-0.68,-78.44,5897],["Aoraki",-43.59,170.14,3724],["Mount Kosciuszko",-36.46,148.26,2228],["Mauna Kea",19.82,-155.47,4207],["Vinson Massif",-78.53,-85.62,4892]];
@@ -2095,6 +2148,13 @@ function tuneVectorStyle(style){
     if(l.type==="symbol" && LABEL_COL[l.id]){
       l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
     }
+    // DUPLICATE COUNTRY NAMES (e.g. two "UKRAINE"/"BELARUS" labels). Positron splits countries across TWO
+    // label layers by rank — place_country_1 (rank<=2) and place_country_2 (rank>=3) — whose zoom bands
+    // OVERLAP (3-7). OpenMapTiles can emit the SAME country at different ranks in neighbouring tiles, so both
+    // layers draw it, at slightly different points that collision can't merge -> the name prints twice. Fold
+    // everything into ONE country tier: place_country_1 draws ALL countries once (z2-10); _2 is blanked.
+    if(l.id==="place_country_1"){ l.filter = ["==","class","country"]; l.minzoom = 2; l.maxzoom = 10; }
+    if(l.id==="place_country_2"){ l.layout = Object.assign({}, l.layout, {"text-field":"", visibility:"none"}); }
     if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
     if(_CITY_SZ.indexOf(l.id)>=0 && l.layout && l.layout["text-size"]!==undefined){ l.layout = Object.assign({}, l.layout, {"text-size": _shrink(l.layout["text-size"])}); }
     if(l.id==="place_state"){
@@ -3849,15 +3909,20 @@ function baseOwner(type){
   if(/\bus\b|u\.s\.|american|space force|marines|centcom|socom/.test(t)) return "us";
   if(/russian/.test(t)) return "ru";
   if(/chinese/.test(t)) return "cn";
+  if(/turkish/.test(t)) return "tr";
+  if(/french/.test(t)) return "fr";
+  if(/british|royal navy|\braf\b|gurkha/.test(t)) return "gb";
+  if(/indian/.test(t)) return "in";
   if(/nato/.test(t)) return "nato";
   return "host";
 }
-const OWNER_CC = { us:"us", ru:"ru", cn:"cn" };   // operator flag for the big three; nato/host use the host flag
-// the ISO-2 of the country that OWNS the base, so its marker can carry that country's FLAG (US/Russia/China
-// operate abroad -> their flag; a national base -> the host flag; "xx" when there's no clean flag).
+// operator flag for a foreign-basing power (its own flag flies abroad); nato/host use the host flag
+const OWNER_CC = { us:"us", ru:"ru", cn:"cn", tr:"tr", fr:"fr", gb:"gb", in:"in" };
+// the ISO-2 of the country that OWNS the base, so its marker can carry that country's FLAG (a power basing
+// abroad -> its own flag; a national base -> the host flag, which is the same country; "xx" when no clean flag).
 function baseFlagCC(type, country){
   const o=baseOwner(type);
-  if(o==="us") return "us"; if(o==="ru") return "ru"; if(o==="cn") return "cn";
+  if(OWNER_CC[o]) return OWNER_CC[o];
   const cc=(typeof ISO2!=="undefined" && ISO2[country]);
   return cc ? cc.toLowerCase() : "xx";
 }
@@ -3868,7 +3933,7 @@ function openBase(pr, coord){
   try{ if(_basePopup){ _basePopup.remove(); _basePopup=null; } }catch(_){}
   if(typeof maplibregl==="undefined" || !mlMap) return;
   const owner=pr.owner||"host";
-  const opName={us:"United States",ru:"Russia",cn:"China",nato:"NATO"}[owner]||(pr.country||"");
+  const opName={us:"United States",ru:"Russia",cn:"China",tr:"Turkey",fr:"France",gb:"United Kingdom",in:"India",nato:"NATO"}[owner]||(pr.country||"");
   const opCC=(typeof OWNER_CC!=="undefined"&&OWNER_CC[owner])||"";
   const hostCC=(typeof ISO2!=="undefined"&&ISO2[pr.country])||"";
   let flags="";
@@ -5536,9 +5601,16 @@ function annotateGloss(root){
 async function annotateDetailTerms(d){
   const api=aiBridge();
   if(!api || !api.article_terms) return;
-  const used=new Set();   // shared across both passes so a word is bolded once; curated runs first and wins
+  // The article body is RE-RENDERED as our summary arrives (showBrief replaces re-body's innerHTML), which wipes
+  // the bolded terms — so this runs AGAIN after each render. Two runs then race over the SAME d._terms cache and
+  // could leave the FINAL body un-annotated (the "Hamas defined for a second, then gone" bug). A generation token
+  // makes the LATEST run authoritative: any older in-flight run's wrap becomes a no-op, so whichever render is
+  // current always ends up fully annotated. Each run uses its OWN `used` set (it annotates the live DOM fresh).
+  const gen = (d._annGen = (d._annGen||0) + 1);
+  const used=new Set();   // within THIS run: bold each word once; curated runs first and wins
+  const live = ()=> activeEvent===d.id && d._annGen===gen;   // a newer run / new article has superseded us
   const wrap=(list)=>{
-    if(!list || !list.length) return;
+    if(!list || !list.length || !live()) return;
     // flat (alias -> definition), longest alias first so "Islamic Revolutionary Guard Corps" beats a bare
     // "Islamic"; each distinct spelling is bolded only on its first mention.
     const al=[];
@@ -5552,7 +5624,6 @@ async function annotateDetailTerms(d){
     try{ terms=await api.article_terms(d.title||"", (d.sum||"")+" "+(d.summary||"")) || []; }catch(e){ terms=[]; }
     d._terms=terms;
   }
-  if(activeEvent!==d.id) return;
   wrap(terms);
   // 2) AI LONG TAIL — org/group names the curated list misses, defined neutrally on the fly (slower; additive).
   if(api.article_ai_terms){
@@ -5561,8 +5632,13 @@ async function annotateDetailTerms(d){
       d._aiTerms=null;
       try{ ai=await api.article_ai_terms(d.title||"", (d.sum||"")+" "+(d.summary||"")) || []; }catch(e){ ai=[]; }
       d._aiTerms=ai;
+    } else if(ai===null){
+      // a concurrent run is already fetching the AI tail — WAIT for it rather than skipping, so this (possibly
+      // the authoritative) run still bolds those terms on the current body instead of leaving them undefined.
+      for(let k=0;k<20 && d._aiTerms===null && live();k++){ await new Promise(r=>setTimeout(r,150)); }
+      ai = Array.isArray(d._aiTerms) ? d._aiTerms : [];
     }
-    if(activeEvent===d.id) wrap(ai||[]);
+    wrap(ai||[]);
   }
 }
 function _reEsc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
