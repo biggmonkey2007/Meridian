@@ -2722,6 +2722,17 @@ def main():
         _bad = app._locate("Strike on Nowheresville, southern Lebanon", "",
                            "Strike on Nowheresville, southern Lebanon", allow_ai=True)
         _lg_fails.append(("reject-wrong-country", not (_bad and abs(_bad[0] - 48.85) < 0.1)))
+        # (5) RULES-TRIGGERED PIN — the HEADLINE names "in <Town>, <Country>" the gazetteer misses; geocode it
+        # (stubbed) WITHOUT any AI naming it, anchored to that country. SHIPPED: Skarżysko-Kamienna dotted Poland;
+        # Aguelhoc dotted Mali. Candidate extraction is deterministic (no network).
+        _lg_fails.append(("named-place-extract",
+                          app._named_place_candidates("A fire at a plant in Skarzysko-Kamienna, Poland today")
+                          == [("Skarzysko-Kamienna", "Poland")]))
+        app._geocode_nominatim = lambda q: (51.11, 20.87, "Poland") if "Skarzysko" in q else None
+        _rp = app._locate("A fire broke out at a WB Electronics plant in Skarzysko-Kamienna, Poland", "",
+                          "A fire broke out at a WB Electronics plant in Skarzysko-Kamienna, Poland.", allow_ai=True)
+        _lg_fails.append(("named-place-pin", bool(_rp) and round(_rp[0], 1) == 51.1
+                          and "Skarzysko" in (_rp[2] or "") and _rp[3] == "Poland"))
     finally:
         app._ai_where, app._geocode_nominatim, app._learn_place = _orig_aw, _orig_geo, _orig_learn
         for k in _injected:
@@ -2967,9 +2978,15 @@ def main():
                 and app._is_spam("The 30/08/26 SitRep on Ukraine is ready: Nearly 700,000 people rely on our reporting, reaching over 800 million impressions per year.")
                 and app._is_spam("Support our channel on Patreon to keep the coverage going")
                 and app._is_spam("Subscribe to our channel for daily updates")
+                # CALL-TO-ACTION plugs (also filtered out of wire clips/photos, not just dots)
+                and app._is_spam("Check out Selena's News Channel: fast reliable updates. Don't miss out: Join now to stay ahead.")
+                and app._is_spam("Join our Telegram for breaking news")
+                and app._is_spam("Follow us on Twitter for live updates")
                 and not app._is_spam("Support our troops rally held in Warsaw")
                 and not app._is_spam("The company said 500 million people use its platform")
-                and not app._is_spam("Zelensky thanks allies for continued support"))
+                and not app._is_spam("Zelensky thanks allies for continued support")
+                and not app._is_spam("Sweden and Finland join NATO")
+                and not app._is_spam("Investors try to stay ahead of inflation"))
     _srcnote_ok = _srcnote_ok and _spam_ok
     # BYLINE STRIP — a short "… - Reuters" headline loses its outlet suffix too (was only stripped over 55 chars),
     # while a compound ("anti-corruption") and a tiny head ("War - what is it") are left intact.
@@ -2986,6 +3003,13 @@ def main():
         and app._clean_headline("Analysts warn of a downturn (2024)") == "Analysts warn of a downturn (2024)"
         and app._clean_headline("Trump gives exclusive interview to Fox") == "Trump gives exclusive interview to Fox"
         and app._clean_headline("The video showed the strike") == "The video showed the strike")
+    # DANGLING ADJECTIVE — a truncated "…a fictional." (the source split "a fictional invasion") trims back to the
+    # last clause boundary and re-closes; a real noun ending ("declares a republic.") is untouched.
+    _srcnote_ok = _srcnote_ok and (
+        app._clean_headline("NATO Forces in Latvia conducted a major exercise of territorial defense in Eastern Latvia (Latgalia) simulating a fictional.")
+        == "NATO Forces in Latvia conducted a major exercise of territorial defense in Eastern Latvia (Latgalia)."
+        and app._clean_headline("France declares a republic.") == "France declares a republic."
+        and app._clean_headline("The parties form a coalition.") == "The parties form a coalition.")
     _sharp_ok = _sharp_ok and _srcnote_ok
     # A wire teaser truncated mid-sentence on a connector ("…in Kiryat Gat, following") must not become
     # "…following." — drop the dangling connector. And wire abbreviations spell out ("bln"->"billion").
@@ -3174,7 +3198,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 69   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override + 4 word-town veto + 2 visit-backdrop + 2 materiel-target-owner
+             + 71   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 2 rules-triggered named-place pin + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override + 4 word-town veto + 2 visit-backdrop + 2 materiel-target-owner
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

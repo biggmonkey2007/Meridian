@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.92"
+APP_VERSION = "1.4.93"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d83"   # d83: resweep so a channel/outlet advertising its OWN reach ("700k rely on our reporting")
+_DATA_VER = "d84"   # d84: resweep so a call-to-action / channel-plug ("check out our channel", "join our Telegram")
+                    #      is dropped as non-news everywhere (dots AND wire clips/photos); a truncated headline
+                    #      ending on a dangling ADJECTIVE ("…simulating a fictional.") trims to a clean end; and a
+                    #      town the HEADLINE names but the gazetteer misses ("in Skarżysko-Kamienna, Poland"; "in
+                    #      Aguelhoc, northern Mali") is geocoded once and PINNED, not left on the country centroid.
+                    # d83: resweep so a channel/outlet advertising its OWN reach ("700k rely on our reporting")
                     #      is dropped as self-promotion; a "<place> visit" in an "after…" backdrop clause stops
                     #      hijacking the subject's own country (Lithuania's statement, not Moscow); and a
                     #      DESTROYED (passive) materiel dots its OWNER's country ("Russian Pantsir destroyed" ->
@@ -664,7 +669,12 @@ def _summarize(title, text, source="", depth=False):
               "means for the people or country involved. ANSWER THE HOOK: if the source poses a question or teases "
               "a reason ('but the reasons are different', 'here's why', 'what you need to know'), resolve it — pull "
               "the concrete substance the article gives (the figures, the cause, the specifics) INTO the brief; "
-              "NEVER end on the tease or restate the cliffhanger. If the text genuinely withholds the answer, give "
+              "NEVER end on the tease or restate the cliffhanger. If the HEADLINE itself is a question ('Why did X "
+              "quit?', 'How did Y happen?'), your FIRST sentence must ANSWER it directly with the concrete "
+              "reason/cause/mechanism the article gives — do not merely restate the question, describe the sequence "
+              "of events, or say the answer is unclear when the article points to one (name it: 'He resigned amid "
+              "reports he was being forced out after the government suspended the newspaper that broke the story'). "
+              "If the text genuinely withholds the answer, give "
               "the hardest facts it DOES contain (numbers, names, what changed) rather than a hollow line. This is "
               "PhD/NYT-level writing: never leave a rhetorical question hanging in YOUR OWN voice either — do not "
               "end the brief on a question you don't answer ('The dilemma?', 'What happens next?'). Pose a question "
@@ -1756,7 +1766,17 @@ _SELFPROMO_RE = re.compile(
     r"|\bimpressions?\s+(?:per|a|each)\s+(?:year|month|week|day)\b"
     r"|\b(?:patreon\.com|ko-?fi\.com|buymeacoffee|paypal\.me|gofundme)\b"
     r"|\bsit-?rep\b[^.\n]{0,70}\b(?:is\s+ready|ready|out\s+now|available\s+now)\b"
-    r"|\b(?:help us|support us) (?:keep|continue|report|cover|do)\b",
+    r"|\b(?:help us|support us) (?:keep|continue|report|cover|do)\b"
+    # CALL-TO-ACTION / channel-plug — "check out our/X's channel", "join now/today", "join our discord/telegram/
+    # group", "don't miss out", "link in bio", "hit subscribe", "turn on notifications". Tightened so real news
+    # ("join THE EU", "stay ahead OF inflation") is NOT caught — a bare "join now/today", a join of a PLATFORM,
+    # or an explicit subscribe/notify CTA only.
+    r"|\bcheck out\b[^.\n]{0,40}\b(?:channel|newsletter|substack|page|telegram|discord|group|feed|updates)\b"
+    r"|\bjoin\s+(?:now|today)\b"
+    r"|\bjoin\s+(?:our|the|my|this|us\s+on)\s+(?:telegram|discord|whatsapp|channel|group|community|server|chat|newsletter|feed)\b"
+    r"|\bdon'?t\s+miss\s+out\b|\blink\s+in\s+bio\b|\bswipe\s+up\b"
+    r"|\b(?:hit|smash|tap|click)\s+(?:the\s+)?(?:subscribe|follow|like|bell|notification)\b"
+    r"|\bturn\s+on\s+(?:post\s+)?notifications?\b|\bfollow\s+(?:us|me)\s+(?:on|for)\b",
     re.I)
 
 
@@ -2568,6 +2588,8 @@ class Api:
                 # LONGEST footage on the wire — being long is exactly what made it "too big".
                 if not (p.get("video") or p.get("big")):
                     continue
+                if _is_spam(p.get("text") or ""):
+                    continue                 # a sponsorship / "join our channel" plug is not wire footage
                 vid, thumb, chan, link = (p.get("video") or ""), (p.get("thumb") or ""), \
                     (p.get("title") or p.get("channel") or ""), (p.get("link") or "")
                 yt_id = yt_title = yt_channel = ""
@@ -2712,6 +2734,8 @@ class Api:
                 if not (p.get("photo") or p.get("video") or p.get("thumb")):
                     continue
                 _txt = p.get("text") or ""
+                if _is_spam(_txt):
+                    continue                 # a channel-promo / "join our Telegram" graphic is not wire media
                 if not _clip_matches(title, _txt):
                     continue
                 # ONE CLIP, ONE STORY — enforced in _push (covers direct, twin and album media), so an
@@ -4886,6 +4910,8 @@ def _assign_clips(events, posts):
         if not key:
             continue
         text = p.get("text") or ""
+        if _is_spam(text):
+            continue                          # never assign a sponsorship/channel-plug graphic to a dot
         # the SAME clip can be reposted with different captions — score every (post, event) pair and
         # keep the single highest across ALL of them, so the best-fitting dot wins, not the last seen.
         for e in events:
@@ -6167,6 +6193,13 @@ _TRUNC_DANGLE_RE = re.compile(
     r"(?:[\s,;:]+(?:and|or|but|nor|so|yet|the|a|an|that|which|who|whose|whom|of|to|in|on|at|for|with|from|by|"
     r"into|onto|upon|over|under|toward|towards|against|about|as|per|via|amid|between|among|including|during))+"
     r"\s*[.…]*\s*$", re.I)
+# A trailing determiner + ADJECTIVE whose NOUN is missing ("…simulating a fictional.", "…an alleged.") — the
+# source truncated (or a bad period split "a fictional invasion"). A curated adjective list, so a real noun
+# ending the headline ("declares a republic.", "forms a coalition.") is never mistaken for a truncation.
+_TRUNC_ADJ = (r"fictional|alleged|so-?called|potential|possible|suspected|unidentified|unnamed|unknown|ongoing|"
+              r"attempted|planned|failed|would-be|purported|reported|apparent|likely|imminent|massive|deadly|"
+              r"large-scale|small-scale|full-scale|unprecedented|widespread|so-called|renewed|sweeping|sudden")
+_DANGLE_ADJ_RE = re.compile(r"\s+(?:\w+ing\s+)?(?:a|an|the)\s+(?:" + _TRUNC_ADJ + r")\s*[.!?]*\s*$", re.I)
 
 
 # ONE tidy pass shared by headlines and briefs: no space before punctuation, a space after a glued comma/
@@ -6224,6 +6257,17 @@ def _clean_headline(t):
     if len(t) > 40:
         t = re.sub(r"\s*(?:\.{2,}|…)+\s*$", "", t).strip()
         t = _DANGLE_TAIL_RE.sub("", t).strip()
+        # A dangling ADJECTIVE with its noun missing — "…simulating a fictional." (the source split "a fictional
+        # invasion" at a bad period). The determiner+adjective reads as a cut-off, so trim it back to the last
+        # clause boundary (a closing paren / comma / dash), then re-close. SHIPPED: the Latvia NATO-exercise post.
+        _h2 = _DANGLE_ADJ_RE.sub("", t)
+        if _h2 != t and len(_h2) >= 30:
+            _b = max(_h2.rfind(")"), _h2.rfind(", "), _h2.rfind("; "), _h2.rfind(" — "), _h2.rfind(" – "))
+            if _b >= 30:
+                _h2 = _h2[:_b + (1 if _h2[_b] == ")" else 0)]
+            t = _h2.rstrip(" ,;:–—-")
+            if t and t[-1] not in ".!?":
+                t += "."
     if len(t) <= 200:
         return t
     # NEVER a mid-word chop (shipped "…and Western offici"): trim to the last clause break, else the last
@@ -10730,6 +10774,55 @@ def _geocode_nominatim(place):
     return out
 
 
+# The headline/body EXPLICITLY names a town the gazetteer misses: "in <Town>, <Country>" — "in Skarżysko-
+# Kamienna, Poland", "in Aguelhoc, northern Mali". The town before the comma, then (optional compass word +) a
+# country we recognise. Captures a 1-3 word, hyphen/diacritic-friendly town.
+_NAMED_IN_RE = re.compile(
+    r"\b(?:in|at|near|from)\s+"
+    r"([A-ZÀ-ɏ][\w'’.À-ɏ\-]{2,}(?:\s+[A-ZÀ-ɏ][\w'’.À-ɏ\-]+){0,2})"
+    r"\s*,\s+(?:(?:north\w*|south\w*|east\w*|west\w*|central|the)\s+)*"
+    r"([A-ZÀ-ɏ][\w.À-ɏ\-]+(?:\s+[A-ZÀ-ɏ][\w.À-ɏ\-]+){0,2})")
+
+
+def _named_place_candidates(text):
+    """"(Town, Country)" pairs the text explicitly gives via 'in <Town>, <Country>', where the tail resolves to
+    a country we know. Used to PIN a named town the gazetteer misses (via a one-time geocode)."""
+    out = []
+    for m in _NAMED_IN_RE.finditer(text or ""):
+        co = COUNTRY_ALIASES.get(m.group(2).strip(" .,;:'’\"").lower())
+        if co and co in COUNTRY_COORDS:
+            out.append((m.group(1).strip(" ,.-"), co))
+    return out
+
+
+def _sharpen_named_place(title, desc, anchor_country, allow_ai):
+    """The story NAMES a specific town ('in Aguelhoc, northern Mali') the gazetteer can't pin, so the rules only
+    reached the COUNTRY centroid. Geocode that exact town once — learned gazetteer first (free, cold-start),
+    else a live Nominatim geocode anchored to the named country, then LEARNED forever. Returns a specific
+    (lat, lng, place, country) or None. This is the rules-triggered twin of `_sharpen_ai_place`."""
+    for text in (title, desc):
+        for place, co in _named_place_candidates(text or ""):
+            if anchor_country and not _country_match(co, anchor_country):
+                continue
+            if _geolocate(place, "", "", "") is not None:
+                continue                              # already in the gazetteer -> the rules would have used it
+            q = place + ", " + _co_short(co)
+            lp = _learned_place_lookup(q)
+            if lp:
+                return lp
+            if not allow_ai:
+                continue
+            geo = _geocode_nominatim(q)
+            if not geo:
+                continue
+            lat, lng, ncountry = geo
+            if ncountry and not _country_match(ncountry, co):
+                continue                              # geocoded to the wrong country -> a namesake, reject
+            _learn_place(q, lat, lng, q, co)
+            return (lat, lng, q, co)
+    return None
+
+
 def _sharpen_ai_place(aw, anchor_country, allow_ai):
     """The AI named 'City, Country' but the rules could only reach the region/country centroid. Pin the EXACT
     city: first from the learned gazetteer (free, cold-start), else a one-time Nominatim geocode (live pass
@@ -11071,6 +11164,14 @@ def _locate(title, sourcecountry, desc, url="", allow_ai=True):
             _pick = _demco[-1]
             _la, _ln = COUNTRY_COORDS[_pick]
             r = (_la, _ln, _co_short(_pick), _pick)   # right country now; a live build refines it to the town
+    # NAMED TOWN the gazetteer MISSES: the text says "in <Town>, <Country>" (Skarżysko-Kamienna, Poland;
+    # Aguelhoc, northern Mali) but the town isn't in our gazetteer, so the rules only reached the COUNTRY
+    # centroid. Geocode the named town once (free Nominatim, learned forever), anchored to that country. Runs on
+    # BOTH paths: cold-start uses only what's already learned (no network); the live/server bake geocodes it.
+    if r and "," not in (r[2] or "") and r[3] in COUNTRY_COORDS:
+        _sp = _sharpen_named_place(title or "", desc or "", r[3], allow_ai)
+        if _sp:
+            return _sp
     if not allow_ai or not _llm_available():
         return r                                      # cold-start build (or no LLM): rules + cached WHERE only
     _txt = ((title or "") + ". " + (desc or "")).strip()
