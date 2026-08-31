@@ -2676,6 +2676,21 @@ def main():
     _lg_fails.append(("word-town-normal", app._geolocate("Normal traffic resumes after crash", "", "") is None))
     _lg_fails.append(("word-town-located-ok", "Superior" in (app._geolocate(
         "Explosion in Superior, Wisconsin", "", "") or ["", "", "", ""])[2]))
+    # A "<place> VISIT/trip" in a SUBORDINATE clause is a THIRD party's backdrop, not the scene: the subject's
+    # own country wins. SHIPPED: a Lithuanian president's statement dotted MOSCOW. A REAL visit-scene stays.
+    _lg_fails.append(("visit-backdrop", (app._locate(
+        "Lithuania's security situation unchanged after CIA chief's reported Moscow visit: President", "", "",
+        allow_ai=False)[3]) == "Lithuania"))
+    _lg_fails.append(("visit-scene-kept", "Moscow" in (app._locate(
+        "Xi arrives in Moscow for a state visit", "", "", allow_ai=False)[2] or "")))
+    # A DESTROYED (passive) materiel dots its OWNER's country when nothing else locates it — a lost Russian
+    # system belongs in Russia, not the attacker. An ACTIVE weapon ("missile destroyed a building in Kyiv")
+    # still vetoes the nationality so the real scene wins.
+    _lg_fails.append(("materiel-target-owner", (app._locate(
+        "Two Russian Pantsir-S1 air defense systems were destroyed in separate Ukrainian strikes", "", "",
+        allow_ai=False)[3]) == "Russia"))
+    _lg_fails.append(("materiel-active-scene", "Kyiv" in (app._locate(
+        "Russian missile destroyed a residential building in Kyiv", "", "", allow_ai=False)[2] or "")))
     _orig_aw, _orig_geo, _orig_learn = app._ai_where, app._geocode_nominatim, app._learn_place
     _injected = []
     try:
@@ -2946,7 +2961,15 @@ def main():
     _spam_ok = (app._is_spam("Join this Bitcoin platform for BTC market signals before everyone else catches on. JOIN AND READ HERE: https://chat.whatsapp.com/FK21")
                 and app._is_spam("DM us to join our VIP signals group for guaranteed profit")
                 and not app._is_spam("Bitcoin hits $90k as US SEC approves a spot ETF, Reuters reports")
-                and not app._is_spam("Russia strikes Kyiv, 12 killed"))
+                and not app._is_spam("Russia strikes Kyiv, 12 killed")
+                # SELF-PROMOTION (a channel/outlet advertising its OWN reach / a donation ask) is not news — drop it
+                # for EVERY source. Guard: real news that happens to mention "support"/user numbers is kept.
+                and app._is_spam("The 30/08/26 SitRep on Ukraine is ready: Nearly 700,000 people rely on our reporting, reaching over 800 million impressions per year.")
+                and app._is_spam("Support our channel on Patreon to keep the coverage going")
+                and app._is_spam("Subscribe to our channel for daily updates")
+                and not app._is_spam("Support our troops rally held in Warsaw")
+                and not app._is_spam("The company said 500 million people use its platform")
+                and not app._is_spam("Zelensky thanks allies for continued support"))
     _srcnote_ok = _srcnote_ok and _spam_ok
     # BYLINE STRIP — a short "… - Reuters" headline loses its outlet suffix too (was only stripped over 55 chars),
     # while a compound ("anti-corruption") and a tiny head ("War - what is it") are left intact.
@@ -3151,7 +3174,7 @@ def main():
              + 1    # + first-reporter promotion (inline dedup keeps whoever broke it as the primary)
              + 1    # + promotion pairs headline+body (no DPRK-headline-over-gasoline-body Frankenstein)
              + 2    # + text-sharpen (credit strip + end-stop) + who's-involved glossary detection
-             + 65   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override + 4 word-town veto (Superior/Sandy/Normal + located-ok)
+             + 69   # + self-learning gazetteer: 3 confidence + learned cold-start + nominatim learn + persist + wrong-country guard + 3 leader-statement->capital + 2 maritime-strike->water + 4 US-markets->NYC + 3 obituary-location + 2 Amur-complex + 2 Georgia-US-state + 2 desc-containment + 3 vessel-strike/threat + 3 asylum/flee + 2 passive-agent + tibet + vaca-muerta + envoy + company-wiki + 2 yucatan + 6 company-HQ + 3 Jazan-refinery->Saudi + 4 Vladimir-Putin (guards) + 4 sanction-over-ties/influence-op->target (+ strike guard) + nepali-by-drone + 2 materiel-guards + 2 Kstovo-water-override + 4 word-town veto + 2 visit-backdrop + 2 materiel-target-owner
              + 8    # + finish-brief (a summary never ends mid-sentence, incl. the "…, X says…" cutoff + dangling-preposition-before-period: 8 cases)
              + 1    # + port-profile json extractor
              + 1    # + port infobox facts parser

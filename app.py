@@ -83,7 +83,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ── VERSION + AUTO-UPDATE ─────────────────────────────────────────────────────────────────────────
 # Single source of truth for the app version (installer + updater both read it).
-APP_VERSION = "1.4.91"
+APP_VERSION = "1.4.92"
 # GitHub repo ("owner/name") whose Releases hold newer Meridian.exe builds. Empty = auto-update is OFF
 # (the app runs normally). It can be set at BUILD time here, OR — so it's "ready the moment you create the
 # repo" without rebuilding — by dropping the "owner/name" into %LOCALAPPDATA%\Meridian\update_repo.txt.
@@ -199,7 +199,12 @@ SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "gpt-4o-mini")
 # summary, location (WHERE) and importance (SCOPE) — is regenerated. It's folded into the feed-cache stamp
 # and the summary/aiwhere cache keys, so a fix is visible on the next launch instead of self-healing over
 # a later cycle. (The per-feature vers below still exist for targeted invalidation; this is the big hammer.)
-_DATA_VER = "d82"   # d82: resweep so a re-headlined story with a near-verbatim body folds into ONE dot (the two
+_DATA_VER = "d83"   # d83: resweep so a channel/outlet advertising its OWN reach ("700k rely on our reporting")
+                    #      is dropped as self-promotion; a "<place> visit" in an "after…" backdrop clause stops
+                    #      hijacking the subject's own country (Lithuania's statement, not Moscow); and a
+                    #      DESTROYED (passive) materiel dots its OWNER's country ("Russian Pantsir destroyed" ->
+                    #      Russia, not the attacker) while an ACTIVE weapon still dots the scene it hit.
+                    # d82: resweep so a re-headlined story with a near-verbatim body folds into ONE dot (the two
                     #      France 24 election pieces), even with different titles + different places.
                     # d81: resweep so a headline's ordinary word stops dotting its namesake town ("Superior Court"
                     #      -> no dot, not Superior WI; "Sandy beaches" -> not Sandy UT), a promo/format tag is
@@ -1739,9 +1744,31 @@ _SPAM_RE = re.compile(
     re.I)
 
 
+# SELF-PROMOTION — a channel/outlet advertising ITSELF rather than reporting news: its reach ("700,000 people
+# rely on our reporting", "800 million impressions per year"), a "SitRep is ready / subscribe" plug, a donation
+# ask (Patreon/Ko-fi). NOT news, so it must never become a dot — for EVERY channel AND outlet, even-handedly.
+# Anchored to a channel/reporting OBJECT so real news ("support our troops", a company's user numbers) is safe.
+_PROMO_OBJ = r"(?:channel|reporting|coverage|work|journalism|content|page|team|newsletter|substack|patreon|efforts?|platform[s]?)"
+_SELFPROMO_RE = re.compile(
+    r"\b(?:rely on|thanks to|support|back|fund|help|subscribe to|follow|join) (?:our|your|us,?|this|the) " + _PROMO_OBJ
+    + r"|\bour " + _PROMO_OBJ + r"\b[^.\n]{0,30}\b(?:reach\w*|read by|watched by|followed by|trusted by|impressions?)"
+    r"|\b[\d][\d,.]*\s*(?:million|billion|thousand|k)?\+?\s*(?:people|readers?|followers?|subscribers?)\s+(?:rely on|now (?:rely|follow)|follow|read|trust|support)\b"
+    r"|\bimpressions?\s+(?:per|a|each)\s+(?:year|month|week|day)\b"
+    r"|\b(?:patreon\.com|ko-?fi\.com|buymeacoffee|paypal\.me|gofundme)\b"
+    r"|\bsit-?rep\b[^.\n]{0,70}\b(?:is\s+ready|ready|out\s+now|available\s+now)\b"
+    r"|\b(?:help us|support us) (?:keep|continue|report|cover|do)\b",
+    re.I)
+
+
+def _is_self_promo(text):
+    """A channel/outlet plugging ITSELF (reach metrics, 'subscribe', a donation ask) — not news, drop it."""
+    return bool(_SELFPROMO_RE.search(text or ""))
+
+
 def _is_spam(text):
-    """A promotional / scam / channel-plug post (crypto-signals ad, WhatsApp-invite pump) — drop it entirely."""
-    return bool(_SPAM_RE.search(text or ""))
+    """A promotional / scam / channel-plug post (crypto-signals ad, WhatsApp-invite pump, or a channel
+    advertising its OWN reach/donations) — drop it entirely, from Telegram channels AND news outlets alike."""
+    return bool(_SPAM_RE.search(text or "")) or _is_self_promo(text)
 
 
 def _tg_arts(h):
@@ -9625,8 +9652,23 @@ def _is_materiel_nationality(h, words):
             #  demonym before it is the ACTOR or the PEOPLE, not the weapon's flag ("North Korea TESTS missile" is
             #  North Korea; "NEPALI rescue WORKERS … aid delivery BY drone" is Nepal, not a Nepali drone)
         if w in _MATERIEL_NOUNS:
+            # The materiel is the DESTROYED TARGET, not a weapon that struck: "Russian Pantsir systems WERE
+            # DESTROYED". Then its nationality IS a fair fallback scene — the OWNER's country — when nothing else
+            # locates it (the user wants a lost Russian system dotted in Russia, not the Ukrainian attacker).
+            # Require the PASSIVE form (was/were destroyed) so an ACTIVE "Russian missile destroyed a building in
+            # Kyiv" (the weapon) still vetoes and the real scene (Kyiv) wins.
+            for m in range(k, min(k + 6, len(words))):
+                if words[m] in _MATERIEL_LOSS_VERBS:
+                    if any(words[p] in _PASSIVE_BE for p in range(max(k, m - 3), m)):
+                        return False
+                    break
             return True
     return False
+
+
+_MATERIEL_LOSS_VERBS = {"destroyed", "downed", "struck", "hit", "lost", "eliminated", "knocked", "damaged",
+                        "wrecked", "obliterated", "disabled", "neutralized", "neutralised", "wiped"}
+_PASSIVE_BE = {"was", "were", "been", "is", "are", "being", "get", "gets", "got", "getting"}
 
 
 def _km(a_lat, a_lng, b_lat, b_lng):
@@ -9818,6 +9860,11 @@ def _adversary_parties(hits, words):
 # A place named as CONTRASTING BACKDROP ("China buys oil DESPITE the Hormuz crisis") — the event is the
 # subject's action, the place is just scenery.
 _CONTEXT_PREP = {"despite", "notwithstanding", "amid", "amidst"}
+# A "<place> VISIT/trip/summit" in a SUBORDINATE clause ("after/following/amid the … Moscow visit") is where a
+# THIRD party went — a backdrop to the subject's own news, not the scene. Guarded by a subordinator so a real
+# "arrives in Moscow for a visit" (no subordinator) stays put.
+_VISIT_NOUNS = {"visit", "visits", "trip", "trips", "tour", "summit", "talks", "meeting", "meetings", "stopover"}
+_SUBORD_WORDS = {"after", "following", "amid", "amidst", "during", "since", "despite", "before", "ahead"}
 # An ABSTRACT struggle "against X" makes X the ADVERSARY, not a physical scene ("the WAR against Iran",
 # "STRATEGY against Russia"). A PHYSICAL "strike/attack/raid against X" is deliberately NOT here — there the
 # target IS where it landed, so X stays the scene.
@@ -9902,6 +9949,11 @@ def _context_places(hits, words):
               and any(words[k] in _HIT_TARGET_VERBS for k in range(max(0, i - 4), i - 1))):
             ctx.add(i)                     # "facilities TARGETED BY Ukraine near St. Petersburg" -> Ukraine is the
                                            # passive AGENT (who did it), so the scene (St. Petersburg) wins
+        elif (i + 1 < len(words) and words[i + 1] in _VISIT_NOUNS
+              and any(words[k] in _SUBORD_WORDS for k in range(0, i))):
+            ctx.add(i)                     # "…unchanged AFTER the CIA chief's Moscow VISIT" -> Moscow is where a
+                                           # THIRD party went, a backdrop to the subject's statement, not the scene.
+                                           # A real "arrives IN Moscow for a visit" has no subordinator, so it stays.
     return ctx
 
 

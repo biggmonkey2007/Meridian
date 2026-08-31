@@ -3650,12 +3650,19 @@ async function addCartoVector(before, opts){
   if(!mlMap.getSource("carto")) mlMap.addSource("carto", src);
   (style.layers||[]).forEach(l=>{
     if(l.type==="background") return;              // skip the style's full-canvas background — our dark space
+    // NEVER add the tiled Positron COUNTRY-name layers — they duplicate on the globe (a country appears in two
+    // rank tiers / across zoom-level tiles that collision can't merge, so the name prints twice). We draw
+    // country names ourselves from a single-point-per-country layer (g-country-lbl / ensureCountryLabels), so
+    // the tiled ones must not exist AT ALL. This is the bulletproof fix — blanking them at style/runtime kept
+    // leaving one visible. (city/region/water label tiers are untouched.)
+    if(l.id==="place_country_1" || l.id==="place_country_2") return;
     // skipFills: topo/satellite keep only the vector LINES (borders, rivers) + LABELS so the imagery base
     // shows through — the pale land/water fills would hide the topo relief / satellite photo underneath.
     if(opts.skipFills && (l.type==="fill" || l.type==="fill-extrusion")) return;
     if(mlMap.getLayer(l.id)) return;               // bg + the g-sphere fill (land tone) handle the surface
     try{ mlMap.addLayer(l, before); _gCartoIds.push(l.id); }catch(e){}
   });
+  ensureCountryLabels();                           // add OUR country-name layer as soon as the base is in
   return _gCartoIds.length > 0;
 }
 // The vector overlay's labels/rivers/region-borders must READ on a dark satellite photo: light text with a
