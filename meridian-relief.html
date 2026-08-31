@@ -2148,13 +2148,12 @@ function tuneVectorStyle(style){
     if(l.type==="symbol" && LABEL_COL[l.id]){
       l.paint = Object.assign({}, l.paint, {"text-color":LABEL_COL[l.id], "text-halo-color":"#ffffff", "text-halo-width":1.3, "text-halo-blur":0.3});
     }
-    // DUPLICATE COUNTRY NAMES (e.g. two "UKRAINE"/"BELARUS" labels). Positron splits countries across TWO
-    // label layers by rank — place_country_1 (rank<=2) and place_country_2 (rank>=3) — whose zoom bands
-    // OVERLAP (3-7). OpenMapTiles can emit the SAME country at different ranks in neighbouring tiles, so both
-    // layers draw it, at slightly different points that collision can't merge -> the name prints twice. Fold
-    // everything into ONE country tier: place_country_1 draws ALL countries once (z2-10); _2 is blanked.
-    if(l.id==="place_country_1"){ l.filter = ["==","class","country"]; l.minzoom = 2; l.maxzoom = 10; }
-    if(l.id==="place_country_2"){ l.layout = Object.assign({}, l.layout, {"text-field":"", visibility:"none"}); }
+    // DUPLICATE COUNTRY NAMES (e.g. two offset "MALI"/"SUDAN" labels on the globe). The tiled Positron country
+    // layers (place_country_1/_2) duplicate under the GLOBE projection — the same name is drawn from tiles at
+    // different zoom levels that the cross-tile de-duper can't merge. So we BLANK both tiled tiers and draw
+    // country names from our OWN single-point-per-country GeoJSON (g-country-lbl, non-tiled -> one label each,
+    // duplication is structurally impossible). See countryLabelsGeo()/ensureCountryLabels().
+    if(l.id==="place_country_1" || l.id==="place_country_2"){ l.layout = Object.assign({}, l.layout, {"text-field":"", visibility:"none"}); }
     if(l["source-layer"]==="place" && CITY_MZ[l.id]!==undefined) l.minzoom = CITY_MZ[l.id];
     if(_CITY_SZ.indexOf(l.id)>=0 && l.layout && l.layout["text-size"]!==undefined){ l.layout = Object.assign({}, l.layout, {"text-size": _shrink(l.layout["text-size"])}); }
     if(l.id==="place_state"){
@@ -2603,8 +2602,72 @@ async function addCountrySources(){
     countryByName = {};
     countriesGeo.features.forEach(f=>{ if(f.properties && f.properties.name) countryByName[f.properties.name] = f; });
     addBorders();
+    ensureCountryLabels();      // our own one-point-per-country name layer (no tiled duplicates)
     if(activeCountry) highlightCountry(activeCountry);
   }catch(e){ console.warn("country data failed:", e); }
+}
+// COUNTRY NAME LABELS from our OWN data — ONE point per country, so the globe can never draw a name twice (the
+// tiled Positron country labels do, across zoom-level tiles). Placement = the area-weighted centroid of each
+// country's LARGEST landmass (so France sits on the mainland, not adrift toward its overseas territories).
+const _CO_LABEL_SHORT = { "United States of America":"United States", "Democratic Republic of the Congo":"DR Congo",
+  "Dem. Rep. Congo":"DR Congo", "Central African Republic":"Central African Rep.", "United Republic of Tanzania":"Tanzania",
+  "Republic of the Congo":"Congo", "Bosnia and Herzegovina":"Bosnia & Herz.", "Dominican Republic":"Dominican Rep.",
+  "Falkland Islands":"Falklands", "South Sudan":"S. Sudan", "Solomon Islands":"Solomon Is." };
+function _ringArea(r){ let a=0; for(let i=0,j=r.length-1;i<r.length;j=i++){ a += r[j][0]*r[i][1]-r[i][0]*r[j][1]; } return Math.abs(a*0.5); }
+function _ringCentroid(r){ let a=0,cx=0,cy=0; for(let i=0,j=r.length-1;i<r.length;j=i++){ const f=r[j][0]*r[i][1]-r[i][0]*r[j][1]; a+=f; cx+=(r[j][0]+r[i][0])*f; cy+=(r[j][1]+r[i][1])*f; } a*=0.5;
+  if(Math.abs(a)<1e-9){ let sx=0,sy=0; r.forEach(p=>{sx+=p[0];sy+=p[1];}); return [sx/r.length, sy/r.length]; }
+  return [cx/(6*a), cy/(6*a)]; }
+// A robust label point (the area-weighted centroid), made safe for landmasses that CROSS the antimeridian
+// (Russia, Fiji): there the raw signed-area centroid blows up (Russia -> 193°E) and a plain bbox spans the whole
+// globe (centre near 0°, i.e. the North Sea). So when a ring's longitude span exceeds 180° we shift it into
+// 0-360 first, compute there, then wrap the result back to -180..180. A degenerate centroid still falls
+// back to the (now correct) bbox centre.
+function _labelPoint(r){
+  let mn=1e9, mx=-1e9;
+  for(let k=0;k<r.length;k++){ const x=r[k][0]; if(x<mn)mn=x; if(x>mx)mx=x; }
+  let ring=r;
+  if(mx-mn>180){ ring=new Array(r.length); for(let k=0;k<r.length;k++){ const p=r[k]; ring[k]=[p[0]<0?p[0]+360:p[0], p[1]]; } }   // antimeridian -> work in 0-360
+  const c=_ringCentroid(ring);
+  let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+  for(let k=0;k<ring.length;k++){ const p=ring[k]; if(p[0]<mnx)mnx=p[0]; if(p[0]>mxx)mxx=p[0]; if(p[1]<mny)mny=p[1]; if(p[1]>mxy)mxy=p[1]; }
+  let x=c[0], y=c[1];
+  if(x<mnx||x>mxx||y<mny||y>mxy){ x=(mnx+mxx)/2; y=(mny+mxy)/2; }
+  while(x>180) x-=360; while(x<-180) x+=360;
+  return [x,y];
+}
+function countryLabelsGeo(){
+  const feats=[];
+  if(countriesGeo && countriesGeo.features) countriesGeo.features.forEach(f=>{
+    const nm=f.properties && f.properties.name; const g=f.geometry; if(!nm || !g) return;
+    let best=null, bestA=0, total=0;
+    const polys = g.type==="Polygon" ? [g.coordinates] : g.type==="MultiPolygon" ? g.coordinates : [];
+    polys.forEach(p=>{ const a=_ringArea(p[0]); total+=a; if(a>bestA){ bestA=a; best=p[0]; } });
+    if(!best) return;
+    const c=_labelPoint(best);
+    if(!isFinite(c[0])||!isFinite(c[1])) return;
+    feats.push({type:"Feature",geometry:{type:"Point",coordinates:c},properties:{name:(_CO_LABEL_SHORT[nm]||nm), area:total}});
+  });
+  return {type:"FeatureCollection",features:feats};
+}
+function ensureCountryLabels(){
+  if(typeof mlMap==="undefined" || !mlMap || !mlLoaded) return;
+  if(currentBase==="osmintl"){ if(mlMap.getLayer("g-country-lbl")) try{ mlMap.removeLayer("g-country-lbl"); mlMap.removeSource("g-country-lbl"); }catch(e){} return; }   // OSM raster has its own baked country names
+  if(!countriesGeo) return;                          // called again once the atlas loads
+  const data=countryLabelsGeo();
+  try{
+    if(mlMap.getSource("g-country-lbl")){ mlMap.getSource("g-country-lbl").setData(data); }
+    else{
+      mlMap.addSource("g-country-lbl",{type:"geojson",data});
+      const before=["g-seas-lbl","g-straits-pt","g-ports-pt","g-bases-pt","g-pulse","g-events"].find(id=>mlMap.getLayer(id));
+      mlMap.addLayer({id:"g-country-lbl",type:"symbol",source:"g-country-lbl",minzoom:1.2,maxzoom:7,layout:{
+        visibility: layers.labels ? "visible":"none",
+        "text-field":["get","name"], "text-font":["Montserrat Medium","Open Sans Bold"], "text-transform":"uppercase",
+        "text-size":["interpolate",["linear"],["zoom"], 2,10, 4,12.5, 6,14], "text-letter-spacing":0.06,
+        "text-max-width":7, "text-allow-overlap":false, "text-optional":true,
+        "symbol-sort-key":["-",0,["get","area"]] },                   // bigger country -> lower key -> placed first
+        paint:{"text-color":"#5f6c78","text-halo-color":"#ffffff","text-halo-width":1.3,"text-halo-blur":0.3}}, before);
+    }
+  }catch(e){}
 }
 function ptInRing(x,y,ring){ let inside=false; for(let i=0,j=ring.length-1;i<ring.length;j=i++){ const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1]; if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside; } return inside; }
 function ptInPoly(x,y,poly){ if(!ptInRing(x,y,poly[0])) return false; for(let i=1;i<poly.length;i++){ if(ptInRing(x,y,poly[i])) return false; } return true; }
@@ -3672,6 +3735,7 @@ function tuneLabelTiers(){
 function applyCartoLabelToggle(){
   const vis = layers.labels ? "visible" : "none";
   _gCartoIds.forEach(id=>{ const l = mlMap.getLayer(id); if(l && l.type==="symbol"){ try{ mlMap.setLayoutProperty(id,"visibility",vis); }catch(e){} } });
+  if(mlMap.getLayer("g-country-lbl")){ try{ mlMap.setLayoutProperty("g-country-lbl","visibility",vis); }catch(e){} }   // our own country labels obey the toggle too
 }
 // 1:1 COASTLINE — the highlight polygon comes from a coarser atlas than the basemap, so its edge cut across
 // bays and islands. On the VECTOR bases (clean/topo) we tuck the highlight UNDER the basemap's own water fill:
@@ -3720,7 +3784,7 @@ function tuneWaterLabels(k){
 function setGlobeBasemap(k){
   if(!mlMap || !mlLoaded) return;
   try{ mlMap.setPaintProperty("bg","background-color", globeBgExpr(k)); }catch(e){}   // match the backdrop to this base
-  ["g-sphere","g-poles","g-overview","g-base","g-shade","g-shade-globe","g-labels","g-relief","g-hillshade","g-dem"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
+  ["g-sphere","g-poles","g-overview","g-base","g-shade","g-shade-globe","g-labels","g-relief","g-hillshade","g-dem","g-country-lbl"].forEach(id=>{ if(mlMap.getLayer(id)) mlMap.removeLayer(id); if(mlMap.getSource(id)) mlMap.removeSource(id); });
   removeCartoVector();
   const before = mlMap.getLayer("g-borders") ? "g-borders" : undefined;
   const b=mlBaseSpec(k);
@@ -3790,6 +3854,7 @@ function setGlobeBasemap(k){
       // No extra raster labels: the vector's OWN English country/continent labels (native Positron styling)
       // render on top of the raster overview, so z<3 reads clean and English.
       tuneLabelTiers();
+      ensureCountryLabels();                    // our own single-point-per-country name layer (no tiled dupes)
       applyCartoLabelToggle();
       positionCountryHighlight();               // tuck the highlight under the vector water so it clips to the coast
     }).catch(()=>{});
@@ -3812,6 +3877,7 @@ function setGlobeBasemap(k){
         if(k==="satellite") tuneCartoForSatellite();
         else if(k==="topo") tuneCartoForTopo();
         tuneLabelTiers();
+        ensureCountryLabels();                  // our own single-point-per-country name layer (no tiled dupes)
         applyCartoLabelToggle();
         positionCountryHighlight();             // satellite: no water fill (skipFills) -> highlight stays on top
       }).catch(()=>{});
